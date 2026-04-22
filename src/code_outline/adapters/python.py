@@ -104,7 +104,13 @@ def _node_to_decl(node: Node, src: bytes, *, inside_class: bool) -> Optional[Dec
         return _function_to_decl(node, src, inside_class=inside_class)
 
     if node.type == "expression_statement":
-        # Could be a docstring — handled by the parent. Skip here.
+        # Module- and class-body assignments (`X: int = 1`, `X = "..."`) are
+        # parsed as `expression_statement` wrapping an `assignment`. Docstrings
+        # are also `expression_statement` but with a string child — those we
+        # let `_docstring` handle from the parent.
+        for inner in node.named_children:
+            if inner.type == "assignment":
+                return _assignment_to_decl(inner, src)
         return None
 
     if node.type == "assignment":

@@ -80,17 +80,35 @@ class CSharpAdapter:
 
 
 def _walk_top(node: Node, src: bytes, out: list[Declaration]) -> None:
+    # File-scoped namespaces (`namespace Foo;`) don't nest their types as
+    # AST children — the types are siblings. Absorb those siblings into
+    # the namespace declaration so the IR matches the user's intent.
+    file_scoped_ns: Optional[Declaration] = None
     for child in node.named_children:
         kind = child.type
-        if kind in ("namespace_declaration", "file_scoped_namespace_declaration"):
+        if kind == "namespace_declaration":
             out.append(_ns_to_decl(child, src))
+            file_scoped_ns = None
+        elif kind == "file_scoped_namespace_declaration":
+            ns_decl = _ns_to_decl(child, src)
+            out.append(ns_decl)
+            file_scoped_ns = ns_decl
         elif kind in _TYPE_NODE_KIND:
-            out.append(_type_to_decl(child, src))
+            type_decl = _type_to_decl(child, src)
+            if file_scoped_ns is not None:
+                file_scoped_ns.children.append(type_decl)
+                file_scoped_ns.end_line = type_decl.end_line
+                file_scoped_ns.end_byte = type_decl.end_byte
+            else:
+                out.append(type_decl)
         elif kind in _MEMBER_NODE_KIND:
             # Rare: top-level members (global using etc)
             decl = _member_to_decl(child, src)
             if decl is not None:
-                out.append(decl)
+                if file_scoped_ns is not None:
+                    file_scoped_ns.children.append(decl)
+                else:
+                    out.append(decl)
         # Skip using_directive etc at top level
 
 
@@ -355,8 +373,6 @@ def _member_name(node: Node, src: bytes) -> Optional[str]:
         "event_declaration",
         "delegate_declaration",
         "indexer_declaration",
-        "operator_declaration",
-        "conversion_operator_declaration",
     ):
         return _field_text(node, "name", src)
     if kind in ("constructor_declaration", "destructor_declaration"):
@@ -369,6 +385,18 @@ def _member_name(node: Node, src: bytes) -> Optional[str]:
                 return _field_text(decl, "name", src)
     if kind == "enum_member_declaration":
         return _field_text(node, "name", src)
+    if kind == "operator_declaration":
+        # tree-sitter exposes the operator token via the `operator` field
+        op_tok = node.child_by_field_name("operator")
+        if op_tok is not None:
+            return "operator" + _text(op_tok, src)
+        return "operator"
+    if kind == "conversion_operator_declaration":
+        # `implicit operator decimal(Money m)` → name by target type.
+        type_node = node.child_by_field_name("type")
+        if type_node is not None:
+            return "operator_" + _text(type_node, src)
+        return "operator"
     return None
 
 

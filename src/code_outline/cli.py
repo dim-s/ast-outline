@@ -216,27 +216,47 @@ def _cmd_implements(args) -> int:
 
 
 def _strip_leading_doc(src: str) -> str:
+    """Strip the doc block from a `show` source slice.
+
+    Two shapes we handle:
+    - C# style: one or more ``///`` lines at the top of the slice.
+    - Python style: a ``def`` / ``class`` / decorator header followed by a
+      triple-quoted docstring as the first body statement.
+    """
     lines = src.splitlines()
+
+    # C#: strip any leading /// comment lines.
     i = 0
-    while i < len(lines) and (
-        lines[i].lstrip().startswith("///") or lines[i].lstrip().startswith('"""') or lines[i].lstrip().startswith("'''")
-    ):
-        # For triple-quoted strings, skip until the closing """ on a later line
-        stripped = lines[i].lstrip()
-        if stripped.startswith('"""') or stripped.startswith("'''"):
-            delim = stripped[:3]
-            rest = stripped[3:]
-            if delim in rest:
-                i += 1
-                break
-            # multi-line docstring: skip until closing
-            i += 1
-            while i < len(lines) and delim not in lines[i]:
-                i += 1
-            i += 1
-            break
+    while i < len(lines) and lines[i].lstrip().startswith("///"):
         i += 1
-    return "\n".join(lines[i:])
+    if i > 0:
+        return "\n".join(lines[i:])
+
+    # Python: skip decorators + def/class header, then drop the docstring if
+    # it's the first body statement.
+    j = 0
+    while j < len(lines) and lines[j].lstrip().startswith("@"):
+        j += 1
+    if j < len(lines):
+        header = lines[j].lstrip()
+        if header.startswith(("def ", "async def ", "class ")):
+            k = j + 1
+            while k < len(lines) and not lines[k].strip():
+                k += 1
+            if k < len(lines):
+                doc_line = lines[k].lstrip()
+                for delim in ('"""', "'''"):
+                    if doc_line.startswith(delim):
+                        rest = doc_line[3:]
+                        if delim in rest:
+                            # Single-line docstring
+                            return "\n".join(lines[:k] + lines[k + 1 :])
+                        # Multi-line: find closing delim
+                        end = k + 1
+                        while end < len(lines) and delim not in lines[end]:
+                            end += 1
+                        return "\n".join(lines[:k] + lines[end + 1 :])
+    return src
 
 
 GUIDE_GENERAL = """\
