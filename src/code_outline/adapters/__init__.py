@@ -11,11 +11,13 @@ from typing import Optional
 from .base import LanguageAdapter
 from .csharp import CSharpAdapter
 from .python import PythonAdapter
+from .typescript import TypeScriptAdapter
 
 
 ADAPTERS: list[LanguageAdapter] = [
     CSharpAdapter(),
     PythonAdapter(),
+    TypeScriptAdapter(),
 ]
 
 

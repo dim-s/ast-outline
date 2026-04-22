@@ -61,8 +61,10 @@ Agent: code-outline show Player.cs TakeDamage # 只取需要的方法体
 
 | 语言 | 扩展名 |
 | --- | --- |
-| C#     | `.cs` |
-| Python | `.py`、`.pyi` |
+| C#         | `.cs` |
+| Python     | `.py`、`.pyi` |
+| TypeScript | `.ts`、`.tsx` |
+| JavaScript | `.js`、`.jsx`、`.mjs`、`.cjs`（由 TypeScript 语法解析） |
 
 新增语言只需要加一个适配器文件。见
 [`src/code_outline/adapters/`](src/code_outline/adapters/)。
@@ -161,10 +163,11 @@ Agent 就会优先用 `code-outline` 而不是直接读完整文件。
 ### 提示词片段（直接复制）
 
 ```markdown
-## 代码探索 —— C# / Python 文件先用 `code-outline`
+## 代码探索 —— C# / Python / TS / JS 文件先用 `code-outline`
 
-打开任何 `.cs`、`.py` 或 `.pyi` 文件之前，先用 `code-outline` 看一下
-它的结构。完整读取文件只在你已经确定需要某个方法体时才用。
+打开任何 `.cs`、`.py`、`.pyi`、`.ts`、`.tsx`、`.js` 或 `.jsx` 文件之前，
+先用 `code-outline` 看一下它的结构。完整读取文件只在你已经确定需要某个
+方法体时才用。
 
 工作流（哪一步能回答问题就停在哪一步）：
 
@@ -377,7 +380,7 @@ uv pip install -e ".[dev]"
 
 ## 路线图
 
-- [ ] TypeScript / JavaScript 适配器
+- [x] TypeScript / JavaScript 适配器（`.ts`、`.tsx`、`.js`、`.jsx`、`.mjs`、`.cjs`）
 - [ ] Go 适配器
 - [ ] Rust 适配器
 - [ ] `--format json` —— 方便程序化消费

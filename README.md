@@ -64,8 +64,10 @@ the round-trips.**
 
 | Language | Extensions |
 | --- | --- |
-| C#     | `.cs` |
-| Python | `.py`, `.pyi` |
+| C#         | `.cs` |
+| Python     | `.py`, `.pyi` |
+| TypeScript | `.ts`, `.tsx` |
+| JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` (parsed by the TypeScript grammar) |
 
 Adding another language is a single new adapter file. See
 [`src/code_outline/adapters/`](src/code_outline/adapters/).
@@ -164,11 +166,11 @@ agent. It will then prefer `code-outline` over reading full files.
 ### Prompt snippet (copy-paste)
 
 ```markdown
-## Code exploration — use `code-outline` for C# / Python
+## Code exploration — use `code-outline` for C# / Python / TS / JS
 
-Before you open a `.cs`, `.py`, or `.pyi` file, call `code-outline` to see
-its shape. A full read is only for when you already know which body you
-want.
+Before you open a `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, or `.jsx`
+file, call `code-outline` to see its shape. A full read is only for when
+you already know which body you want.
 
 Workflow (stop at whichever step answers the question):
 
@@ -388,7 +390,7 @@ Create `src/code_outline/adapters/<lang>.py` implementing the
 
 ## Roadmap
 
-- [ ] TypeScript / JavaScript adapter
+- [x] TypeScript / JavaScript adapter (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`)
 - [ ] Go adapter
 - [ ] Rust adapter
 - [ ] `--format json` output mode for programmatic consumers
