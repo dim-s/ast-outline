@@ -1,5 +1,7 @@
 # code-outline
 
+**English** · [Русский](./README.ru.md) · [简体中文](./README.zh-CN.md)
+
 > Fast, AST-based **structural outline** for source files — classes, methods,
 > signatures with line numbers, but **no method bodies**. Built for LLM coding
 > agents that should read the *shape* of a file before reading the whole thing.
@@ -16,23 +18,20 @@
 when navigating unfamiliar code.**
 
 Modern agentic coding tools (Claude Code, Cursor's agent mode, Aider,
-Copilot Chat, in-house CLI agents) explore codebases by reading files
-directly — not via embeddings or vector search. That approach is reliable
-but has a cost: on a 1000-line file, the agent pays for 1000 lines of
-tokens just to answer *"what methods exist here?"*.
+Copilot Chat, custom CLI agents) explore codebases by reading files directly
+— not via embeddings or vector search. That approach is reliable but has a
+cost: on a 1000-line file, the agent pays for 1000 lines of tokens just to
+answer *"what methods exist here?"*.
 
-This tool closes that gap. It's a **pre-reading layer** for agents:
+`code-outline` closes that gap. It's a **pre-reading layer** for agents:
 
 1. **Token savings — typically 5–10×.** An outline replaces a full file
    read when the agent only needs structural understanding.
-2. **Faster exploration.** A whole module's public API fits on one screen,
-   so the agent reaches understanding in one call instead of 10–20
-   `Read`/`grep` rounds.
-3. **Precise navigation.** Every declaration has a line range
-   (`L42-58`). The agent goes straight to the method body it needs,
-   via `code-outline show` or a targeted `Read` with offset+limit.
-4. **AST accuracy, not fuzzy match.** Unlike grep, `implements` and `show`
-   understand real syntax — no false positives from comments or strings.
+2. **Faster exploration.** A whole module's public API fits on one screen.
+3. **Precise navigation.** Every declaration has a line range (`L42-58`).
+   The agent goes straight to the method body it needs.
+4. **AST accuracy, not fuzzy match.** `implements` and `show` understand
+   real syntax — no false positives from comments or strings.
 5. **Zero infrastructure.** No index, no cache, no embeddings, no network.
    Live, always fresh, invisible to your repo.
 
@@ -51,50 +50,15 @@ Agent: grep "IDamageable" src/   # noisy, lots of false matches
 **With `code-outline`:**
 
 ```
-Agent: code-outline digest src/Combat       # ~100 lines, whole module in one view
-Agent: code-outline implements IDamageable  # precise list, no grep noise
-Agent: code-outline show Player.cs TakeDamage  # just the method body
+Agent: code-outline digest src/Combat         # ~100 lines, whole module
+Agent: code-outline implements IDamageable    # precise list, no grep noise
+Agent: code-outline show Player.cs TakeDamage # just the method body
 ```
 
 Result: **same understanding, a fraction of the tokens, a fraction of
 the round-trips.**
 
-### Designed for (but not limited to)
-
-- Claude Code subagents like `Explore` / `codebase-scout`
-- Custom agents built on the Claude / OpenAI / Gemini APIs that need to
-  navigate code
-- `CLAUDE.md` / `AGENTS.md` prompts that tell an agent "prefer this over
-  full reads"
-- Humans too — the outline format is readable, the `show` command is
-  a nice alternative to `grep -A 20`
-
-See the [Using with LLM coding agents](#using-with-llm-coding-agents)
-section for a copy-pasteable prompt snippet.
-
 ---
-
-## Why (the long version)
-
-Tools like Claude Code and similar coding agents do **not** use vector/RAG
-indexing — they read files directly with `grep` / `cat`-style tools. On a
-1200-line `.cs` file that means 1200 lines of tokens just to learn "which
-methods exist here".
-
-`code-outline` gives the agent a **~8× smaller** view of the same file:
-
-```
-# CustomerController.cs (1202 lines)
-namespace App.Customers
-    public class CustomerController : MonoBehaviour  L77-1200
-        public void SpawnCustomers()  L887-891
-        public void TakeDamage(int amount)  L930-948
-        ...
-```
-
-Each declaration has an **exact line range**. The agent can then fetch the
-body of just one method with `code-outline show <file> <Method>` instead of
-re-reading the whole file.
 
 ## Supported languages
 
@@ -191,12 +155,59 @@ code-outline help show
 
 ---
 
+## Using with LLM coding agents
+
+This is the main use case. Add the snippet below to your `CLAUDE.md`,
+`AGENTS.md`, subagent file, or any system prompt that steers a coding
+agent. It will then prefer `code-outline` over reading full files.
+
+### Prompt snippet (copy-paste)
+
+```markdown
+## Code exploration
+
+For C# and Python source files, prefer `code-outline` over full-file reads:
+
+- `code-outline <file>` — structural outline with line ranges (≈8× less
+  tokens than reading the full file)
+- `code-outline show <file> <Symbol>` — fetch just one method/class body
+- `code-outline digest <dir>` — one-page architecture overview of a module
+- `code-outline implements <BaseType> <dir>` — find all subclasses/implementations
+
+Read full files only when the outline does not give enough context — e.g.
+when you actually need the logic inside a specific method you've already
+identified via outline.
+
+Run `code-outline help` for full usage.
+```
+
+### Why this helps
+
+- **Fresh subagents with shallow context** (like Claude Code's `Explore`
+  agent) can scan a whole module in one call instead of 10–20 `Read`/`grep`
+  rounds.
+- **"Where is X defined?"** becomes one `implements` or `show` call.
+- **Line ranges** (`L42-58`) turn the outline into a precise navigator —
+  the agent reads only the lines it needs.
+- **AST-based** `implements` has no false positives from string literals,
+  comments, or unrelated name mentions — unlike `grep`.
+
+### Works with
+
+- Claude Code (+ custom subagents like `Explore`, `codebase-scout`)
+- Cursor agent mode
+- Aider
+- Copilot Chat / Workspace
+- Any custom agent on the Claude / OpenAI / Gemini APIs
+- Humans (the format is readable; `show` is a nice alternative to `grep -A 20`)
+
+---
+
 ## Commands
 
 ### `outline` — default
 
 Print the file's classes, methods, properties, fields with line ranges.
-Use when you want to read *one file's* structure before diving in.
 
 ```bash
 code-outline path/to/File.cs
@@ -207,7 +218,7 @@ Flags:
 
 - `--no-private` — hide private members (Python: names starting with `_`)
 - `--no-fields` — hide field declarations
-- `--no-docs` — hide `///` XML-doc / `"""docstrings"""`
+- `--no-docs` — hide `///` XML-doc / docstrings
 - `--no-attrs` — hide `[Attributes]` / `@decorators`
 - `--no-lines` — hide line-number suffixes
 - `--glob PATTERN` — restrict directory mode to a pattern
@@ -216,9 +227,9 @@ Flags:
 
 ```bash
 code-outline show File.cs TakeDamage
-code-outline show File.cs PlayerController.TakeDamage    # disambiguate overloads
+code-outline show File.cs PlayerController.TakeDamage   # disambiguate overloads
 code-outline show service.py UserService.get
-code-outline show File.cs TakeDamage Heal Die            # several at once
+code-outline show File.cs TakeDamage Heal Die           # several at once
 ```
 
 Matching is **suffix-based**: `Foo.Bar` matches any `*.Foo.Bar`. If multiple
@@ -275,7 +286,7 @@ namespace Game.Player
 ```
 # user_service.py (70 lines)
 @dataclass class User  L16-29
-    def display_name(self) -> str  L26-28
+    def display_name(self) -> str  L26-29
         """Human-friendly label."""
 
 class UserService  L31-58
@@ -293,40 +304,6 @@ Differences are language-idiomatic:
 - C# attributes (`[Attr]`) and Python decorators (`@foo`) are inlined with
   the declaration.
 - C# property accessors `{ get; private set; }` are preserved.
-
----
-
-## Using with LLM coding agents
-
-Add this to your `CLAUDE.md`, `AGENTS.md`, or a subagent file to make the
-agent prefer `code-outline` over reading full files:
-
-```markdown
-## Code exploration
-
-For C# and Python source files, prefer `code-outline` over full-file reads:
-
-- `code-outline <file>` — structural outline with line ranges (≈8× less
-  tokens than reading the full file)
-- `code-outline show <file> <Symbol>` — fetch just one method/class body
-- `code-outline digest <dir>` — one-page architecture overview of a module
-- `code-outline implements <BaseType> <dir>` — find all subclasses/implementations
-
-Read full files only when the outline does not give enough context — e.g.
-when you actually need the logic inside a specific method you've already
-identified via outline.
-
-Run `code-outline help` for full usage.
-```
-
-Why this helps:
-
-- Agents with shallow context (fresh subagents) can scan a whole module in
-  one shot.
-- "Where is X defined?" becomes one `implements` or `show` call instead of
-  multiple `grep` + `read` rounds.
-- Line ranges (`L42-58`) turn the outline into a precise navigator — the
-  agent can read just the lines it needs.
 
 ---
 
