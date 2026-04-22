@@ -164,21 +164,35 @@ agent. It will then prefer `code-outline` over reading full files.
 ### Prompt snippet (copy-paste)
 
 ```markdown
-## Code exploration
+## Code exploration — use `code-outline` for C# / Python
 
-For C# and Python source files, prefer `code-outline` over full-file reads:
+Before you open a `.cs`, `.py`, or `.pyi` file, call `code-outline` to see
+its shape. A full read is only for when you already know which body you
+want.
 
-- `code-outline <file>` — structural outline with line ranges (≈8× less
-  tokens than reading the full file)
-- `code-outline show <file> <Symbol>` — fetch just one method/class body
-- `code-outline digest <dir>` — one-page architecture overview of a module
-- `code-outline implements <BaseType> <dir>` — find all subclasses/implementations
+Workflow (stop at whichever step answers the question):
 
-Read full files only when the outline does not give enough context — e.g.
-when you actually need the logic inside a specific method you've already
-identified via outline.
+1. **Unfamiliar directory or module** — `code-outline digest <dir>`
+   prints every file's classes and public methods on one page.
 
-Run `code-outline help` for full usage.
+2. **One file, structural view** — `code-outline <file>` lists signatures
+   with line ranges, no bodies. Typically 5–10× smaller than reading the
+   file.
+
+3. **One specific method or class body** — `code-outline show <file>
+   <SymbolName>`. Matching is suffix-based: `TakeDamage` works, or use
+   `PlayerController.TakeDamage` when the short name is ambiguous. You
+   can ask for several at once in a single call, e.g.
+   `code-outline show Player.cs TakeDamage Heal Die`.
+
+4. **Who implements / extends a type** — `code-outline implements
+   <TypeName> <dir>` is AST-accurate; skip `grep` for this.
+
+Only fall back to reading the full file when `show` gives you the signature
+but you need the surrounding context. The `L<start>-<end>` range in the
+outline is a precise offset if your editor's read tool supports one.
+
+Run `code-outline help` for flags and less-common options.
 ```
 
 ### Why this helps
@@ -337,6 +351,31 @@ uv pip install -e .
 .venv/bin/code-outline tests/sample.py
 .venv/bin/code-outline digest tests/
 ```
+
+### Running the tests
+
+Tests are an optional dev dependency — end users don't pull them in. Install
+them once and run via `pytest`:
+
+```bash
+# Install pytest into the same venv as the editable install
+uv pip install -e ".[dev]"
+
+# Run the full suite (takes ~0.1s)
+.venv/bin/pytest
+
+# Just one file, verbose
+.venv/bin/pytest tests/unit/test_csharp_adapter.py -v
+
+# Match by test name
+.venv/bin/pytest -k file_scoped_namespace -v
+```
+
+The suite (~100 tests) covers the C# and Python adapters, the
+language-agnostic renderers, symbol search, and the CLI end-to-end. Fixtures
+live under `tests/fixtures/`; tests never reach outside that directory.
+New behaviour should come with a test; new languages should ship with a
+dedicated fixture directory and a `tests/unit/test_<lang>_adapter.py` file.
 
 ### Adding a new language
 

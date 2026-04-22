@@ -161,20 +161,32 @@ Agent 就会优先用 `code-outline` 而不是直接读完整文件。
 ### 提示词片段（直接复制）
 
 ```markdown
-## 代码探索
+## 代码探索 —— C# / Python 文件先用 `code-outline`
 
-对于 C# 和 Python 源文件，优先使用 `code-outline` 而不是完整的 Read：
+打开任何 `.cs`、`.py` 或 `.pyi` 文件之前，先用 `code-outline` 看一下
+它的结构。完整读取文件只在你已经确定需要某个方法体时才用。
 
-- `code-outline <file>` —— 带行号范围的结构化大纲
-  （比完整读取节省约 8 倍 token）
-- `code-outline show <file> <Symbol>` —— 只取某个方法/类的方法体
-- `code-outline digest <dir>` —— 整个模块架构的一页概览
-- `code-outline implements <BaseType> <dir>` —— 找出全部子类/实现
+工作流（哪一步能回答问题就停在哪一步）：
 
-只有当 outline 提供的信息不足时（例如你已经通过 outline 定位了某个方法
-但需要具体逻辑）才使用完整的 Read。
+1. **不熟悉的目录或模块** —— `code-outline digest <dir>` 在一页内
+   列出每个文件的类和公共方法。
 
-运行 `code-outline help` 查看完整用法。
+2. **单个文件的结构视图** —— `code-outline <file>` 输出签名和行号范围，
+   不含方法体。通常比完整读取文件少用 5–10 倍 token。
+
+3. **某个具体方法或类的方法体** —— `code-outline show <file>
+   <SymbolName>`。匹配采用后缀方式：`TakeDamage` 可以直接用，如果
+   短名有歧义就写成 `PlayerController.TakeDamage`。一次调用可以请求多个
+   符号，例如：`code-outline show Player.cs TakeDamage Heal Die`。
+
+4. **谁继承或实现了某个类型** —— `code-outline implements <TypeName>
+   <dir>`，基于 AST 精确匹配；这种场景不用 `grep`。
+
+只有当 `show` 给了你签名但还需要周围的上下文时，再回退到完整读取文件。
+outline 中的 `L<start>-<end>` 范围可以直接作为精确的 offset，如果你的
+编辑器的读取工具支持的话。
+
+运行 `code-outline help` 查看各种标志和不常用选项。
 ```
 
 ### 为什么有效
@@ -329,6 +341,30 @@ uv pip install -e .
 .venv/bin/code-outline tests/sample.py
 .venv/bin/code-outline digest tests/
 ```
+
+### 运行测试
+
+测试属于可选的开发依赖，最终用户不会被拉入。装一次之后通过 `pytest`
+运行即可：
+
+```bash
+# 把 pytest 装进同一个 venv
+uv pip install -e ".[dev]"
+
+# 跑完整套件（约 0.1 秒）
+.venv/bin/pytest
+
+# 只跑一个文件，详细输出
+.venv/bin/pytest tests/unit/test_csharp_adapter.py -v
+
+# 按名字过滤
+.venv/bin/pytest -k file_scoped_namespace -v
+```
+
+套件（约 100 个测试）覆盖 C# 和 Python 适配器、与语言无关的渲染器、
+符号搜索以及端到端的 CLI。Fixture 放在 `tests/fixtures/`，测试不会越出
+该目录。任何新行为都应带上测试；新增语言时也应附带独立的 fixture
+目录和一份 `tests/unit/test_<lang>_adapter.py`。
 
 ### 新增一门语言
 
