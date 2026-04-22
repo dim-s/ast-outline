@@ -65,6 +65,7 @@ Agent: code-outline show Player.cs TakeDamage # 只取需要的方法体
 | Python     | `.py`、`.pyi` |
 | TypeScript | `.ts`、`.tsx` |
 | JavaScript | `.js`、`.jsx`、`.mjs`、`.cjs`（由 TypeScript 语法解析） |
+| Markdown   | `.md`、`.markdown`、`.mdx`、`.mdown` —— 标题目录 + 代码块 |
 
 新增语言只需要加一个适配器文件。见
 [`src/code_outline/adapters/`](src/code_outline/adapters/)。
@@ -163,11 +164,11 @@ Agent 就会优先用 `code-outline` 而不是直接读完整文件。
 ### 提示词片段（直接复制）
 
 ```markdown
-## 代码探索 —— C# / Python / TS / JS 文件先用 `code-outline`
+## 代码探索 —— 源码与 markdown 都先用 `code-outline`
 
-打开任何 `.cs`、`.py`、`.pyi`、`.ts`、`.tsx`、`.js` 或 `.jsx` 文件之前，
-先用 `code-outline` 看一下它的结构。完整读取文件只在你已经确定需要某个
-方法体时才用。
+打开任何 `.cs`、`.py`、`.pyi`、`.ts`、`.tsx`、`.js`、`.jsx` 或 `.md`
+文件之前，先用 `code-outline` 看一下它的结构。完整读取只在你已经确定
+需要某个方法体（或文档段落）时才用。
 
 工作流（哪一步能回答问题就停在哪一步）：
 
@@ -177,10 +178,12 @@ Agent 就会优先用 `code-outline` 而不是直接读完整文件。
 2. **单个文件的结构视图** —— `code-outline <file>` 输出签名和行号范围，
    不含方法体。通常比完整读取文件少用 5–10 倍 token。
 
-3. **某个具体方法或类的方法体** —— `code-outline show <file>
+3. **某个具体方法、类或 markdown 段落** —— `code-outline show <file>
    <SymbolName>`。匹配采用后缀方式：`TakeDamage` 可以直接用，如果
-   短名有歧义就写成 `PlayerController.TakeDamage`。一次调用可以请求多个
-   符号，例如：`code-outline show Player.cs TakeDamage Heal Die`。
+   短名有歧义就写成 `PlayerController.TakeDamage`。对于 markdown，
+   符号名就是标题文本（例如 `show README.md "Running the tests"`）。
+   一次调用可以请求多个符号，例如：
+   `code-outline show Player.cs TakeDamage Heal Die`。
 
 4. **谁继承或实现了某个类型** —— `code-outline implements <TypeName>
    <dir>`，基于 AST 精确匹配；这种场景不用 `grep`。
@@ -381,6 +384,7 @@ uv pip install -e ".[dev]"
 ## 路线图
 
 - [x] TypeScript / JavaScript 适配器（`.ts`、`.tsx`、`.js`、`.jsx`、`.mjs`、`.cjs`）
+- [x] Markdown 适配器（`.md`、`.markdown`、`.mdx`、`.mdown`）—— 标题目录 + 代码块
 - [ ] Go 适配器
 - [ ] Rust 适配器
 - [ ] `--format json` —— 方便程序化消费

@@ -69,6 +69,7 @@ embeddings и vector search. Подход надёжный, но дорогой:
 | Python     | `.py`, `.pyi` |
 | TypeScript | `.ts`, `.tsx` |
 | JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` (парсятся через TS-грамматику) |
+| Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — оглавление по заголовкам + код-блоки |
 
 Добавление нового языка — это один новый файл-адаптер. См.
 [`src/code_outline/adapters/`](src/code_outline/adapters/).
@@ -168,11 +169,12 @@ code-outline help show
 ### Snippet для промпта (скопируй как есть)
 
 ```markdown
-## Изучение кода — для C# / Python / TS / JS используй `code-outline`
+## Изучение кода — для исходников и markdown используй `code-outline`
 
-Прежде чем открывать файл `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js` или
-`.jsx`, запусти `code-outline` чтобы увидеть его структуру. Полное чтение
-файла — только когда ты уже знаешь, какое именно тело метода тебе нужно.
+Прежде чем открывать файл `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`,
+`.jsx` или `.md`, запусти `code-outline` чтобы увидеть его структуру.
+Полное чтение — только когда ты уже знаешь, какое именно тело метода
+(или секцию документа) тебе нужно.
 
 Workflow (останавливайся на том шаге, который ответил на твой вопрос):
 
@@ -183,9 +185,11 @@ Workflow (останавливайся на том шаге, который от
    с диапазонами строк, без тел. Обычно в 5–10 раз меньше токенов, чем
    полное чтение файла.
 
-3. **Конкретное тело метода или класса** — `code-outline show <file>
-   <SymbolName>`. Поиск по суффиксу: `TakeDamage` подхватится, а если
-   имя неоднозначно — используй `PlayerController.TakeDamage`. За один
+3. **Конкретное тело метода, класса или секция markdown** —
+   `code-outline show <file> <SymbolName>`. Поиск по суффиксу:
+   `TakeDamage` подхватится, а если имя неоднозначно — используй
+   `PlayerController.TakeDamage`. Для markdown имя символа — текст
+   заголовка (например `show README.md "Running the tests"`). За один
    вызов можно попросить сразу несколько символов, например:
    `code-outline show Player.cs TakeDamage Heal Die`.
 
@@ -392,6 +396,7 @@ uv pip install -e ".[dev]"
 ## Roadmap
 
 - [x] Адаптер TypeScript / JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`)
+- [x] Адаптер Markdown (`.md`, `.markdown`, `.mdx`, `.mdown`) — TOC из заголовков + код-блоки
 - [ ] Адаптер Go
 - [ ] Адаптер Rust
 - [ ] `--format json` для программной обработки вывода

@@ -33,6 +33,10 @@ KIND_EVENT = "event"
 KIND_DELEGATE = "delegate"
 KIND_OPERATOR = "operator"
 
+# Non-code (narrative) document kinds — currently used by the markdown adapter
+KIND_HEADING = "heading"
+KIND_CODE_BLOCK = "code_block"
+
 TYPE_KINDS = {KIND_CLASS, KIND_STRUCT, KIND_INTERFACE, KIND_RECORD, KIND_ENUM}
 CALLABLE_KINDS = {KIND_METHOD, KIND_FUNCTION, KIND_CTOR, KIND_DTOR, KIND_OPERATOR}
 
@@ -90,6 +94,9 @@ class DigestOptions:
     include_private: bool = False
     include_fields: bool = False
     max_members_per_type: int = 50
+    # Markdown-only: cap heading depth in TOC digest (1=H1 only, 3=H1..H3, …).
+    # Code blocks are shown only when include_fields is True.
+    max_heading_depth: int = 3
 
 
 # --- Match types ----------------------------------------------------------
@@ -205,6 +212,16 @@ def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optiona
 
 def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
     lines = [f"  {result.path.name} ({result.line_count} lines)"]
+
+    # Markdown files digest as a hierarchical TOC, not a type/member list.
+    if result.language == "markdown":
+        toc = _digest_markdown(result.declarations, opts, indent=4, depth=1)
+        if not toc:
+            lines[-1] += "  # empty"
+            return lines
+        lines.extend(toc)
+        return lines
+
     types = _flatten_types(result.declarations)
     free_functions = _flatten_free_functions(result.declarations, opts)
 
@@ -242,6 +259,31 @@ def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
                 tokens.append(f"+{f.name} [{f.kind}]")
         lines.extend(_wrap_tokens(tokens, width=100, indent="    "))
     return lines
+
+
+def _digest_markdown(
+    decls: list[Declaration],
+    opts: DigestOptions,
+    indent: int,
+    depth: int,
+) -> list[str]:
+    """Render markdown declarations as a hierarchical TOC.
+
+    Respects `opts.max_heading_depth`. Code blocks are shown only when
+    `opts.include_fields` is True (they're treated as noise in a TOC by
+    default).
+    """
+    out: list[str] = []
+    if depth > opts.max_heading_depth:
+        return out
+    pad = " " * indent
+    for d in decls:
+        if d.kind == KIND_HEADING:
+            out.append(pad + d.signature + d.lines_suffix())
+            out.extend(_digest_markdown(d.children, opts, indent + 2, depth + 1))
+        elif d.kind == KIND_CODE_BLOCK and opts.include_fields:
+            out.append(pad + d.signature + d.lines_suffix())
+    return out
 
 
 def _flatten_free_functions(decls: list[Declaration], opts: DigestOptions) -> list[Declaration]:

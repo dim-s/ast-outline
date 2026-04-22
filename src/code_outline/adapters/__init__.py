@@ -10,6 +10,7 @@ from typing import Optional
 
 from .base import LanguageAdapter
 from .csharp import CSharpAdapter
+from .markdown import MarkdownAdapter
 from .python import PythonAdapter
 from .typescript import TypeScriptAdapter
 
@@ -18,6 +19,7 @@ ADAPTERS: list[LanguageAdapter] = [
     CSharpAdapter(),
     PythonAdapter(),
     TypeScriptAdapter(),
+    MarkdownAdapter(),
 ]
 
 

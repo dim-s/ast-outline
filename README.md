@@ -68,6 +68,7 @@ the round-trips.**
 | Python     | `.py`, `.pyi` |
 | TypeScript | `.ts`, `.tsx` |
 | JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` (parsed by the TypeScript grammar) |
+| Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — heading TOC + fenced code blocks |
 
 Adding another language is a single new adapter file. See
 [`src/code_outline/adapters/`](src/code_outline/adapters/).
@@ -166,11 +167,11 @@ agent. It will then prefer `code-outline` over reading full files.
 ### Prompt snippet (copy-paste)
 
 ```markdown
-## Code exploration — use `code-outline` for C# / Python / TS / JS
+## Code exploration — use `code-outline` for source + markdown files
 
-Before you open a `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, or `.jsx`
-file, call `code-outline` to see its shape. A full read is only for when
-you already know which body you want.
+Before you open a `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, or
+`.md` file, call `code-outline` to see its shape. A full read is only for
+when you already know which body (or section) you want.
 
 Workflow (stop at whichever step answers the question):
 
@@ -181,10 +182,12 @@ Workflow (stop at whichever step answers the question):
    with line ranges, no bodies. Typically 5–10× smaller than reading the
    file.
 
-3. **One specific method or class body** — `code-outline show <file>
-   <SymbolName>`. Matching is suffix-based: `TakeDamage` works, or use
-   `PlayerController.TakeDamage` when the short name is ambiguous. You
-   can ask for several at once in a single call, e.g.
+3. **One specific method, class, or markdown section** — `code-outline
+   show <file> <SymbolName>`. Matching is suffix-based: `TakeDamage`
+   works, or use `PlayerController.TakeDamage` when the short name is
+   ambiguous. For markdown, the symbol is the heading text
+   (e.g. `show README.md "Running the tests"`). You can ask for several
+   at once in a single call, e.g.
    `code-outline show Player.cs TakeDamage Heal Die`.
 
 4. **Who implements / extends a type** — `code-outline implements
@@ -391,6 +394,7 @@ Create `src/code_outline/adapters/<lang>.py` implementing the
 ## Roadmap
 
 - [x] TypeScript / JavaScript adapter (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`)
+- [x] Markdown adapter (`.md`, `.markdown`, `.mdx`, `.mdown`) — heading TOC + code blocks
 - [ ] Go adapter
 - [ ] Rust adapter
 - [ ] `--format json` output mode for programmatic consumers
