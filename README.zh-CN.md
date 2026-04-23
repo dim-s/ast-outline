@@ -165,39 +165,35 @@ Agent 就会优先用 `code-outline` 而不是直接读完整文件。
 ### 提示词片段（直接复制）
 
 ```markdown
-## 代码探索 —— 源码与 markdown 都先用 `code-outline`
+## 代码探索 —— 优先用 `code-outline`，而不是完整读取
 
-打开任何 `.cs`、`.py`、`.pyi`、`.ts`、`.tsx`、`.js`、`.jsx`、`.java`
-或 `.md` 文件之前，先用 `code-outline` 看一下它的结构。完整读取只在你已经确定
-需要某个方法体（或文档段落）时才用。
+对于 `.cs`、`.py`、`.pyi`、`.ts`、`.tsx`、`.js`、`.jsx`、`.java` 和
+`.md` 文件，先用 `code-outline` 读结构，再考虑打开完整内容。方法体只在
+你已经确定需要某一个时才去取。
 
-工作流（哪一步能回答问题就停在哪一步）：
+哪一步能回答问题就停在哪一步：
 
-1. **不熟悉的目录或模块** —— `code-outline digest <dir>` 在一页内
-   列出每个文件的类和公共方法。
+1. **不熟悉的目录** —— `code-outline digest <dir>`：一页地图，列出每个
+   文件的类型和公共方法。
 
-2. **单个文件的结构视图** —— `code-outline <file>` 输出签名和行号范围，
-   不含方法体。通常比完整读取文件少用 5–10 倍 token。
+2. **单个文件的结构** —— `code-outline <file>`：签名 + 行号范围，不含
+   方法体（比完整读取少用 5–10 倍 token）。
 
-3. **某个具体方法、类或 markdown 段落** —— `code-outline show <file>
-   <SymbolName>`。匹配采用后缀方式：`TakeDamage` 可以直接用，如果
-   短名有歧义就写成 `PlayerController.TakeDamage`。对于 markdown，
-   符号名就是标题文本（例如 `show README.md "Running the tests"`）。
-   一次调用可以请求多个符号，例如：
-   `code-outline show Player.cs TakeDamage Heal Die`。
+3. **某个方法 / 类 / markdown 段落** —— `code-outline show <file> <Symbol>`。
+   后缀匹配：`TakeDamage`，有歧义时用 `Player.TakeDamage`。一次取多个：
+   `code-outline show Player.cs TakeDamage Heal Die`。markdown 的符号名
+   就是标题文本。
 
-4. **谁继承或实现了某个类型** —— `code-outline implements <TypeName>
-   <dir>`，基于 AST 精确匹配；这种场景不用 `grep`。
+4. **谁继承/实现了某个类型** —— `code-outline implements <Type> <dir>`：
+   基于 AST（不用 `grep`），默认是传递性的 —— 间接匹配会带 `[via Parent]`
+   标记。加 `--direct` 只显示直接子类。
 
-只有当 `show` 给了你签名但还需要周围的上下文时，再回退到完整读取文件。
-outline 中的 `L<start>-<end>` 范围可以直接作为精确的 offset，如果你的
-编辑器的读取工具支持的话。
+只有当 `show` 给出的方法体不足以提供所需上下文时，才回退到完整读取。
 
-**解析错误。** 如果 outline 的头部出现 `# WARNING: N parse errors —
-output may be incomplete` 这样一行，说明该文件存在语法漏洞 —— 对这个
-文件要把 outline 视为不完整的，采取行动前直接读取受影响区域的源码。
+如果 outline 头部包含 `# WARNING: N parse errors`，说明该文件的 outline
+是不完整的 —— 直接读取受影响区域的源码。
 
-运行 `code-outline help` 查看各种标志和不常用选项。
+`code-outline help` 查看完整标志和冷门选项。
 ```
 
 ### 为什么有效
@@ -277,7 +273,25 @@ src/services/
 code-outline implements IDamageable src/
 ```
 
-基于 AST —— 不会被注释或无关引用干扰。
+基于 AST —— 不会被注释或无关引用干扰。**默认是传递性的**：如果
+`Puppy extends Dog extends Animal`，那么 `implements Animal` 会返回这三者，
+间接匹配会被附上链路注释：
+
+```
+# 3 match(es) for 'Animal' (incl. transitive):
+src/Animals.cs:5   class Dog : Animal
+src/Cats.cs:3      class Cat : Animal
+src/Puppies.cs:12  class Puppy : Dog          [via Dog]
+```
+
+加上 `--direct` / `-d` 可以只限定为直接子类（第一层）：
+
+```bash
+code-outline implements --direct IDamageable src/
+```
+
+搜索可以跨任意数量的文件和嵌套目录 —— 不依赖「文件名 = 类名」的约定。
+按类型名的最后一段匹配（泛型和 namespace 前缀会被剥离）。
 
 ---
 

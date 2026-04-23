@@ -168,42 +168,36 @@ agent. It will then prefer `code-outline` over reading full files.
 ### Prompt snippet (copy-paste)
 
 ```markdown
-## Code exploration — use `code-outline` for source + markdown files
+## Code exploration — prefer `code-outline` over full reads
 
-Before you open a `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`,
-`.java`, or `.md` file, call `code-outline` to see its shape. A full read
-is only for when you already know which body (or section) you want.
+For `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, and `.md`
+files, read structure with `code-outline` before opening full contents.
+Pull method bodies only once you know which ones you need.
 
-Workflow (stop at whichever step answers the question):
+Stop at the step that answers the question:
 
-1. **Unfamiliar directory or module** — `code-outline digest <dir>`
-   prints every file's classes and public methods on one page.
+1. **Unfamiliar directory** — `code-outline digest <dir>`: one-page map
+   of every file's types and public methods.
 
-2. **One file, structural view** — `code-outline <file>` lists signatures
-   with line ranges, no bodies. Typically 5–10× smaller than reading the
-   file.
+2. **One file's shape** — `code-outline <file>`: signatures with line
+   ranges, no bodies (5–10× smaller than a full read).
 
-3. **One specific method, class, or markdown section** — `code-outline
-   show <file> <SymbolName>`. Matching is suffix-based: `TakeDamage`
-   works, or use `PlayerController.TakeDamage` when the short name is
-   ambiguous. For markdown, the symbol is the heading text
-   (e.g. `show README.md "Running the tests"`). You can ask for several
-   at once in a single call, e.g.
-   `code-outline show Player.cs TakeDamage Heal Die`.
+3. **One method, class, or markdown section** — `code-outline show <file>
+   <Symbol>`. Suffix matching: `TakeDamage`, or `Player.TakeDamage` when
+   ambiguous. Multiple at once: `code-outline show Player.cs TakeDamage
+   Heal Die`. For markdown, the symbol is the heading text.
 
-4. **Who implements / extends a type** — `code-outline implements
-   <TypeName> <dir>` is AST-accurate; skip `grep` for this.
+4. **Who implements/extends a type** — `code-outline implements <Type>
+   <dir>`: AST-accurate (skip `grep`), transitive by default with
+   `[via Parent]` tags on indirect matches. Add `--direct` for level-1 only.
 
-Only fall back to reading the full file when `show` gives you the signature
-but you need the surrounding context. The `L<start>-<end>` range in the
-outline is a precise offset if your editor's read tool supports one.
+Fall back to a full read only when you need context beyond the body
+`show` returned.
 
-**Parse errors.** If the outline header includes a `# WARNING: N parse
-errors — output may be incomplete` line, the file has syntax holes —
-treat the outline as partial for that file and read the source directly
-for the affected region before acting on it.
+If the outline header contains `# WARNING: N parse errors`, the outline
+for that file is partial — read the source directly for the affected region.
 
-Run `code-outline help` for flags and less-common options.
+`code-outline help` for flags and rare options.
 ```
 
 ### Why this helps
@@ -285,6 +279,26 @@ code-outline implements IDamageable src/
 ```
 
 AST-based — no false positives from comments or unrelated mentions.
+**Transitive by default**: if `Puppy extends Dog extends Animal`, then
+`implements Animal` returns all three, with an annotation on indirect
+matches:
+
+```
+# 3 match(es) for 'Animal' (incl. transitive):
+src/Animals.cs:5   class Dog : Animal
+src/Cats.cs:3      class Cat : Animal
+src/Puppies.cs:12  class Puppy : Dog          [via Dog]
+```
+
+Add `--direct` / `-d` to restrict to level-1 subclasses only:
+
+```bash
+code-outline implements --direct IDamageable src/
+```
+
+The search works across any number of files and nested directories —
+no reliance on filename↔classname convention. Matching is by the last
+segment of the type name (stripping generics and namespace prefixes).
 
 ---
 
