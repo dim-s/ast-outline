@@ -131,6 +131,13 @@ class ImplMatch:
     kind: str
     name: str
     bases: list[str]
+    # Transitive chain from the queried target down to this match's
+    # immediate parent. Empty for direct matches. For a 2-level chain
+    # `Animal → Dog → Puppy`, Puppy's via is `["Dog"]`. For
+    # `Animal → Dog → Quadruped → Pomeranian`, Pomeranian's via is
+    # `["Dog", "Quadruped"]`. Only the first discovered path is kept
+    # when a class inherits the target through multiple branches.
+    via: list[str] = field(default_factory=list)
 
 
 # --- Renderers ------------------------------------------------------------
@@ -506,34 +513,94 @@ def _trail_matches(trail: list[str], parts: list[str]) -> bool:
     return trail[-len(parts):] == parts
 
 
-def find_implementations(results: list[ParseResult], type_name: str) -> list[ImplMatch]:
-    """Find all types in the batch whose base list contains `type_name`
-    (last segment, generic-stripped). Direct inheritance/implementation only.
+def find_implementations(
+    results: list[ParseResult],
+    type_name: str,
+    *,
+    transitive: bool = True,
+) -> list[ImplMatch]:
+    """Find all types in the batch that inherit / implement `type_name`.
+
+    Matching is suffix-based on the last (generic-stripped) segment, so
+    `Animal` matches `com.example.Animal` and `Animal<T>`.
+
+    `transitive=True` (default) returns direct matches **and** anything
+    that reaches the target through an intermediate type — e.g.
+    `Puppy → Dog → Animal` includes Puppy with `via=["Dog"]`. Set
+    `transitive=False` for direct-only matches.
+
+    Enums are skipped — they can implement interfaces in Java/C# but
+    "what extends this enum" is vanishingly rare as a query and polluting
+    results with enum matches is usually noise.
+
+    Cycle-safe: a class is visited at most once even if the graph has
+    cycles (A extends B, B extends A) or diamond inheritance; the first
+    discovered path wins.
     """
     target = _normalize_type_name(type_name)
-    out: list[ImplMatch] = []
+
+    # Flatten every candidate type declaration from all files into one
+    # list; we'll iterate it multiple times for the BFS.
+    all_types: list[tuple[Path, Declaration]] = []
     for r in results:
-        _impl_walk(r.declarations, r.path, target, out)
+        _collect_candidate_types(r.declarations, r.path, all_types)
+
+    # Level 0 — direct matches: bases[] contains the target.
+    direct: list[ImplMatch] = []
+    for path, d in all_types:
+        if target in (_normalize_type_name(b) for b in d.bases):
+            direct.append(_impl_match(path, d, via=[]))
+
+    if not transitive:
+        return direct
+
+    # Level 1+ — BFS outward. `frontier` is the set of "new parents" whose
+    # own subclasses should be picked up as transitive matches.
+    out: list[ImplMatch] = list(direct)
+    seen: set[tuple[str, int]] = {(m.path, m.start_line) for m in direct}
+    frontier: list[ImplMatch] = list(direct)
+    while frontier:
+        next_frontier: list[ImplMatch] = []
+        for parent in frontier:
+            parent_name = _normalize_type_name(parent.name)
+            for path, d in all_types:
+                key = (str(path), d.start_line)
+                if key in seen:
+                    continue
+                if parent_name in (_normalize_type_name(b) for b in d.bases):
+                    chain = parent.via + [parent.name]
+                    m = _impl_match(path, d, via=chain)
+                    seen.add(key)
+                    out.append(m)
+                    next_frontier.append(m)
+        frontier = next_frontier
     return out
 
 
-def _impl_walk(decls: list[Declaration], path: Path, target: str, out: list[ImplMatch]) -> None:
+def _collect_candidate_types(
+    decls: list[Declaration],
+    path: Path,
+    out: list[tuple[Path, Declaration]],
+) -> None:
+    """Flatten every non-enum TYPE_KIND declaration in the tree into
+    `out` paired with its source path. Recurses into nested types."""
     for d in decls:
         if d.kind in TYPE_KINDS and d.kind != KIND_ENUM:
-            normalized = [_normalize_type_name(b) for b in d.bases]
-            if target in normalized:
-                out.append(
-                    ImplMatch(
-                        path=str(path),
-                        start_line=d.start_line,
-                        end_line=d.end_line,
-                        kind=d.kind,
-                        name=d.name,
-                        bases=d.bases,
-                    )
-                )
+            out.append((path, d))
         if d.children:
-            _impl_walk(d.children, path, target, out)
+            _collect_candidate_types(d.children, path, out)
+
+
+def _impl_match(path: Path, d: Declaration, *, via: list[str]) -> ImplMatch:
+    return ImplMatch(
+        path=str(path),
+        start_line=d.start_line,
+        end_line=d.end_line,
+        kind=d.kind,
+        name=d.name,
+        bases=d.bases,
+        via=via,
+    )
 
 
 def _normalize_type_name(name: str) -> str:

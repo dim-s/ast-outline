@@ -52,6 +52,12 @@ def main(argv: list[str] | None = None) -> int:
     p_impl = sub.add_parser("implements", help="Find types inheriting/implementing a given type")
     p_impl.add_argument("type", help="Target type name, e.g. `IDamageable`")
     p_impl.add_argument("paths", nargs="+", help="Directories or files to search")
+    p_impl.add_argument(
+        "--direct",
+        "-d",
+        action="store_true",
+        help="Show only direct subclasses / implementations (skip transitive)",
+    )
 
     p_help = sub.add_parser("help", help="Show usage guide with examples")
     p_help.add_argument(
@@ -210,14 +216,26 @@ def _cmd_implements(args) -> int:
     results, errors = _parse_paths(paths)
     for f, e in errors:
         print(f"# WARN parsing {f}: {e}", file=sys.stderr)
-    matches = find_implementations(results, args.type)
+    transitive = not args.direct
+    matches = find_implementations(results, args.type, transitive=transitive)
     if not matches:
-        print(f"# No direct implementations/subclasses of '{args.type}' found.", file=sys.stderr)
+        scope = "direct " if args.direct else ""
+        print(
+            f"# No {scope}implementations/subclasses of '{args.type}' found.",
+            file=sys.stderr,
+        )
         return 1
-    print(f"# {len(matches)} match(es) for '{args.type}':")
+    scope_label = "direct match(es)" if args.direct else "match(es)"
+    suffix = "" if args.direct else " (incl. transitive)"
+    print(f"# {len(matches)} {scope_label} for '{args.type}'{suffix}:")
     for m in matches:
         bases = ", ".join(m.bases)
-        print(f"{m.path}:{m.start_line}  {m.kind} {m.name} : {bases}")
+        line = f"{m.path}:{m.start_line}  {m.kind} {m.name} : {bases}"
+        # Annotate transitive matches with the chain from the target's
+        # first direct subclass down to this match's immediate parent.
+        if m.via:
+            line += f"          [via {' → '.join(m.via)}]"
+        print(line)
     return 0
 
 

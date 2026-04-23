@@ -231,4 +231,74 @@ def test_implements_no_matches_exits_1(fixtures_dir, capsys):
     rc = main(["implements", "TotallyUnrelatedType", str(fixtures_dir)])
     captured = capsys.readouterr()
     assert rc == 1
-    assert "no direct" in captured.err.lower()
+    # Transitive is default, so the "not found" message drops the word "direct"
+    assert "no implementations" in captured.err.lower()
+
+
+def test_implements_default_header_mentions_transitive(java_dir, capsys):
+    """Default (transitive) mode header should say `(incl. transitive)`."""
+    rc = main(["implements", "Animal", str(java_dir / "hierarchy.java")])
+    out = capsys.readouterr().out
+    assert rc == 0
+    # Header on the first line
+    first = out.splitlines()[0]
+    assert "match(es) for 'Animal'" in first
+    assert "incl. transitive" in first
+
+
+def test_implements_default_finds_transitive_matches(java_dir, capsys):
+    """Grandchildren should appear in the default output with a [via ...] tag."""
+    rc = main(["implements", "Animal", str(java_dir / "hierarchy.java")])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Pomeranian" in out
+    assert "Puppy" in out
+    # [via Dog] for level-1 transitive, [via Dog → Puppy] for level-2
+    assert "[via Dog]" in out
+    assert "[via Dog → Puppy]" in out
+
+
+def test_implements_direct_flag_suppresses_transitive(java_dir, capsys):
+    """--direct mode: header says `direct match(es)`, grandchildren absent."""
+    rc = main(["implements", "--direct", "Animal", str(java_dir / "hierarchy.java")])
+    out = capsys.readouterr().out
+    assert rc == 0
+    first = out.splitlines()[0]
+    assert "direct match(es)" in first
+    assert "incl. transitive" not in first
+    assert "Dog" in out
+    assert "Cat" in out
+    # Grandchild should NOT appear
+    assert "Pomeranian" not in out
+    assert "[via " not in out
+
+
+def test_implements_short_d_alias_works(java_dir, capsys):
+    """`-d` is the short alias for `--direct`."""
+    rc = main(["implements", "-d", "Animal", str(java_dir / "hierarchy.java")])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "direct match(es)" in out.splitlines()[0]
+
+
+def test_implements_no_direct_matches_message(csharp_dir, capsys):
+    """With --direct and no hits, the error message uses the word 'direct'."""
+    rc = main(["implements", "--direct", "NoSuchBase", str(csharp_dir)])
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "no direct" in err.lower()
+
+
+def test_implements_crosses_directories(java_dir, capsys):
+    """The multidir/ fixture spreads base + subclasses across 3 directories.
+    Running implements from the parent dir should stitch the chain back together."""
+    rc = main(["implements", "Animal", str(java_dir / "multidir")])
+    out = capsys.readouterr().out
+    assert rc == 0
+    # Should find Dog (mammals/), Cat (felines/), Puppy (mammals/, transitive)
+    assert "mammals/Dog.java" in out
+    assert "felines/Cat.java" in out
+    assert "mammals/Puppy.java" in out
+    # Puppy is transitive via Dog → annotation present
+    puppy_line = next(ln for ln in out.splitlines() if "Puppy" in ln)
+    assert "[via Dog]" in puppy_line
