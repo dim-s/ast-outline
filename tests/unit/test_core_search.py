@@ -72,6 +72,59 @@ def test_find_symbols_python_includes_decorators(python_dir):
     assert "def compute" in match.source
 
 
+# --- ancestor_signatures (breadcrumbs for `show`) ------------------------
+
+
+def test_find_symbols_populates_ancestor_signatures_for_nested(csharp_dir):
+    """A method on a class inside a namespace reports both enclosing
+    signatures, outer-to-inner."""
+    r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
+    [match] = find_symbols(r, "HeroController.TakeDamage")
+    assert len(match.ancestor_signatures) == 2
+    outer, inner = match.ancestor_signatures
+    assert outer.startswith("namespace ")
+    assert "class HeroController" in inner
+
+
+def test_find_symbols_top_level_has_no_ancestors():
+    """A top-level declaration (no enclosing type/namespace) reports empty
+    ancestor_signatures."""
+    from pathlib import Path
+    fixtures = Path(__file__).parent.parent / "fixtures"
+    from code_outline.adapters.java import JavaAdapter
+    r = JavaAdapter().parse(fixtures / "java" / "no_package.java")
+    [cls_match] = [m for m in find_symbols(r, "Top") if m.kind == "class"]
+    assert cls_match.ancestor_signatures == []
+
+
+def test_find_symbols_deeply_nested_reports_full_chain(java_dir):
+    """Method on a nested class inside a package: package → outer → inner."""
+    from code_outline.adapters.java import JavaAdapter
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    # UserService.Inner.value — picks both the `value` field and the
+    # `value()` method; assert on the method one.
+    method_match = next(
+        m for m in find_symbols(r, "Inner.value") if m.kind == "method"
+    )
+    # ancestors: package, UserService, Inner
+    assert len(method_match.ancestor_signatures) == 3
+    assert method_match.ancestor_signatures[0].startswith("package ")
+    assert "class UserService" in method_match.ancestor_signatures[1]
+    assert "class Inner" in method_match.ancestor_signatures[2]
+
+
+def test_find_symbols_ancestor_signatures_strip_attributes(java_dir):
+    """Ancestor signatures must NOT contain the `@Annotation` prefix —
+    attrs live in a separate Declaration field and aren't in `.signature`.
+    Keeps the breadcrumb line short and readable."""
+    from code_outline.adapters.java import JavaAdapter
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    [match] = find_symbols(r, "UserService.save")
+    # UserService has @Service @Deprecated — should NOT leak into breadcrumb
+    for sig in match.ancestor_signatures:
+        assert not sig.lstrip().startswith("@")
+
+
 # --- find_implementations -----------------------------------------------
 
 

@@ -168,6 +168,12 @@ def _cmd_show(args) -> int:
             if args.no_doc:
                 src = _strip_leading_doc(src)
             print(f"# {path}:{m.start_line}-{m.end_line}  {m.qualified_name}  ({m.kind})")
+            # Breadcrumb: show the enclosing namespace/class chain so the agent
+            # knows what the extracted body is nested inside — without having
+            # to call `outline` separately. Skipped for top-level symbols.
+            if m.ancestor_signatures:
+                chain = " → ".join(m.ancestor_signatures)
+                print(f"# in: {chain}")
             print(src)
     return 0 if any_found else 1
 

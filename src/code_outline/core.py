@@ -109,6 +109,13 @@ class SymbolMatch:
     start_line: int
     end_line: int
     source: str
+    # Signatures of the enclosing ancestor declarations, outer → inner
+    # (e.g. ["namespace Foo.Bar", "public class Player : MonoBehaviour"] for
+    # a method on `Player`). Rendered by `show` as a breadcrumb so the agent
+    # knows what the extracted body is nested inside. Empty for top-level
+    # symbols. Attributes/annotations are already stripped from each signature
+    # (adapters store the bare signature in Declaration.signature).
+    ancestor_signatures: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -374,7 +381,7 @@ def find_symbols(result: ParseResult, symbol: str) -> list[SymbolMatch]:
     """
     parts = symbol.split(".")
     matches: list[SymbolMatch] = []
-    _search_walk(result.declarations, result.source, [], parts, matches)
+    _search_walk(result.declarations, result.source, [], [], parts, matches)
     return matches
 
 
@@ -382,6 +389,7 @@ def _search_walk(
     decls: list[Declaration],
     src: bytes,
     trail: list[str],
+    ancestors: list[Declaration],
     parts: list[str],
     out: list[SymbolMatch],
 ) -> None:
@@ -398,10 +406,11 @@ def _search_walk(
                     start_line=d.start_line,
                     end_line=d.end_line,
                     source=src[start:end].decode("utf8", errors="replace"),
+                    ancestor_signatures=[a.signature for a in ancestors if a.signature],
                 )
             )
         if d.children:
-            _search_walk(d.children, src, new_trail, parts, out)
+            _search_walk(d.children, src, new_trail, ancestors + [d], parts, out)
 
 
 def _trail_matches(trail: list[str], parts: list[str]) -> bool:

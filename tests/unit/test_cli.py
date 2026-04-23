@@ -96,6 +96,20 @@ def test_show_single_symbol(csharp_dir, capsys):
     assert "OnHealthChanged" in out  # part of the method body
 
 
+def test_show_prints_ancestor_breadcrumb(csharp_dir, capsys):
+    """The `# in:` line lists enclosing namespace/type so the agent knows
+    what the extracted body is nested inside, without a second `outline`."""
+    rc = main(["show", str(csharp_dir / "unity_behaviour.cs"), "HeroController.TakeDamage"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    # Breadcrumb line starts with `# in:` and contains both ancestor signatures
+    in_lines = [ln for ln in out.splitlines() if ln.startswith("# in:")]
+    assert len(in_lines) == 1
+    assert "namespace" in in_lines[0]
+    assert "HeroController" in in_lines[0]
+    assert "→" in in_lines[0]  # separator between outer and inner
+
+
 def test_show_multiple_symbols(csharp_dir, capsys):
     rc = main(
         [
