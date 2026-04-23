@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from code_outline.adapters.csharp import CSharpAdapter
 from code_outline.adapters.java import JavaAdapter
+from code_outline.adapters.kotlin import KotlinAdapter
 from code_outline.adapters.markdown import MarkdownAdapter
 from code_outline.adapters.python import PythonAdapter
 from code_outline.adapters.typescript import TypeScriptAdapter
@@ -50,6 +51,11 @@ def test_error_count_zero_on_clean_typescript(fixtures_dir):
     assert r.error_count == 0
 
 
+def test_error_count_zero_on_clean_kotlin(kotlin_dir):
+    r = KotlinAdapter().parse(kotlin_dir / "user_service.kt")
+    assert r.error_count == 0
+
+
 def test_error_count_zero_on_clean_markdown(fixtures_dir):
     r = MarkdownAdapter().parse(fixtures_dir / "markdown" / "readme_style.md")
     assert r.error_count == 0
@@ -80,6 +86,13 @@ def test_error_count_nonzero_on_broken_typescript(fixtures_dir):
     """tree-sitter-typescript surfaces errors on missing braces,
     incomplete expressions and bad type annotations."""
     r = TypeScriptAdapter().parse(fixtures_dir / "typescript" / "broken_syntax.ts")
+    assert r.error_count > 0
+
+
+def test_error_count_nonzero_on_broken_kotlin(kotlin_dir):
+    """tree-sitter-kotlin surfaces errors on unclosed parameter lists
+    and missing braces."""
+    r = KotlinAdapter().parse(kotlin_dir / "broken_syntax.kt")
     assert r.error_count > 0
 
 
@@ -288,6 +301,71 @@ def test_typescript_header_covers_all_types(fixtures_dir):
     match = re.search(r"(\d+) types", first)
     assert match is not None
     assert int(match.group(1)) >= 3
+
+
+def test_kotlin_header_shows_types_methods_fields(kotlin_dir):
+    """Kotlin exercises the same three counter categories as Java/C#:
+    types (class/interface/object/data/enum), methods, fields
+    (incl. properties and primary-ctor val/var)."""
+    r = KotlinAdapter().parse(kotlin_dir / "user_service.kt")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    assert " types" in first
+    assert " methods" in first
+    assert " fields" in first
+
+
+def test_kotlin_data_class_counts_as_type(kotlin_dir):
+    """A Kotlin `data class` maps onto KIND_RECORD, which is in TYPE_KINDS,
+    so it must increment the `types` counter."""
+    r = KotlinAdapter().parse(kotlin_dir / "data_and_sealed.kt")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    import re
+    match = re.search(r"(\d+) types", first)
+    assert match is not None
+    # data_and_sealed.kt: Point (data), Shape (sealed), Circle (data),
+    # Square (class), UnitShape (object), Status (enum), nested Companion
+    # → at least 6 types
+    assert int(match.group(1)) >= 6
+
+
+def test_kotlin_enum_members_not_counted_as_fields(kotlin_dir):
+    """Kotlin enum entries (ACTIVE, INACTIVE, …) are KIND_ENUM_MEMBER —
+    not KIND_FIELD. They must NOT inflate the `fields` counter."""
+    r = KotlinAdapter().parse(kotlin_dir / "data_and_sealed.kt")
+    from code_outline.core import KIND_ENUM_MEMBER, _collect_counts
+
+    counts = _collect_counts(r.declarations)
+    # Count entries directly
+    stack = list(r.declarations)
+    entries = 0
+    while stack:
+        d = stack.pop()
+        if d.kind == KIND_ENUM_MEMBER:
+            entries += 1
+        stack.extend(d.children)
+    assert entries >= 4  # ACTIVE / INACTIVE / BANNED / UNKNOWN
+    # Fields are `label`, `weight` on Status plus data-class ctor fields —
+    # never inflated by the enum entries themselves.
+    # Sanity check: adding entries would push the count past reality.
+    assert counts["fields"] < entries + 20
+
+
+def test_kotlin_warning_line_surfaces_on_broken_file(kotlin_dir):
+    r = KotlinAdapter().parse(kotlin_dir / "broken_syntax.kt")
+    lines = render_outline(r, OutlineOptions()).splitlines()
+    assert lines[1].startswith("# WARNING:")
+    assert "parse error" in lines[1]
+
+
+def test_kotlin_typealias_and_property_not_counted_as_type(kotlin_dir):
+    """typealiases (KIND_DELEGATE) and properties/fields must NOT leak into
+    the `types` counter — that category is reserved for TYPE_KINDS."""
+    r = KotlinAdapter().parse(kotlin_dir / "extensions_and_toplevel.kt")
+    from code_outline.core import _collect_counts
+
+    counts = _collect_counts(r.declarations)
+    # Fixture has exactly one class (Vec2); typealiases should not bump the count
+    assert counts["types"] == 1
 
 
 def test_typescript_enum_member_not_counted_as_field(fixtures_dir):

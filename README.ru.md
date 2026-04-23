@@ -70,6 +70,7 @@ embeddings и vector search. Подход надёжный, но дорогой:
 | TypeScript | `.ts`, `.tsx` |
 | JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` (парсятся через TS-грамматику) |
 | Java       | `.java` — классы, интерфейсы, `@interface`, enum'ы, records, sealed-иерархии, generics, throws, Javadoc |
+| Kotlin     | `.kt`, `.kts` — классы, интерфейсы, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation`-классы, extension-функции, `suspend` / `inline` / `const` / `lateinit`, generics с `where`-ограничениями, `typealias`, KDoc |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — оглавление по заголовкам + код-блоки |
 
 Добавление нового языка — это один новый файл-адаптер. См.
@@ -182,8 +183,8 @@ code-outline prompt | pbcopy   # буфер обмена в macOS
 ```markdown
 ## Изучение кода — выбирай `code-outline` вместо полного чтения
 
-Для файлов `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java` и
-`.md` сначала читай структуру через `code-outline`, а не полное содержимое.
+Для файлов `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`,
+`.kts` и `.md` сначала читай структуру через `code-outline`, а не полное содержимое.
 Тела методов — только когда уже знаешь, какое именно тело тебе нужно.
 
 Останавливайся на шаге, который ответил на вопрос:
@@ -449,11 +450,11 @@ uv pip install -e ".[dev]"
 .venv/bin/pytest -k file_scoped_namespace -v
 ```
 
-Сьют (200+ тестов) покрывает все адаптеры (C#, Python, TypeScript/JS,
-Java, Markdown), языко-агностичные рендереры, поиск по символам и CLI
-end-to-end. Фикстуры лежат в `tests/fixtures/`; тесты не выходят за эту
-директорию. Любая новая фича должна приходить с тестом; новый язык — с
-отдельной папкой фикстур и файлом `tests/unit/test_<lang>_adapter.py`.
+Сьют (350+ тестов) покрывает все адаптеры (C#, Python, TypeScript/JS,
+Java, Kotlin, Markdown), языко-агностичные рендереры, поиск по символам и
+CLI end-to-end. Фикстуры лежат в `tests/fixtures/`; тесты не выходят за
+эту директорию. Любая новая фича должна приходить с тестом; новый язык —
+с отдельной папкой фикстур и файлом `tests/unit/test_<lang>_adapter.py`.
 
 ### Добавить новый язык
 
@@ -468,6 +469,7 @@ end-to-end. Фикстуры лежат в `tests/fixtures/`; тесты не в
 
 - [x] Адаптер TypeScript / JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`)
 - [x] Адаптер Java (`.java`) — классы, интерфейсы, `@interface`, enum'ы, records, sealed-иерархии, generics, throws, Javadoc
+- [x] Адаптер Kotlin (`.kt`, `.kts`) — классы, интерфейсы, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation`-классы, extension-функции, `suspend` / `inline` / `const` / `lateinit`, generics с `where`, `typealias`, KDoc
 - [x] Адаптер Markdown (`.md`, `.markdown`, `.mdx`, `.mdown`) — TOC из заголовков + код-блоки
 - [ ] Адаптер Go
 - [ ] Адаптер Rust

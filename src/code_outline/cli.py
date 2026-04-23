@@ -304,7 +304,7 @@ def _strip_leading_doc(src: str) -> str:
 
 
 GUIDE_GENERAL = """\
-code-outline — structural outline for source files (C# and Python)
+code-outline — structural outline for source files
 
 WHAT IT DOES
     Prints class/method/function/field signatures with line numbers,
@@ -313,8 +313,12 @@ WHAT IT DOES
     reading (or editing) specific parts.
 
 SUPPORTED LANGUAGES
-    C#      .cs
-    Python  .py, .pyi
+    C#          .cs
+    Python      .py, .pyi
+    TypeScript  .ts, .tsx, .js, .jsx
+    Java        .java
+    Kotlin      .kt, .kts
+    Markdown    .md
 
 COMMANDS
     code-outline outline <paths...>          Print outline of files or dirs
@@ -370,7 +374,8 @@ USAGE
     code-outline <paths...> [flags]
 
 SUPPORTED
-    C# (.cs), Python (.py, .pyi)
+    C# (.cs), Python (.py, .pyi), TypeScript/JavaScript (.ts/.tsx/.js/.jsx),
+    Java (.java), Kotlin (.kt, .kts), Markdown (.md)
 
 FLAGS
     --no-private    Hide private members (Python: names starting with _)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from code_outline.adapters.csharp import CSharpAdapter
 from code_outline.adapters.java import JavaAdapter
+from code_outline.adapters.kotlin import KotlinAdapter
 from code_outline.adapters.python import PythonAdapter
 from code_outline.core import (
     find_implementations,
@@ -224,6 +225,32 @@ def test_transitive_default_typescript(fixtures_dir):
     assert {"IReadService", "UserService"}.issubset(inames)
 
 
+def test_transitive_default_kotlin(kotlin_dir):
+    """Kotlin: Animal ← Dog ← Puppy ← Pomeranian plus `object Rex : Dog(...)`
+    and `data class Husky : Dog(...)`. All five subclasses should surface;
+    the two grandchildren carry a `[via Dog]` annotation."""
+    r = KotlinAdapter().parse(kotlin_dir / "hierarchy.kt")
+    hits = find_implementations([r], "Animal")
+    names = {h.name for h in hits}
+    # Direct children of Animal: Dog + Skater; transitive: Puppy, Pomeranian, Rex, Husky
+    assert {"Dog", "Skater", "Puppy", "Pomeranian", "Rex", "Husky"}.issubset(names)
+
+    by_name = {h.name: h for h in hits}
+    assert by_name["Dog"].via == []
+    assert by_name["Skater"].via == []
+    assert by_name["Puppy"].via == ["Dog"]
+    assert by_name["Pomeranian"].via == ["Dog", "Puppy"]
+    # `object Rex` and `data class Husky` still appear in implements results —
+    # objects and data classes both map onto types the BFS walks over.
+    assert by_name["Rex"].via == ["Dog"]
+    assert by_name["Husky"].via == ["Dog"]
+
+    # Interface inheritance — `class Skater : Animal("s"), Movable`.
+    ihits = find_implementations([r], "Movable")
+    inames = {h.name for h in ihits}
+    assert "Skater" in inames
+
+
 # --- --direct flag behaviour --------------------------------------------
 
 
@@ -247,6 +274,22 @@ def test_direct_flag_python(python_dir):
     direct = find_implementations([r], "Animal", transitive=False)
     names = {h.name for h in direct}
     assert names == {"Dog", "Cat"}
+
+
+def test_direct_flag_kotlin(kotlin_dir):
+    """Kotlin `--direct` trims grandchildren and transitive object/data subclasses."""
+    r = KotlinAdapter().parse(kotlin_dir / "hierarchy.kt")
+    direct = find_implementations([r], "Animal", transitive=False)
+    names = {h.name for h in direct}
+    assert "Dog" in names
+    assert "Skater" in names
+    # Grandchildren of Animal (via Dog) must be absent
+    assert "Puppy" not in names
+    assert "Pomeranian" not in names
+    assert "Rex" not in names
+    assert "Husky" not in names
+    for h in direct:
+        assert h.via == []
 
 
 # --- Cross-file / cross-directory ---------------------------------------
@@ -275,6 +318,32 @@ def test_transitive_walks_across_files_and_directories(java_dir):
     assert puppy.path.endswith("Puppy.java")
 
     # Dog is in a different directory than Animal (mammals vs base).
+    dog = next(h for h in hits if h.name == "Dog")
+    cat = next(h for h in hits if h.name == "Cat")
+    assert "mammals" in dog.path
+    assert "felines" in cat.path
+
+
+def test_transitive_walks_across_directories_kotlin(kotlin_dir):
+    """Kotlin variant of the cross-directory test — Animal in base/, Dog &
+    Puppy in mammals/, Cat in felines/. BFS must connect them regardless
+    of directory layout or Kotlin's file-package decoupling (a Kotlin
+    file can contain any package; there's no filename↔class mapping)."""
+    from code_outline.adapters import collect_files
+
+    multidir = kotlin_dir / "multidir"
+    files = collect_files([multidir])
+    results = [KotlinAdapter().parse(f) for f in files if f.suffix in {".kt", ".kts"}]
+
+    hits = find_implementations(results, "Animal")
+    names = {h.name for h in hits}
+    assert {"Dog", "Cat", "Puppy"}.issubset(names), f"got {names}"
+
+    puppy = next(h for h in hits if h.name == "Puppy")
+    assert puppy.via == ["Dog"]
+    assert "mammals" in puppy.path
+    assert puppy.path.endswith("Puppy.kt")
+
     dog = next(h for h in hits if h.name == "Dog")
     cat = next(h for h in hits if h.name == "Cat")
     assert "mammals" in dog.path

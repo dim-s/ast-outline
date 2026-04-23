@@ -11,6 +11,7 @@ from typing import Optional
 from .base import LanguageAdapter
 from .csharp import CSharpAdapter
 from .java import JavaAdapter
+from .kotlin import KotlinAdapter
 from .markdown import MarkdownAdapter
 from .python import PythonAdapter
 from .typescript import TypeScriptAdapter
@@ -21,6 +22,7 @@ ADAPTERS: list[LanguageAdapter] = [
     PythonAdapter(),
     TypeScriptAdapter(),
     JavaAdapter(),
+    KotlinAdapter(),
     MarkdownAdapter(),
 ]
 

@@ -1,7 +1,7 @@
 [project]
 name = "code-outline"
 version = "0.2.0b0"
-description = "Structural outline for source files (C#, Python, TypeScript/JavaScript, Java, Markdown) — classes, methods, signatures without bodies. Optimized for LLM coding agents."
+description = "Structural outline for source files (C#, Python, TypeScript/JavaScript, Java, Kotlin, Markdown) — classes, methods, signatures without bodies. Optimized for LLM coding agents."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -19,6 +19,7 @@ keywords = [
     "typescript",
     "javascript",
     "java",
+    "kotlin",
     "markdown",
     "code-navigation",
 ]
@@ -40,6 +41,7 @@ dependencies = [
     "tree-sitter-python>=0.23",
     "tree-sitter-typescript>=0.23",
     "tree-sitter-java>=0.23",
+    "tree-sitter-kotlin>=1.1",
     "tree-sitter-markdown>=0.3",
 ]
 
