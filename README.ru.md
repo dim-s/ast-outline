@@ -69,6 +69,7 @@ embeddings и vector search. Подход надёжный, но дорогой:
 | Python     | `.py`, `.pyi` |
 | TypeScript | `.ts`, `.tsx` |
 | JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` (парсятся через TS-грамматику) |
+| Java       | `.java` — классы, интерфейсы, `@interface`, enum'ы, records, sealed-иерархии, generics, throws, Javadoc |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — оглавление по заголовкам + код-блоки |
 
 Добавление нового языка — это один новый файл-адаптер. См.
@@ -172,7 +173,7 @@ code-outline help show
 ## Изучение кода — для исходников и markdown используй `code-outline`
 
 Прежде чем открывать файл `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`,
-`.jsx` или `.md`, запусти `code-outline` чтобы увидеть его структуру.
+`.jsx`, `.java` или `.md`, запусти `code-outline` чтобы увидеть его структуру.
 Полное чтение — только когда ты уже знаешь, какое именно тело метода
 (или секцию документа) тебе нужно.
 
@@ -378,11 +379,11 @@ uv pip install -e ".[dev]"
 .venv/bin/pytest -k file_scoped_namespace -v
 ```
 
-Сьют (~100 тестов) покрывает адаптеры C# и Python, языко-агностичные
-рендереры, поиск по символам и CLI end-to-end. Фикстуры лежат в
-`tests/fixtures/`; тесты не выходят за эту директорию. Любая новая фича
-должна приходить с тестом; новый язык — с отдельной папкой фикстур и
-файлом `tests/unit/test_<lang>_adapter.py`.
+Сьют (200+ тестов) покрывает все адаптеры (C#, Python, TypeScript/JS,
+Java, Markdown), языко-агностичные рендереры, поиск по символам и CLI
+end-to-end. Фикстуры лежат в `tests/fixtures/`; тесты не выходят за эту
+директорию. Любая новая фича должна приходить с тестом; новый язык — с
+отдельной папкой фикстур и файлом `tests/unit/test_<lang>_adapter.py`.
 
 ### Добавить новый язык
 
@@ -396,6 +397,7 @@ uv pip install -e ".[dev]"
 ## Roadmap
 
 - [x] Адаптер TypeScript / JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`)
+- [x] Адаптер Java (`.java`) — классы, интерфейсы, `@interface`, enum'ы, records, sealed-иерархии, generics, throws, Javadoc
 - [x] Адаптер Markdown (`.md`, `.markdown`, `.mdx`, `.mdown`) — TOC из заголовков + код-блоки
 - [ ] Адаптер Go
 - [ ] Адаптер Rust

@@ -22,3 +22,8 @@ def csharp_dir() -> Path:
 @pytest.fixture(scope="session")
 def python_dir() -> Path:
     return FIXTURES_DIR / "python"
+
+
+@pytest.fixture(scope="session")
+def java_dir() -> Path:
+    return FIXTURES_DIR / "java"

@@ -65,6 +65,7 @@ Agent: code-outline show Player.cs TakeDamage # 只取需要的方法体
 | Python     | `.py`、`.pyi` |
 | TypeScript | `.ts`、`.tsx` |
 | JavaScript | `.js`、`.jsx`、`.mjs`、`.cjs`（由 TypeScript 语法解析） |
+| Java       | `.java` —— 类、接口、`@interface`、枚举、记录（record）、sealed 继承层级、泛型、throws、Javadoc |
 | Markdown   | `.md`、`.markdown`、`.mdx`、`.mdown` —— 标题目录 + 代码块 |
 
 新增语言只需要加一个适配器文件。见
@@ -166,8 +167,8 @@ Agent 就会优先用 `code-outline` 而不是直接读完整文件。
 ```markdown
 ## 代码探索 —— 源码与 markdown 都先用 `code-outline`
 
-打开任何 `.cs`、`.py`、`.pyi`、`.ts`、`.tsx`、`.js`、`.jsx` 或 `.md`
-文件之前，先用 `code-outline` 看一下它的结构。完整读取只在你已经确定
+打开任何 `.cs`、`.py`、`.pyi`、`.ts`、`.tsx`、`.js`、`.jsx`、`.java`
+或 `.md` 文件之前，先用 `code-outline` 看一下它的结构。完整读取只在你已经确定
 需要某个方法体（或文档段落）时才用。
 
 工作流（哪一步能回答问题就停在哪一步）：
@@ -367,10 +368,11 @@ uv pip install -e ".[dev]"
 .venv/bin/pytest -k file_scoped_namespace -v
 ```
 
-套件（约 100 个测试）覆盖 C# 和 Python 适配器、与语言无关的渲染器、
-符号搜索以及端到端的 CLI。Fixture 放在 `tests/fixtures/`，测试不会越出
-该目录。任何新行为都应带上测试；新增语言时也应附带独立的 fixture
-目录和一份 `tests/unit/test_<lang>_adapter.py`。
+套件（200+ 个测试）覆盖全部适配器（C#、Python、TypeScript/JS、Java、
+Markdown）、与语言无关的渲染器、符号搜索以及端到端的 CLI。Fixture 放在
+`tests/fixtures/`，测试不会越出该目录。任何新行为都应带上测试；新增
+语言时也应附带独立的 fixture 目录和一份
+`tests/unit/test_<lang>_adapter.py`。
 
 ### 新增一门语言
 
@@ -384,6 +386,7 @@ uv pip install -e ".[dev]"
 ## 路线图
 
 - [x] TypeScript / JavaScript 适配器（`.ts`、`.tsx`、`.js`、`.jsx`、`.mjs`、`.cjs`）
+- [x] Java 适配器（`.java`）—— 类、接口、`@interface`、枚举、记录（record）、sealed 继承层级、泛型、throws、Javadoc
 - [x] Markdown 适配器（`.md`、`.markdown`、`.mdx`、`.mdown`）—— 标题目录 + 代码块
 - [ ] Go 适配器
 - [ ] Rust 适配器

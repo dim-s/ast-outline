@@ -1,7 +1,7 @@
 [project]
 name = "code-outline"
 version = "0.2.0b0"
-description = "Structural outline for source files (C# and Python) — classes, methods, signatures without bodies. Optimized for LLM coding agents."
+description = "Structural outline for source files (C#, Python, TypeScript/JavaScript, Java, Markdown) — classes, methods, signatures without bodies. Optimized for LLM coding agents."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -16,6 +16,10 @@ keywords = [
     "coding-agent",
     "csharp",
     "python",
+    "typescript",
+    "javascript",
+    "java",
+    "markdown",
     "code-navigation",
 ]
 classifiers = [
@@ -35,6 +39,7 @@ dependencies = [
     "tree-sitter-c-sharp>=0.23",
     "tree-sitter-python>=0.23",
     "tree-sitter-typescript>=0.23",
+    "tree-sitter-java>=0.23",
     "tree-sitter-markdown>=0.3",
 ]
 

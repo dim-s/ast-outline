@@ -68,6 +68,7 @@ the round-trips.**
 | Python     | `.py`, `.pyi` |
 | TypeScript | `.ts`, `.tsx` |
 | JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` (parsed by the TypeScript grammar) |
+| Java       | `.java` — classes, interfaces, `@interface`, enums, records, sealed hierarchies, generics, throws, Javadoc |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — heading TOC + fenced code blocks |
 
 Adding another language is a single new adapter file. See
@@ -169,9 +170,9 @@ agent. It will then prefer `code-outline` over reading full files.
 ```markdown
 ## Code exploration — use `code-outline` for source + markdown files
 
-Before you open a `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, or
-`.md` file, call `code-outline` to see its shape. A full read is only for
-when you already know which body (or section) you want.
+Before you open a `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`,
+`.java`, or `.md` file, call `code-outline` to see its shape. A full read
+is only for when you already know which body (or section) you want.
 
 Workflow (stop at whichever step answers the question):
 
@@ -376,9 +377,10 @@ uv pip install -e ".[dev]"
 .venv/bin/pytest -k file_scoped_namespace -v
 ```
 
-The suite (~100 tests) covers the C# and Python adapters, the
-language-agnostic renderers, symbol search, and the CLI end-to-end. Fixtures
-live under `tests/fixtures/`; tests never reach outside that directory.
+The suite (200+ tests) covers every adapter (C#, Python, TypeScript/JS,
+Java, Markdown), the language-agnostic renderers, symbol search, and the
+CLI end-to-end. Fixtures live under `tests/fixtures/`; tests never reach
+outside that directory.
 New behaviour should come with a test; new languages should ship with a
 dedicated fixture directory and a `tests/unit/test_<lang>_adapter.py` file.
 
@@ -394,6 +396,7 @@ Create `src/code_outline/adapters/<lang>.py` implementing the
 ## Roadmap
 
 - [x] TypeScript / JavaScript adapter (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`)
+- [x] Java adapter (`.java`) — classes, interfaces, `@interface`, enums, records, sealed hierarchies, generics, throws, Javadoc
 - [x] Markdown adapter (`.md`, `.markdown`, `.mdx`, `.mdown`) — heading TOC + code blocks
 - [ ] Go adapter
 - [ ] Rust adapter
