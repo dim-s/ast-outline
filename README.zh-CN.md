@@ -162,6 +162,15 @@ code-outline help show
 `AGENTS.md`、子 Agent 配置或任何引导编码 Agent 的系统提示里。之后
 Agent 就会优先用 `code-outline` 而不是直接读完整文件。
 
+同样的片段也随工具一起发布 —— `code-outline prompt` 会原样打印它，
+不用手动复制就能直接追加到项目的 agent 配置里：
+
+```bash
+code-outline prompt >> AGENTS.md
+code-outline prompt >> .claude/CLAUDE.md
+code-outline prompt | pbcopy   # macOS 剪贴板
+```
+
 ### 提示词片段（直接复制）
 
 ```markdown
@@ -292,6 +301,17 @@ code-outline implements --direct IDamageable src/
 
 搜索可以跨任意数量的文件和嵌套目录 —— 不依赖「文件名 = 类名」的约定。
 按类型名的最后一段匹配（泛型和 namespace 前缀会被剥离）。
+
+### `prompt` —— 打印 LLM agent 提示片段
+
+```bash
+code-outline prompt
+code-outline prompt >> AGENTS.md
+```
+
+打印规范的复制粘贴片段，用于引导 LLM 编码 agent 优先使用 `code-outline`
+而不是完整读取。英文，跨 Claude Opus 4.7 / Sonnet 4.6 / Haiku 4.5 通用。
+每次运行都能拿到当前版本的推荐片段。
 
 ---
 

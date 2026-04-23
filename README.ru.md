@@ -167,6 +167,16 @@ code-outline help show
 кодовым агентом. После этого агент будет использовать `code-outline`
 вместо полного чтения файлов.
 
+Тот же snippet идёт с утилитой — `code-outline prompt` печатает его
+as-is, так что можно сразу дописать в agent-конфиг проекта без ручного
+копипаста:
+
+```bash
+code-outline prompt >> AGENTS.md
+code-outline prompt >> .claude/CLAUDE.md
+code-outline prompt | pbcopy   # буфер обмена в macOS
+```
+
 ### Snippet для промпта (скопируй как есть)
 
 ```markdown
@@ -302,6 +312,18 @@ code-outline implements --direct IDamageable src/
 Поиск работает по любому количеству файлов и вложенных папок — не
 полагается на соглашение «имя_файла = имя_класса». Матчинг по последнему
 сегменту имени (generics и namespace-префикс стрипаются).
+
+### `prompt` — напечатать snippet для LLM-агента
+
+```bash
+code-outline prompt
+code-outline prompt >> AGENTS.md
+```
+
+Печатает canonical copy-paste snippet, который настраивает LLM-агента
+использовать `code-outline` вместо полного чтения. Английский,
+универсальный под Claude Opus 4.7 / Sonnet 4.6 / Haiku 4.5. Запуск
+команды гарантирует что ты получишь текущую рекомендованную версию.
 
 ---
 

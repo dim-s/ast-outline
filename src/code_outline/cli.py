@@ -5,6 +5,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from ._prompt import AGENT_PROMPT
 from .adapters import collect_files, get_adapter_for, supported_extensions
 from .core import (
     DigestOptions,
@@ -17,7 +18,7 @@ from .core import (
 )
 
 
-SUBCOMMANDS = {"outline", "show", "help", "digest", "implements"}
+SUBCOMMANDS = {"outline", "show", "help", "digest", "implements", "prompt"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -63,8 +64,13 @@ def main(argv: list[str] | None = None) -> int:
     p_help.add_argument(
         "topic",
         nargs="?",
-        choices=["outline", "show", "digest", "implements"],
+        choices=["outline", "show", "digest", "implements", "prompt"],
         help="Topic-specific help",
+    )
+
+    sub.add_parser(
+        "prompt",
+        help="Print the canonical copy-paste agent prompt snippet (English, universal)",
     )
 
     args = parser.parse_args(argv)
@@ -78,7 +84,21 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_digest(args)
     if args.cmd == "implements":
         return _cmd_implements(args)
+    if args.cmd == "prompt":
+        return _cmd_prompt(args)
     return _cmd_outline(args)
+
+
+def _cmd_prompt(_args) -> int:
+    """Print the canonical copy-paste LLM-agent prompt snippet verbatim.
+
+    No trailing newline muting — `print` adds one, matching the shape
+    expected by shell pipelines like `code-outline prompt >> AGENTS.md`.
+    """
+    # AGENT_PROMPT ends with `\n` already; `print` adds another → a
+    # single blank separator line, which is what agent-config files want.
+    print(AGENT_PROMPT, end="")
+    return 0
 
 
 def _add_outline_args(p: argparse.ArgumentParser) -> None:
@@ -301,6 +321,7 @@ COMMANDS
     code-outline show <file> <symbols...>    Print source of one or more symbols
     code-outline digest <paths...>           Compact public-API map of a dir
     code-outline implements <type> <paths>   Find subclasses/implementations
+    code-outline prompt                      Print the canonical agent prompt snippet
     code-outline help [topic]                Show this guide (or topic-specific)
 
 QUICK EXAMPLES
@@ -421,23 +442,55 @@ GUIDE_IMPLEMENTS = """\
 code-outline implements — find subclasses / implementations of a type
 
 USAGE
-    code-outline implements <TypeName> <paths...>
+    code-outline implements <TypeName> <paths...> [--direct]
 
 WHAT IT DOES
-    AST-based search for every class/struct/record/interface whose base
-    list directly references <TypeName>. Matching is done by the last
-    segment, stripping generic args — so `IDamageable` matches
-    `Game.Combat.IDamageable<T>`.
+    AST-based search across every parsed file for classes / structs /
+    records / interfaces that inherit or implement <TypeName>. Matching
+    is done by the last segment with generics stripped — so `IDamageable`
+    matches `Game.Combat.IDamageable<T>`.
 
     Python: works for `class Foo(Bar):` — the argument list is treated
     as the base list.
 
-    Only DIRECT inheritance/implementation is reported.
+    Transitive by default: `Puppy extends Dog extends Animal` — searching
+    `Animal` returns Dog AND Puppy (the latter tagged `[via Dog]`).
+    Add --direct / -d to restrict to first-level subclasses only.
+
+    Search walks across any number of files and nested directories —
+    no reliance on filename↔classname convention.
 
 EXAMPLES
     code-outline implements IDamageable Assets/Scripts
     code-outline implements MonoBehaviour Assets/Scripts/App/Audio
-    code-outline implements BaseValidator scripts/
+    code-outline implements --direct BaseService src/
+"""
+
+
+GUIDE_PROMPT = """\
+code-outline prompt — print the canonical agent prompt snippet
+
+USAGE
+    code-outline prompt
+
+WHAT IT DOES
+    Prints the copy-paste-ready markdown snippet that steers an LLM
+    coding agent (Claude, Cursor, etc.) to prefer `code-outline` over
+    full-file reads. English, universal — calibrated to work across
+    Claude Opus 4.7 / Sonnet 4.6 / Haiku 4.5 out of the box.
+
+    The snippet ships with the tool so `code-outline prompt` always
+    emits the current recommended version, not a stale copy someone
+    saved a year ago.
+
+EXAMPLES
+    # Append straight into a project's agent config
+    code-outline prompt >> AGENTS.md
+    code-outline prompt >> .claude/CLAUDE.md
+
+    # Pipe into clipboard
+    code-outline prompt | pbcopy          # macOS
+    code-outline prompt | xclip -sel c    # Linux
 """
 
 
@@ -450,6 +503,8 @@ def _print_guide(topic: str | None = None) -> None:
         print(GUIDE_DIGEST)
     elif topic == "implements":
         print(GUIDE_IMPLEMENTS)
+    elif topic == "prompt":
+        print(GUIDE_PROMPT)
     else:
         print(GUIDE_GENERAL)
 

@@ -165,6 +165,16 @@ This is the main use case. Add the snippet below to your `CLAUDE.md`,
 `AGENTS.md`, subagent file, or any system prompt that steers a coding
 agent. It will then prefer `code-outline` over reading full files.
 
+The same snippet ships with the tool — `code-outline prompt` prints it
+verbatim, so you can append it to a project's agent config without
+copy-pasting:
+
+```bash
+code-outline prompt >> AGENTS.md
+code-outline prompt >> .claude/CLAUDE.md
+code-outline prompt | pbcopy   # macOS clipboard
+```
+
 ### Prompt snippet (copy-paste)
 
 ```markdown
@@ -299,6 +309,18 @@ code-outline implements --direct IDamageable src/
 The search works across any number of files and nested directories —
 no reliance on filename↔classname convention. Matching is by the last
 segment of the type name (stripping generics and namespace prefixes).
+
+### `prompt` — print the agent prompt snippet
+
+```bash
+code-outline prompt
+code-outline prompt >> AGENTS.md
+```
+
+Prints the canonical copy-paste snippet used to steer LLM coding agents
+to prefer `code-outline` over full reads. English, universal across
+Claude Opus 4.7 / Sonnet 4.6 / Haiku 4.5. Running it ensures you always
+get the current recommended version.
 
 ---
 
