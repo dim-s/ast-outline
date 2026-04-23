@@ -21,6 +21,7 @@ from typing import Optional
 from tree_sitter import Language, Node, Parser
 import tree_sitter_python as tspy
 
+from .base import count_parse_errors
 from ..core import (
     KIND_CLASS,
     KIND_CTOR,
@@ -52,6 +53,7 @@ class PythonAdapter:
             source=src,
             line_count=src.count(b"\n") + 1,
             declarations=decls,
+            error_count=count_parse_errors(tree.root_node),
         )
 
 

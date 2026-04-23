@@ -74,6 +74,11 @@ class ParseResult:
     source: bytes
     line_count: int
     declarations: list[Declaration]  # top-level (namespaces or types)
+    # Count of tree-sitter ERROR + MISSING nodes encountered during parse.
+    # Non-zero means the IR for some region of the file may be incomplete;
+    # renderers surface this as a warning line so the consuming agent
+    # knows the outline isn't authoritative for that file.
+    error_count: int = 0
 
 
 # --- Options --------------------------------------------------------------
@@ -132,10 +137,88 @@ class ImplMatch:
 
 
 def render_outline(result: ParseResult, opts: OutlineOptions) -> str:
-    lines: list[str] = [f"# {result.path} ({result.line_count} lines)"]
+    lines: list[str] = [_format_file_header(f"# {result.path}", result)]
+    warn = _format_error_warning(result)
+    if warn:
+        lines.append(warn)
     for decl in result.declarations:
         _render_decl(decl, opts, indent=0, out=lines)
     return "\n".join(lines)
+
+
+# --- Header helpers (shared between outline + digest) --------------------
+
+
+def _format_file_header(prefix: str, result: ParseResult) -> str:
+    """Build the `# path (N lines, ...)` header for one file.
+
+    `prefix` is the leading marker + path (e.g. `"# /abs/path.py"` for
+    outline or `"  name.py"` for digest). Appended in parentheses:
+    line count, and non-zero category counters appropriate for the
+    language family — types/methods/fields for code, headings/code
+    blocks for markdown. Zero-valued categories are skipped so a
+    trivial file still reads `(42 lines)` not `(42 lines, 0 types, 0 methods)`.
+    """
+    counts = _collect_counts(result.declarations)
+    parts = [f"{result.line_count} lines"]
+    if result.language == "markdown":
+        order = [("headings", "headings"), ("code_blocks", "code blocks")]
+    else:
+        order = [("types", "types"), ("methods", "methods"), ("fields", "fields")]
+    for key, label in order:
+        n = counts.get(key, 0)
+        if n > 0:
+            parts.append(f"{n} {label}")
+    return f"{prefix} ({', '.join(parts)})"
+
+
+def _format_error_warning(result: ParseResult) -> Optional[str]:
+    """Second header line warning about parse errors — only when
+    `error_count > 0`. Agents should treat the file's outline as partial.
+    """
+    if result.error_count <= 0:
+        return None
+    plural = "s" if result.error_count != 1 else ""
+    return (
+        f"# WARNING: {result.error_count} parse error{plural} — "
+        f"output may be incomplete"
+    )
+
+
+_TYPE_COUNT_KINDS = TYPE_KINDS
+_METHOD_COUNT_KINDS = CALLABLE_KINDS
+_FIELD_COUNT_KINDS = {KIND_FIELD, KIND_PROPERTY, KIND_EVENT, KIND_INDEXER}
+
+
+def _collect_counts(decls: list[Declaration]) -> dict[str, int]:
+    """Walk the declaration tree once, counting by category. Namespaces
+    are transparent containers — not counted, but their children are.
+    Enum members aren't counted (they're not "fields" semantically).
+    """
+    out = {
+        "types": 0,
+        "methods": 0,
+        "fields": 0,
+        "headings": 0,
+        "code_blocks": 0,
+    }
+    stack: list[Declaration] = list(decls)
+    while stack:
+        d = stack.pop()
+        k = d.kind
+        if k in _TYPE_COUNT_KINDS:
+            out["types"] += 1
+        elif k in _METHOD_COUNT_KINDS:
+            out["methods"] += 1
+        elif k in _FIELD_COUNT_KINDS:
+            out["fields"] += 1
+        elif k == KIND_HEADING:
+            out["headings"] += 1
+        elif k == KIND_CODE_BLOCK:
+            out["code_blocks"] += 1
+        # namespace / enum_member / delegate → not counted at top level
+        stack.extend(d.children)
+    return out
 
 
 def _render_decl(decl: Declaration, opts: OutlineOptions, indent: int, out: list[str]) -> None:
@@ -218,7 +301,11 @@ def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optiona
 
 
 def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
-    lines = [f"  {result.path.name} ({result.line_count} lines)"]
+    lines = [_format_file_header(f"  {result.path.name}", result)]
+    warn = _format_error_warning(result)
+    if warn:
+        # Indent under the file line so the warning lives with its file.
+        lines.append("  " + warn)
 
     # Markdown files digest as a hierarchical TOC, not a type/member list.
     if result.language == "markdown":

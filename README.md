@@ -198,6 +198,11 @@ Only fall back to reading the full file when `show` gives you the signature
 but you need the surrounding context. The `L<start>-<end>` range in the
 outline is a precise offset if your editor's read tool supports one.
 
+**Parse errors.** If the outline header includes a `# WARNING: N parse
+errors — output may be incomplete` line, the file has syntax holes —
+treat the outline as partial for that file and read the source directly
+for the affected region before acting on it.
+
 Run `code-outline help` for flags and less-common options.
 ```
 
@@ -287,11 +292,12 @@ AST-based — no false positives from comments or unrelated mentions.
 
 The format is designed to be **LLM-friendly**: Python-style indentation,
 line-number suffixes in `L<start>-<end>` form, doc-comments preserved.
+The header summarises scale and flags partial parses.
 
 ### C#
 
 ```
-# Player.cs (142 lines)
+# Player.cs (142 lines, 3 types, 12 methods, 5 fields)
 namespace Game.Player
     [RequireComponent(typeof(Rigidbody2D))] public class PlayerController : MonoBehaviour, IDamageable  L10-120
         [SerializeField] private float speed = 5f  L12
@@ -304,7 +310,7 @@ namespace Game.Player
 ### Python
 
 ```
-# user_service.py (70 lines)
+# user_service.py (70 lines, 2 types, 5 methods, 3 fields)
 @dataclass class User  L16-29
     def display_name(self) -> str  L26-29
         """Human-friendly label."""
@@ -315,6 +321,34 @@ class UserService  L31-58
         """Look up a user by id."""
     def save(self, user: User) -> None  L44-46
 ```
+
+### `show` with ancestor context
+
+`code-outline show <file> <Symbol>` prints a `# in: ...` breadcrumb
+between the header and the body so you know what the extracted code is
+nested inside, without a second `outline` call:
+
+```
+# Player.cs:30-48  Game.Player.PlayerController.TakeDamage  (method)
+# in: namespace Game.Player → public class PlayerController : MonoBehaviour, IDamageable
+/// <summary>Apply damage.</summary>
+public void TakeDamage(int amount) { ... }
+```
+
+Top-level symbols (no enclosing namespace/type) have no breadcrumb.
+
+### Partial parses
+
+When tree-sitter recovers from syntax errors, the outline is kept but a
+second header line flags the gap:
+
+```
+# broken.java (16 lines, 1 types, 3 methods)
+# WARNING: 3 parse errors — output may be incomplete
+```
+
+Agents should treat these files as partial and read the source directly
+for the affected region.
 
 Differences are language-idiomatic:
 

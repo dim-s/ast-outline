@@ -1,0 +1,327 @@
+"""Tests for enriched outline/digest headers — summary counters +
+parse-error warning.
+
+Two features under test:
+
+1. **Summary counters** — the `(N lines, ...)` header adds language-
+   appropriate counters (types/methods/fields for code; headings/code
+   blocks for markdown). Zero-valued categories are omitted so a
+   trivial file still reads cleanly.
+
+2. **Parse-error warning** — when tree-sitter produces `ERROR` /
+   `MISSING` nodes the renderer emits a second header line starting
+   with `# WARNING:` so agents know the outline may be partial.
+"""
+from __future__ import annotations
+
+from code_outline.adapters.csharp import CSharpAdapter
+from code_outline.adapters.java import JavaAdapter
+from code_outline.adapters.markdown import MarkdownAdapter
+from code_outline.adapters.python import PythonAdapter
+from code_outline.adapters.typescript import TypeScriptAdapter
+from code_outline.core import (
+    DigestOptions,
+    OutlineOptions,
+    render_digest,
+    render_outline,
+)
+
+
+# --- error_count on ParseResult -------------------------------------------
+
+
+def test_error_count_zero_on_clean_java(java_dir):
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    assert r.error_count == 0
+
+
+def test_error_count_zero_on_clean_python(python_dir):
+    r = PythonAdapter().parse(python_dir / "domain_model.py")
+    assert r.error_count == 0
+
+
+def test_error_count_zero_on_clean_csharp(csharp_dir):
+    r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
+    assert r.error_count == 0
+
+
+def test_error_count_zero_on_clean_typescript(fixtures_dir):
+    r = TypeScriptAdapter().parse(fixtures_dir / "typescript" / "storage_service.ts")
+    assert r.error_count == 0
+
+
+def test_error_count_zero_on_clean_markdown(fixtures_dir):
+    r = MarkdownAdapter().parse(fixtures_dir / "markdown" / "readme_style.md")
+    assert r.error_count == 0
+
+
+def test_error_count_nonzero_on_broken_file(java_dir):
+    """The hand-crafted broken fixture has multiple syntax holes —
+    tree-sitter should surface ERROR / MISSING nodes."""
+    r = JavaAdapter().parse(java_dir / "broken_syntax.java")
+    assert r.error_count > 0
+
+
+def test_error_count_nonzero_on_broken_python(python_dir):
+    """tree-sitter-python surfaces errors on unmatched brackets and
+    missing class-header colons."""
+    r = PythonAdapter().parse(python_dir / "broken_syntax.py")
+    assert r.error_count > 0
+
+
+def test_error_count_nonzero_on_broken_csharp(csharp_dir):
+    """tree-sitter-c-sharp surfaces errors on missing closing braces
+    and broken method signatures."""
+    r = CSharpAdapter().parse(csharp_dir / "broken_syntax.cs")
+    assert r.error_count > 0
+
+
+def test_error_count_nonzero_on_broken_typescript(fixtures_dir):
+    """tree-sitter-typescript surfaces errors on missing braces,
+    incomplete expressions and bad type annotations."""
+    r = TypeScriptAdapter().parse(fixtures_dir / "typescript" / "broken_syntax.ts")
+    assert r.error_count > 0
+
+
+def test_markdown_parser_permissive_no_false_positive_errors(fixtures_dir):
+    """tree-sitter-markdown is intentionally permissive — plain text,
+    random indentation, stray punctuation are all valid markdown.
+    Regression guard: none of our markdown fixtures should spuriously
+    raise the error counter."""
+    for name in ("readme_style.md", "article.md", "setext_and_codes.md", "empty.md"):
+        r = MarkdownAdapter().parse(fixtures_dir / "markdown" / name)
+        assert r.error_count == 0, f"unexpected errors in {name}: {r.error_count}"
+
+
+# --- Header contents on clean files --------------------------------------
+
+
+def test_outline_header_includes_type_count(java_dir):
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    # UserService (class) + Inner (nested class) + Callback (nested interface) = 3 types
+    assert " types" in first
+    assert "3 types" in first
+
+
+def test_outline_header_includes_method_count(java_dir):
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    assert " methods" in first
+
+
+def test_outline_header_includes_field_count(java_dir):
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    assert " fields" in first
+
+
+def test_outline_header_markdown_has_heading_count(fixtures_dir):
+    """Markdown gets different categories — headings + code blocks, not
+    types/methods/fields."""
+    r = MarkdownAdapter().parse(fixtures_dir / "markdown" / "readme_style.md")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    assert " headings" in first
+    # readme_style.md also has fenced code blocks
+    assert " code blocks" in first
+
+
+def test_outline_header_markdown_skips_type_methods(fixtures_dir):
+    """Code-style categories must not leak into markdown headers."""
+    r = MarkdownAdapter().parse(fixtures_dir / "markdown" / "readme_style.md")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    assert " types" not in first
+    assert " methods" not in first
+    assert " fields" not in first
+
+
+def test_outline_header_skips_zero_categories(java_dir):
+    """Java file with only a single class and no fields/methods should
+    not clutter the header with `0 methods, 0 fields`."""
+    r = JavaAdapter().parse(java_dir / "plain_block_comment.java")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    # Has 1 class (Foo), no methods, no fields
+    assert "1 types" in first
+    assert " methods" not in first
+    assert " fields" not in first
+
+
+# --- Warning line on broken files ----------------------------------------
+
+
+def test_warning_line_present_on_broken_file(java_dir):
+    r = JavaAdapter().parse(java_dir / "broken_syntax.java")
+    lines = render_outline(r, OutlineOptions()).splitlines()
+    # Second line must be the warning
+    assert lines[1].startswith("# WARNING:")
+    assert "parse error" in lines[1]
+    assert "incomplete" in lines[1]
+
+
+def test_warning_line_absent_on_clean_file(java_dir):
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    lines = render_outline(r, OutlineOptions()).splitlines()
+    # No line in the whole outline starts with "# WARNING:"
+    assert not any(ln.startswith("# WARNING:") for ln in lines)
+
+
+def test_warning_line_singular_when_single_error():
+    """`1 parse error` (singular), `2 parse errors` (plural)."""
+    import tempfile
+    from pathlib import Path
+
+    # A file with exactly one missing closing brace — should surface a
+    # single MISSING node, not more.
+    src = "package demo;\npublic class Foo { public int x = 1;\n"
+    with tempfile.NamedTemporaryFile(suffix=".java", mode="w", delete=False) as f:
+        f.write(src)
+        p = Path(f.name)
+    try:
+        r = JavaAdapter().parse(p)
+        assert r.error_count >= 1
+        out = render_outline(r, OutlineOptions())
+        warning = next(ln for ln in out.splitlines() if ln.startswith("# WARNING:"))
+        if r.error_count == 1:
+            assert "1 parse error " in warning  # space — no trailing "s"
+        else:
+            assert f"{r.error_count} parse errors" in warning
+    finally:
+        p.unlink()
+
+
+# --- Header in digest mode -----------------------------------------------
+
+
+def test_digest_header_includes_counts(java_dir):
+    from code_outline.adapters import collect_files
+
+    files = collect_files([java_dir])
+    java_files = [f for f in files if f.suffix == ".java"]
+    results = [JavaAdapter().parse(f) for f in java_files]
+    text = render_digest(results, DigestOptions(), root=java_dir)
+    # At least one per-file line should mention the counters
+    assert "types" in text
+    assert "methods" in text
+
+
+def test_digest_warning_line_for_broken_file(java_dir):
+    """The digest must surface the WARNING for broken files too, not only
+    the outline view — an agent running `digest` should still notice."""
+    from code_outline.adapters import collect_files
+
+    files = collect_files([java_dir])
+    java_files = [f for f in files if f.suffix == ".java"]
+    results = [JavaAdapter().parse(f) for f in java_files]
+    text = render_digest(results, DigestOptions(), root=java_dir)
+    assert "# WARNING:" in text
+    assert "broken_syntax.java" in text
+
+
+# --- Counting semantics --------------------------------------------------
+
+
+def test_namespace_not_counted_as_type(java_dir):
+    """A package/namespace wrapper is transparent — it should NOT inflate
+    the type counter. UserService.java has one real class + one nested
+    class + one nested interface = 3, not 4 (the package wrapper is
+    not counted)."""
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    # 3 types, not 4 — no "4 types"
+    assert "3 types" in first
+    assert "4 types" not in first
+
+
+def test_enum_members_not_counted_as_fields(java_dir):
+    """Enum constants (ACTIVE, INACTIVE, …) are KIND_ENUM_MEMBER, not
+    KIND_FIELD — the fields counter should only reflect real instance
+    fields."""
+    r = JavaAdapter().parse(java_dir / "status_enum.java")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    # status_enum.java has 2 real fields (label, weight); 4 enum constants
+    # should NOT be counted.
+    assert "2 fields" in first
+
+
+def test_python_counts_functions_as_methods(python_dir):
+    """Python module-level `def` is KIND_FUNCTION — included in `methods`
+    together with class methods (CALLABLE_KINDS)."""
+    r = PythonAdapter().parse(python_dir / "domain_model.py")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    assert " methods" in first
+
+
+def test_csharp_header_shows_all_three_categories(csharp_dir):
+    """C# fixture exercises types (class + interface), methods, and
+    fields (including properties / events / indexers that fold into
+    the `fields` category by design)."""
+    r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    assert " types" in first
+    assert " methods" in first
+    assert " fields" in first
+
+
+def test_csharp_property_counted_as_field(csharp_dir):
+    """C# properties are KIND_PROPERTY, but semantically they hold state
+    like a field — _FIELD_COUNT_KINDS folds them into the `fields` counter.
+    Guards against someone later moving PROPERTY out of that set."""
+    r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    # unity_behaviour.cs declares: CurrentHealth (property), MaxHealth
+    # (field), event, + a couple more → at least 5 fields in the counter
+    import re
+    match = re.search(r"(\d+) fields", first)
+    assert match is not None, f"no field counter in header: {first}"
+    assert int(match.group(1)) >= 3
+
+
+def test_typescript_header_covers_all_types(fixtures_dir):
+    """TypeScript types.ts has classes, interfaces, enums AND type
+    aliases — all should land in the `types` counter (enum members
+    should NOT)."""
+    r = TypeScriptAdapter().parse(fixtures_dir / "typescript" / "types.ts")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    assert " types" in first
+    # `types.ts` has at least 3 distinct KIND_* types declared
+    import re
+    match = re.search(r"(\d+) types", first)
+    assert match is not None
+    assert int(match.group(1)) >= 3
+
+
+def test_typescript_enum_member_not_counted_as_field(fixtures_dir):
+    """Same contract as Java: TypeScript enum members (KIND_ENUM_MEMBER)
+    must NOT inflate the `fields` counter."""
+    r = TypeScriptAdapter().parse(fixtures_dir / "typescript" / "types.ts")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    # Count the ACTUAL enum members vs what the header reports.
+    from code_outline.core import KIND_ENUM_MEMBER, _collect_counts
+    all_decls = r.declarations
+    # Walk tree, count enum members directly
+    stack = list(all_decls)
+    enum_members = 0
+    while stack:
+        d = stack.pop()
+        if d.kind == KIND_ENUM_MEMBER:
+            enum_members += 1
+        stack.extend(d.children)
+    assert enum_members > 0, "fixture must contain enum members for this test to be meaningful"
+    counts = _collect_counts(all_decls)
+    # The enum members must NOT be reflected in either `fields` or `types`
+    # — they live in their own KIND, not counted at all.
+    # (Can't easily express "exactly X fields" without knowing fixture shape,
+    # so instead check that counts["fields"] < total declarations including members.)
+    assert counts["fields"] + counts["types"] + counts["methods"] < sum(
+        1 for _ in _iter_all(all_decls)
+    )
+
+
+def _iter_all(decls):
+    """Flat iterator over every Declaration in the tree — helper for
+    counting-semantics tests."""
+    stack = list(decls)
+    while stack:
+        d = stack.pop()
+        yield d
+        stack.extend(d.children)

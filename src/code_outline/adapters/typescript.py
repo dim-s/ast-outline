@@ -41,6 +41,7 @@ from typing import Optional
 import tree_sitter_typescript as tsts
 from tree_sitter import Language, Node, Parser
 
+from .base import count_parse_errors
 from ..core import (
     KIND_CLASS,
     KIND_CTOR,
@@ -79,6 +80,7 @@ class TypeScriptAdapter:
             source=src,
             line_count=src.count(b"\n") + 1,
             declarations=decls,
+            error_count=count_parse_errors(tree.root_node),
         )
 
 

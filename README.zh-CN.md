@@ -193,6 +193,10 @@ Agent 就会优先用 `code-outline` 而不是直接读完整文件。
 outline 中的 `L<start>-<end>` 范围可以直接作为精确的 offset，如果你的
 编辑器的读取工具支持的话。
 
+**解析错误。** 如果 outline 的头部出现 `# WARNING: N parse errors —
+output may be incomplete` 这样一行，说明该文件存在语法漏洞 —— 对这个
+文件要把 outline 视为不完整的，采取行动前直接读取受影响区域的源码。
+
 运行 `code-outline help` 查看各种标志和不常用选项。
 ```
 
@@ -280,12 +284,12 @@ code-outline implements IDamageable src/
 ## 输出格式
 
 格式专为**大模型友好**设计：Python 风格缩进、`L<start>-<end>` 形式的行号
-后缀、保留文档注释。
+后缀、保留文档注释。头部行汇总了文件规模并标记部分解析的情况。
 
 ### C#
 
 ```
-# Player.cs (142 lines)
+# Player.cs (142 lines, 3 types, 12 methods, 5 fields)
 namespace Game.Player
     [RequireComponent(typeof(Rigidbody2D))] public class PlayerController : MonoBehaviour, IDamageable  L10-120
         [SerializeField] private float speed = 5f  L12
@@ -298,7 +302,7 @@ namespace Game.Player
 ### Python
 
 ```
-# user_service.py (70 lines)
+# user_service.py (70 lines, 2 types, 5 methods, 3 fields)
 @dataclass class User  L16-29
     def display_name(self) -> str  L26-29
         """Human-friendly label."""
@@ -309,6 +313,34 @@ class UserService  L31-58
         """Look up a user by id."""
     def save(self, user: User) -> None  L44-46
 ```
+
+### 带祖先上下文的 `show`
+
+`code-outline show <file> <Symbol>` 会在头部和方法体之间打印一行
+`# in: ...` 面包屑 —— 列出所属的 namespace/类链路，这样你无需再次调用
+`outline` 就能知道提取出来的代码嵌套在哪里：
+
+```
+# Player.cs:30-48  Game.Player.PlayerController.TakeDamage  (method)
+# in: namespace Game.Player → public class PlayerController : MonoBehaviour, IDamageable
+/// <summary>Apply damage.</summary>
+public void TakeDamage(int amount) { ... }
+```
+
+顶层符号（没有外层 namespace/类型）不输出面包屑行。
+
+### 部分解析
+
+当 tree-sitter 从语法错误中恢复时，outline 仍然会产出，但头部会增加
+第二行来标记这种情况：
+
+```
+# broken.java (16 lines, 1 types, 3 methods)
+# WARNING: 3 parse errors — output may be incomplete
+```
+
+代理对这类文件应当把 outline 视为不完整的，针对受影响的区域直接读取
+源码。
 
 差异符合各语言的惯例：
 

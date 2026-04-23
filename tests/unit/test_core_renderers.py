@@ -39,7 +39,8 @@ def test_outline_header_has_path_and_line_count(csharp_dir):
     out = render_outline(r, OutlineOptions())
     first = out.splitlines()[0]
     assert str(path) in first
-    assert f"({r.line_count} lines)" in first
+    # Header wraps line count with summary counters: "(N lines, X types, ...)"
+    assert f"{r.line_count} lines" in first
 
 
 def test_outline_includes_line_suffixes_by_default(csharp_dir):

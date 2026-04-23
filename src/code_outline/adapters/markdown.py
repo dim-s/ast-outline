@@ -34,6 +34,7 @@ from typing import Optional
 import tree_sitter_markdown as tsmd
 from tree_sitter import Language, Node, Parser
 
+from .base import count_parse_errors
 from ..core import (
     KIND_CODE_BLOCK,
     KIND_HEADING,
@@ -61,6 +62,7 @@ class MarkdownAdapter:
             source=src,
             line_count=src.count(b"\n") + 1,
             declarations=decls,
+            error_count=count_parse_errors(tree.root_node),
         )
 
 

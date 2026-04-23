@@ -46,6 +46,7 @@ from typing import Optional
 import tree_sitter_java as tsj
 from tree_sitter import Language, Node, Parser
 
+from .base import count_parse_errors
 from ..core import (
     KIND_CLASS,
     KIND_CTOR,
@@ -98,6 +99,7 @@ class JavaAdapter:
             source=src,
             line_count=src.count(b"\n") + 1,
             declarations=declarations,
+            error_count=count_parse_errors(tree.root_node),
         )
 
 
