@@ -19,7 +19,8 @@ from __future__ import annotations
 AGENT_PROMPT = """## Code exploration — prefer `code-outline` over full reads
 
 For `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`,
-and `.md` files, read structure with `code-outline` before opening full contents.
+`.scala`, `.sc`, and `.md` files, read structure with `code-outline` before
+opening full contents.
 Pull method bodies only once you know which ones you need.
 
 Stop at the step that answers the question:

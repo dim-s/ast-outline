@@ -67,6 +67,7 @@ Agent: code-outline show Player.cs TakeDamage # 只取需要的方法体
 | JavaScript | `.js`、`.jsx`、`.mjs`、`.cjs`（由 TypeScript 语法解析） |
 | Java       | `.java` —— 类、接口、`@interface`、枚举、记录（record）、sealed 继承层级、泛型、throws、Javadoc |
 | Kotlin     | `.kt`、`.kts` —— 类、接口、`fun interface`、`object` / `companion object`、`data` / `sealed` / `enum` / `annotation` 类、扩展函数、`suspend` / `inline` / `const` / `lateinit`、带 `where` 约束的泛型、`typealias`、KDoc |
+| Scala      | `.scala`、`.sc` —— Scala 2 + Scala 3：类、trait、`object` / `case object`、`case class`、`sealed` 继承层级、Scala 3 `enum` / `given` / `using` / `extension`、缩进式语法体、higher-kinded 类型、context bound、`opaque type`、类型别名、Scaladoc |
 | Markdown   | `.md`、`.markdown`、`.mdx`、`.mdown` —— 标题目录 + 代码块 |
 
 新增语言只需要加一个适配器文件。见
@@ -177,9 +178,9 @@ code-outline prompt | pbcopy   # macOS 剪贴板
 ```markdown
 ## 代码探索 —— 优先用 `code-outline`，而不是完整读取
 
-对于 `.cs`、`.py`、`.pyi`、`.ts`、`.tsx`、`.js`、`.jsx`、`.java`、`.kt`、`.kts`
-和 `.md` 文件，先用 `code-outline` 读结构，再考虑打开完整内容。方法体只在
-你已经确定需要某一个时才去取。
+对于 `.cs`、`.py`、`.pyi`、`.ts`、`.tsx`、`.js`、`.jsx`、`.java`、`.kt`、`.kts`、
+`.scala`、`.sc` 和 `.md` 文件，先用 `code-outline` 读结构，再考虑打开完整内容。
+方法体只在你已经确定需要某一个时才去取。
 
 哪一步能回答问题就停在哪一步：
 
@@ -435,10 +436,10 @@ uv pip install -e ".[dev]"
 .venv/bin/pytest -k file_scoped_namespace -v
 ```
 
-套件（350+ 个测试）覆盖全部适配器（C#、Python、TypeScript/JS、Java、
-Kotlin、Markdown）、与语言无关的渲染器、符号搜索以及端到端的 CLI。
-Fixture 放在 `tests/fixtures/`，测试不会越出该目录。任何新行为都应带上
-测试；新增语言时也应附带独立的 fixture 目录和一份
+套件（400+ 个测试）覆盖全部适配器（C#、Python、TypeScript/JS、Java、
+Kotlin、Scala、Markdown）、与语言无关的渲染器、符号搜索以及端到端的
+CLI。Fixture 放在 `tests/fixtures/`，测试不会越出该目录。任何新行为都
+应带上测试；新增语言时也应附带独立的 fixture 目录和一份
 `tests/unit/test_<lang>_adapter.py`。
 
 ### 新增一门语言
@@ -455,6 +456,7 @@ Fixture 放在 `tests/fixtures/`，测试不会越出该目录。任何新行为
 - [x] TypeScript / JavaScript 适配器（`.ts`、`.tsx`、`.js`、`.jsx`、`.mjs`、`.cjs`）
 - [x] Java 适配器（`.java`）—— 类、接口、`@interface`、枚举、记录（record）、sealed 继承层级、泛型、throws、Javadoc
 - [x] Kotlin 适配器（`.kt`、`.kts`）—— 类、接口、`fun interface`、`object` / `companion object`、`data` / `sealed` / `enum` / `annotation` 类、扩展函数、`suspend` / `inline` / `const` / `lateinit`、带 `where` 约束的泛型、`typealias`、KDoc
+- [x] Scala 适配器（`.scala`、`.sc`）—— Scala 2 + Scala 3：类、trait、`object` / `case object`、`case class`、`sealed` 继承层级、Scala 3 `enum` / `given` / `using` / `extension`、缩进式语法体、higher-kinded 类型、context bound、`opaque type`、类型别名、Scaladoc
 - [x] Markdown 适配器（`.md`、`.markdown`、`.mdx`、`.mdown`）—— 标题目录 + 代码块
 - [ ] Go 适配器
 - [ ] Rust 适配器

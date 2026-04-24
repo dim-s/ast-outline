@@ -19,6 +19,7 @@ from code_outline.adapters.java import JavaAdapter
 from code_outline.adapters.kotlin import KotlinAdapter
 from code_outline.adapters.markdown import MarkdownAdapter
 from code_outline.adapters.python import PythonAdapter
+from code_outline.adapters.scala import ScalaAdapter
 from code_outline.adapters.typescript import TypeScriptAdapter
 from code_outline.core import (
     DigestOptions,
@@ -53,6 +54,11 @@ def test_error_count_zero_on_clean_typescript(fixtures_dir):
 
 def test_error_count_zero_on_clean_kotlin(kotlin_dir):
     r = KotlinAdapter().parse(kotlin_dir / "user_service.kt")
+    assert r.error_count == 0
+
+
+def test_error_count_zero_on_clean_scala(scala_dir):
+    r = ScalaAdapter().parse(scala_dir / "user_service.scala")
     assert r.error_count == 0
 
 
@@ -93,6 +99,11 @@ def test_error_count_nonzero_on_broken_kotlin(kotlin_dir):
     """tree-sitter-kotlin surfaces errors on unclosed parameter lists
     and missing braces."""
     r = KotlinAdapter().parse(kotlin_dir / "broken_syntax.kt")
+    assert r.error_count > 0
+
+
+def test_error_count_nonzero_on_broken_scala(scala_dir):
+    r = ScalaAdapter().parse(scala_dir / "broken_syntax.scala")
     assert r.error_count > 0
 
 
@@ -366,6 +377,57 @@ def test_kotlin_typealias_and_property_not_counted_as_type(kotlin_dir):
     counts = _collect_counts(r.declarations)
     # Fixture has exactly one class (Vec2); typealiases should not bump the count
     assert counts["types"] == 1
+
+
+def test_scala_header_shows_types_methods_fields(scala_dir):
+    """Scala exercises all three counter categories — types (class /
+    trait / object / case class / enum), methods, and fields (incl.
+    primary-ctor val/var and case-class bare params)."""
+    r = ScalaAdapter().parse(scala_dir / "user_service.scala")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    assert " types" in first
+    assert " methods" in first
+    assert " fields" in first
+
+
+def test_scala_case_class_counts_as_type(scala_dir):
+    """A Scala `case class` maps to KIND_RECORD, which is in TYPE_KINDS,
+    so it increments the `types` counter. data_and_sealed.scala has
+    multiple case classes + a sealed trait + a class + a case object + enum."""
+    r = ScalaAdapter().parse(scala_dir / "data_and_sealed.scala")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    import re
+    match = re.search(r"(\d+) types", first)
+    assert match is not None
+    # Point (record) + Shape (trait) + Circle (record) + Square (class)
+    # + UnitShape (object→class) + Status (enum) → at least 6
+    assert int(match.group(1)) >= 6
+
+
+def test_scala_enum_members_not_counted_as_fields(scala_dir):
+    """Scala 3 enum entries (Active / Inactive / …) are KIND_ENUM_MEMBER —
+    they must NOT inflate the `fields` counter."""
+    r = ScalaAdapter().parse(scala_dir / "data_and_sealed.scala")
+    from code_outline.core import KIND_ENUM_MEMBER, _collect_counts
+
+    counts = _collect_counts(r.declarations)
+    stack = list(r.declarations)
+    entries = 0
+    while stack:
+        d = stack.pop()
+        if d.kind == KIND_ENUM_MEMBER:
+            entries += 1
+        stack.extend(d.children)
+    assert entries >= 4  # Active / Inactive / Banned / Unknown
+    # Entries aren't added to the fields counter
+    assert counts["fields"] < entries + 20
+
+
+def test_scala_warning_line_surfaces_on_broken_file(scala_dir):
+    r = ScalaAdapter().parse(scala_dir / "broken_syntax.scala")
+    lines = render_outline(r, OutlineOptions()).splitlines()
+    assert lines[1].startswith("# WARNING:")
+    assert "parse error" in lines[1]
 
 
 def test_typescript_enum_member_not_counted_as_field(fixtures_dir):

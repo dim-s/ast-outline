@@ -14,6 +14,7 @@ from .java import JavaAdapter
 from .kotlin import KotlinAdapter
 from .markdown import MarkdownAdapter
 from .python import PythonAdapter
+from .scala import ScalaAdapter
 from .typescript import TypeScriptAdapter
 
 
@@ -23,6 +24,7 @@ ADAPTERS: list[LanguageAdapter] = [
     TypeScriptAdapter(),
     JavaAdapter(),
     KotlinAdapter(),
+    ScalaAdapter(),
     MarkdownAdapter(),
 ]
 

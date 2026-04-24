@@ -5,6 +5,7 @@ from code_outline.adapters.csharp import CSharpAdapter
 from code_outline.adapters.java import JavaAdapter
 from code_outline.adapters.kotlin import KotlinAdapter
 from code_outline.adapters.python import PythonAdapter
+from code_outline.adapters.scala import ScalaAdapter
 from code_outline.core import (
     find_implementations,
     find_symbols,
@@ -292,6 +293,49 @@ def test_direct_flag_kotlin(kotlin_dir):
         assert h.via == []
 
 
+def test_transitive_default_scala(scala_dir):
+    """Scala: Animal ← Dog ← Puppy ← Pomeranian PLUS `case object Rex`
+    and `case class Husky` extending Dog. Every branch should be
+    walked — case object / case class don't break the BFS."""
+    r = ScalaAdapter().parse(scala_dir / "hierarchy.scala")
+    hits = find_implementations([r], "Animal")
+    names = {h.name for h in hits}
+    assert {"Dog", "Skater", "Puppy", "Pomeranian", "Rex", "Husky"}.issubset(names)
+
+    by_name = {h.name: h for h in hits}
+    assert by_name["Dog"].via == []
+    assert by_name["Skater"].via == []
+    assert by_name["Puppy"].via == ["Dog"]
+    assert by_name["Pomeranian"].via == ["Dog", "Puppy"]
+    assert by_name["Rex"].via == ["Dog"]      # case object transitive
+    assert by_name["Husky"].via == ["Dog"]    # case class transitive
+
+    # Trait-based hierarchy
+    ihits = find_implementations([r], "Movable")
+    assert "Skater" in {h.name for h in ihits}
+
+
+def test_direct_flag_scala(scala_dir):
+    r = ScalaAdapter().parse(scala_dir / "hierarchy.scala")
+    direct = find_implementations([r], "Animal", transitive=False)
+    names = {h.name for h in direct}
+    assert "Dog" in names
+    assert "Skater" in names
+    assert "Puppy" not in names
+    assert "Rex" not in names
+    for h in direct:
+        assert h.via == []
+
+
+def test_sealed_trait_subclasses_scala(scala_dir):
+    """`sealed trait Shape` with `case class Circle`, `class Square`,
+    `case object UnitShape` subclasses — all three must appear."""
+    r = ScalaAdapter().parse(scala_dir / "data_and_sealed.scala")
+    hits = find_implementations([r], "Shape")
+    names = {h.name for h in hits}
+    assert {"Circle", "Square", "UnitShape"}.issubset(names)
+
+
 # --- Cross-file / cross-directory ---------------------------------------
 
 
@@ -318,6 +362,33 @@ def test_transitive_walks_across_files_and_directories(java_dir):
     assert puppy.path.endswith("Puppy.java")
 
     # Dog is in a different directory than Animal (mammals vs base).
+    dog = next(h for h in hits if h.name == "Dog")
+    cat = next(h for h in hits if h.name == "Cat")
+    assert "mammals" in dog.path
+    assert "felines" in cat.path
+
+
+def test_transitive_walks_across_directories_scala(scala_dir):
+    """Scala cross-directory: Animal in base/, Dog+Puppy in mammals/,
+    Cat in felines/. BFS must stitch them together despite the
+    namespaces being declared in separate package_clauses."""
+    from code_outline.adapters import collect_files
+
+    multidir = scala_dir / "multidir"
+    files = collect_files([multidir])
+    results = [
+        ScalaAdapter().parse(f) for f in files if f.suffix in {".scala", ".sc"}
+    ]
+
+    hits = find_implementations(results, "Animal")
+    names = {h.name for h in hits}
+    assert {"Dog", "Cat", "Puppy"}.issubset(names), f"got {names}"
+
+    puppy = next(h for h in hits if h.name == "Puppy")
+    assert puppy.via == ["Dog"]
+    assert "mammals" in puppy.path
+    assert puppy.path.endswith("Puppy.scala")
+
     dog = next(h for h in hits if h.name == "Dog")
     cat = next(h for h in hits if h.name == "Cat")
     assert "mammals" in dog.path

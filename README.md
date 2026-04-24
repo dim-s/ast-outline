@@ -70,6 +70,7 @@ the round-trips.**
 | JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` (parsed by the TypeScript grammar) |
 | Java       | `.java` — classes, interfaces, `@interface`, enums, records, sealed hierarchies, generics, throws, Javadoc |
 | Kotlin     | `.kt`, `.kts` — classes, interfaces, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation` classes, extension functions, `suspend` / `inline` / `const` / `lateinit`, generics with `where` constraints, `typealias`, KDoc |
+| Scala      | `.scala`, `.sc` — Scala 2 + Scala 3: classes, traits, `object` / `case object`, `case class`, `sealed` hierarchies, Scala 3 `enum` / `given` / `using` / `extension`, indentation-based bodies, higher-kinded types, context bounds, `opaque type`, `type` aliases, Scaladoc |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — heading TOC + fenced code blocks |
 
 Adding another language is a single new adapter file. See
@@ -182,7 +183,8 @@ code-outline prompt | pbcopy   # macOS clipboard
 ## Code exploration — prefer `code-outline` over full reads
 
 For `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`,
-and `.md` files, read structure with `code-outline` before opening full contents.
+`.scala`, `.sc`, and `.md` files, read structure with `code-outline` before
+opening full contents.
 Pull method bodies only once you know which ones you need.
 
 Stop at the step that answers the question:
@@ -448,10 +450,10 @@ uv pip install -e ".[dev]"
 .venv/bin/pytest -k file_scoped_namespace -v
 ```
 
-The suite (350+ tests) covers every adapter (C#, Python, TypeScript/JS,
-Java, Kotlin, Markdown), the language-agnostic renderers, symbol search,
-and the CLI end-to-end. Fixtures live under `tests/fixtures/`; tests
-never reach outside that directory.
+The suite (400+ tests) covers every adapter (C#, Python, TypeScript/JS,
+Java, Kotlin, Scala, Markdown), the language-agnostic renderers, symbol
+search, and the CLI end-to-end. Fixtures live under `tests/fixtures/`;
+tests never reach outside that directory.
 New behaviour should come with a test; new languages should ship with a
 dedicated fixture directory and a `tests/unit/test_<lang>_adapter.py` file.
 
@@ -469,6 +471,7 @@ Create `src/code_outline/adapters/<lang>.py` implementing the
 - [x] TypeScript / JavaScript adapter (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`)
 - [x] Java adapter (`.java`) — classes, interfaces, `@interface`, enums, records, sealed hierarchies, generics, throws, Javadoc
 - [x] Kotlin adapter (`.kt`, `.kts`) — classes, interfaces, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation` classes, extension functions, `suspend` / `inline` / `const` / `lateinit`, generics with `where` constraints, `typealias`, KDoc
+- [x] Scala adapter (`.scala`, `.sc`) — Scala 2 + Scala 3: classes, traits, `object` / `case object`, `case class`, `sealed` hierarchies, Scala 3 `enum` / `given` / `using` / `extension`, indentation-based bodies, higher-kinded types, context bounds, `opaque type`, `type` aliases, Scaladoc
 - [x] Markdown adapter (`.md`, `.markdown`, `.mdx`, `.mdown`) — heading TOC + code blocks
 - [ ] Go adapter
 - [ ] Rust adapter
