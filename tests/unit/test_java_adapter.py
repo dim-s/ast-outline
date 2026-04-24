@@ -14,8 +14,8 @@ Covers:
 """
 from __future__ import annotations
 
-from code_outline.adapters.java import JavaAdapter
-from code_outline.core import (
+from ast_outline.adapters.java import JavaAdapter
+from ast_outline.core import (
     KIND_CLASS,
     KIND_CTOR,
     KIND_ENUM,
@@ -69,7 +69,7 @@ def test_adapter_extension_set():
 
 
 def test_java_files_discovered_via_collect_files(java_dir):
-    from code_outline.adapters import collect_files, get_adapter_for
+    from ast_outline.adapters import collect_files, get_adapter_for
 
     files = collect_files([java_dir])
     java_files = [f for f in files if f.suffix == ".java"]
@@ -413,7 +413,7 @@ def test_annotation_name_starting_with_interface_keyword_is_stripped():
     """An annotation `@interfaceAware` (starts with `interface` but has more
     identifier chars) must be stripped as a normal annotation — the
     `@interface` keyword check enforces a word boundary."""
-    from code_outline.adapters.java import _strip_leading_annotations
+    from ast_outline.adapters.java import _strip_leading_annotations
 
     assert _strip_leading_annotations("@interfaceAware class Foo") == "class Foo"
     # But the real keyword is preserved
@@ -634,7 +634,7 @@ def test_doc_start_byte_equals_start_byte_without_doc(java_dir):
 
 def test_outline_renderer_smoke(java_dir):
     """Outline renderer works on Java output (no exceptions, contains expected names)."""
-    from code_outline.core import OutlineOptions, render_outline
+    from ast_outline.core import OutlineOptions, render_outline
 
     r = JavaAdapter().parse(java_dir / "user_service.java")
     text = render_outline(r, OutlineOptions())
@@ -645,8 +645,8 @@ def test_outline_renderer_smoke(java_dir):
 
 def test_digest_includes_java_types(java_dir):
     """Digest renderer works on Java parse results."""
-    from code_outline.adapters import collect_files
-    from code_outline.core import DigestOptions, render_digest
+    from ast_outline.adapters import collect_files
+    from ast_outline.core import DigestOptions, render_digest
 
     files = collect_files([java_dir])
     java_files = [f for f in files if f.suffix == ".java"]

@@ -14,14 +14,14 @@ Two features under test:
 """
 from __future__ import annotations
 
-from code_outline.adapters.csharp import CSharpAdapter
-from code_outline.adapters.java import JavaAdapter
-from code_outline.adapters.kotlin import KotlinAdapter
-from code_outline.adapters.markdown import MarkdownAdapter
-from code_outline.adapters.python import PythonAdapter
-from code_outline.adapters.scala import ScalaAdapter
-from code_outline.adapters.typescript import TypeScriptAdapter
-from code_outline.core import (
+from ast_outline.adapters.csharp import CSharpAdapter
+from ast_outline.adapters.java import JavaAdapter
+from ast_outline.adapters.kotlin import KotlinAdapter
+from ast_outline.adapters.markdown import MarkdownAdapter
+from ast_outline.adapters.python import PythonAdapter
+from ast_outline.adapters.scala import ScalaAdapter
+from ast_outline.adapters.typescript import TypeScriptAdapter
+from ast_outline.core import (
     DigestOptions,
     OutlineOptions,
     render_digest,
@@ -217,7 +217,7 @@ def test_warning_line_singular_when_single_error():
 
 
 def test_digest_header_includes_counts(java_dir):
-    from code_outline.adapters import collect_files
+    from ast_outline.adapters import collect_files
 
     files = collect_files([java_dir])
     java_files = [f for f in files if f.suffix == ".java"]
@@ -231,7 +231,7 @@ def test_digest_header_includes_counts(java_dir):
 def test_digest_warning_line_for_broken_file(java_dir):
     """The digest must surface the WARNING for broken files too, not only
     the outline view — an agent running `digest` should still notice."""
-    from code_outline.adapters import collect_files
+    from ast_outline.adapters import collect_files
 
     files = collect_files([java_dir])
     java_files = [f for f in files if f.suffix == ".java"]
@@ -343,7 +343,7 @@ def test_kotlin_enum_members_not_counted_as_fields(kotlin_dir):
     """Kotlin enum entries (ACTIVE, INACTIVE, …) are KIND_ENUM_MEMBER —
     not KIND_FIELD. They must NOT inflate the `fields` counter."""
     r = KotlinAdapter().parse(kotlin_dir / "data_and_sealed.kt")
-    from code_outline.core import KIND_ENUM_MEMBER, _collect_counts
+    from ast_outline.core import KIND_ENUM_MEMBER, _collect_counts
 
     counts = _collect_counts(r.declarations)
     # Count entries directly
@@ -372,7 +372,7 @@ def test_kotlin_typealias_and_property_not_counted_as_type(kotlin_dir):
     """typealiases (KIND_DELEGATE) and properties/fields must NOT leak into
     the `types` counter — that category is reserved for TYPE_KINDS."""
     r = KotlinAdapter().parse(kotlin_dir / "extensions_and_toplevel.kt")
-    from code_outline.core import _collect_counts
+    from ast_outline.core import _collect_counts
 
     counts = _collect_counts(r.declarations)
     # Fixture has exactly one class (Vec2); typealiases should not bump the count
@@ -408,7 +408,7 @@ def test_scala_enum_members_not_counted_as_fields(scala_dir):
     """Scala 3 enum entries (Active / Inactive / …) are KIND_ENUM_MEMBER —
     they must NOT inflate the `fields` counter."""
     r = ScalaAdapter().parse(scala_dir / "data_and_sealed.scala")
-    from code_outline.core import KIND_ENUM_MEMBER, _collect_counts
+    from ast_outline.core import KIND_ENUM_MEMBER, _collect_counts
 
     counts = _collect_counts(r.declarations)
     stack = list(r.declarations)
@@ -436,7 +436,7 @@ def test_typescript_enum_member_not_counted_as_field(fixtures_dir):
     r = TypeScriptAdapter().parse(fixtures_dir / "typescript" / "types.ts")
     first = render_outline(r, OutlineOptions()).splitlines()[0]
     # Count the ACTUAL enum members vs what the header reports.
-    from code_outline.core import KIND_ENUM_MEMBER, _collect_counts
+    from ast_outline.core import KIND_ENUM_MEMBER, _collect_counts
     all_decls = r.declarations
     # Walk tree, count enum members directly
     stack = list(all_decls)

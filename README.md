@@ -1,6 +1,8 @@
-# code-outline
+# ast-outline
 
 **English** · [Русский](./README.ru.md) · [简体中文](./README.zh-CN.md)
+
+> **Renamed from `code-outline` in v0.3.0** to join the `ast-*` family convention popularised by [ast-grep](https://github.com/ast-grep/ast-grep). The legacy `code-outline` CLI command still works as a backward-compat alias through 0.4.x.
 
 > Fast, AST-based **structural outline** for source files — classes, methods,
 > signatures with line numbers, but **no method bodies**. Built for LLM coding
@@ -14,7 +16,7 @@
 
 ## Purpose
 
-**`code-outline` exists to make LLM coding agents faster, cheaper, and smarter
+**`ast-outline` exists to make LLM coding agents faster, cheaper, and smarter
 when navigating unfamiliar code.**
 
 Modern agentic coding tools (Claude Code, Cursor's agent mode, Aider,
@@ -23,7 +25,7 @@ Copilot Chat, custom CLI agents) explore codebases by reading files directly
 cost: on a 1000-line file, the agent pays for 1000 lines of tokens just to
 answer *"what methods exist here?"*.
 
-`code-outline` closes that gap. It's a **pre-reading layer** for agents:
+`ast-outline` closes that gap. It's a **pre-reading layer** for agents:
 
 1. **Token savings — typically 5–10×.** An outline replaces a full file
    read when the agent only needs structural understanding.
@@ -37,7 +39,7 @@ answer *"what methods exist here?"*.
 
 ### The typical agent workflow
 
-**Before `code-outline`:**
+**Before `ast-outline`:**
 
 ```
 Agent: Read Player.cs            # 1200 lines of tokens
@@ -47,12 +49,12 @@ Agent: grep "IDamageable" src/   # noisy, lots of false matches
 ...
 ```
 
-**With `code-outline`:**
+**With `ast-outline`:**
 
 ```
-Agent: code-outline digest src/Combat         # ~100 lines, whole module
-Agent: code-outline implements IDamageable    # precise list, no grep noise
-Agent: code-outline show Player.cs TakeDamage # just the method body
+Agent: ast-outline digest src/Combat         # ~100 lines, whole module
+Agent: ast-outline implements IDamageable    # precise list, no grep noise
+Agent: ast-outline show Player.cs TakeDamage # just the method body
 ```
 
 Result: **same understanding, a fraction of the tokens, a fraction of
@@ -74,7 +76,7 @@ the round-trips.**
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — heading TOC + fenced code blocks |
 
 Adding another language is a single new adapter file. See
-[`src/code_outline/adapters/`](src/code_outline/adapters/).
+[`src/ast_outline/adapters/`](src/ast_outline/adapters/).
 
 ---
 
@@ -85,10 +87,10 @@ Adding another language is a single new adapter file. See
 Requires [`uv`](https://docs.astral.sh/uv/) (a fast Python package manager):
 
 ```bash
-uv tool install git+https://github.com/dim-s/code-outline.git
+uv tool install git+https://github.com/dim-s/ast-outline.git
 ```
 
-This installs the `code-outline` CLI globally into `~/.local/bin` (Mac / Linux)
+This installs the `ast-outline` CLI globally into `~/.local/bin` (Mac / Linux)
 or `%USERPROFILE%\.local\bin` (Windows) — make sure that's on your `PATH`.
 
 Don't have `uv` yet?
@@ -105,29 +107,29 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 
 ```bash
 # macOS / Linux
-curl -LsSf https://raw.githubusercontent.com/dim-s/code-outline/main/scripts/install.sh | bash
+curl -LsSf https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.sh | bash
 
 # Windows (PowerShell)
-iwr -useb https://raw.githubusercontent.com/dim-s/code-outline/main/scripts/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.ps1 | iex
 ```
 
 ### Alternative: `pipx`
 
 ```bash
-pipx install git+https://github.com/dim-s/code-outline.git
+pipx install git+https://github.com/dim-s/ast-outline.git
 ```
 
 ### Alternative: `pip` (into an active venv)
 
 ```bash
-pip install git+https://github.com/dim-s/code-outline.git
+pip install git+https://github.com/dim-s/ast-outline.git
 ```
 
 ### Update / uninstall
 
 ```bash
-uv tool upgrade code-outline
-uv tool uninstall code-outline
+uv tool upgrade ast-outline
+uv tool uninstall ast-outline
 ```
 
 ---
@@ -136,27 +138,27 @@ uv tool uninstall code-outline
 
 ```bash
 # Structural outline of one file
-code-outline path/to/Player.cs
-code-outline path/to/user_service.py
+ast-outline path/to/Player.cs
+ast-outline path/to/user_service.py
 
 # Outline a whole directory (recurses supported extensions)
-code-outline src/
+ast-outline src/
 
 # Print the source of one specific method
-code-outline show Player.cs TakeDamage
+ast-outline show Player.cs TakeDamage
 
 # Several methods at once
-code-outline show Player.cs TakeDamage Heal Die
+ast-outline show Player.cs TakeDamage Heal Die
 
 # Compact public-API map of a whole module
-code-outline digest src/Services
+ast-outline digest src/Services
 
 # Every class that inherits/implements a given type
-code-outline implements IDamageable src/
+ast-outline implements IDamageable src/
 
 # Built-in guide
-code-outline help
-code-outline help show
+ast-outline help
+ast-outline help show
 ```
 
 ---
@@ -165,42 +167,42 @@ code-outline help show
 
 This is the main use case. Add the snippet below to your `CLAUDE.md`,
 `AGENTS.md`, subagent file, or any system prompt that steers a coding
-agent. It will then prefer `code-outline` over reading full files.
+agent. It will then prefer `ast-outline` over reading full files.
 
-The same snippet ships with the tool — `code-outline prompt` prints it
+The same snippet ships with the tool — `ast-outline prompt` prints it
 verbatim, so you can append it to a project's agent config without
 copy-pasting:
 
 ```bash
-code-outline prompt >> AGENTS.md
-code-outline prompt >> .claude/CLAUDE.md
-code-outline prompt | pbcopy   # macOS clipboard
+ast-outline prompt >> AGENTS.md
+ast-outline prompt >> .claude/CLAUDE.md
+ast-outline prompt | pbcopy   # macOS clipboard
 ```
 
 ### Prompt snippet (copy-paste)
 
 ```markdown
-## Code exploration — prefer `code-outline` over full reads
+## Code exploration — prefer `ast-outline` over full reads
 
 For `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`,
-`.scala`, `.sc`, and `.md` files, read structure with `code-outline` before
+`.scala`, `.sc`, and `.md` files, read structure with `ast-outline` before
 opening full contents.
 Pull method bodies only once you know which ones you need.
 
 Stop at the step that answers the question:
 
-1. **Unfamiliar directory** — `code-outline digest <dir>`: one-page map
+1. **Unfamiliar directory** — `ast-outline digest <dir>`: one-page map
    of every file's types and public methods.
 
-2. **One file's shape** — `code-outline <file>`: signatures with line
+2. **One file's shape** — `ast-outline <file>`: signatures with line
    ranges, no bodies (5–10× smaller than a full read).
 
-3. **One method, class, or markdown section** — `code-outline show <file>
+3. **One method, class, or markdown section** — `ast-outline show <file>
    <Symbol>`. Suffix matching: `TakeDamage`, or `Player.TakeDamage` when
-   ambiguous. Multiple at once: `code-outline show Player.cs TakeDamage
+   ambiguous. Multiple at once: `ast-outline show Player.cs TakeDamage
    Heal Die`. For markdown, the symbol is the heading text.
 
-4. **Who implements/extends a type** — `code-outline implements <Type>
+4. **Who implements/extends a type** — `ast-outline implements <Type>
    <dir>`: AST-accurate (skip `grep`), transitive by default with
    `[via Parent]` tags on indirect matches. Add `--direct` for level-1 only.
 
@@ -210,7 +212,7 @@ Fall back to a full read only when you need context beyond the body
 If the outline header contains `# WARNING: N parse errors`, the outline
 for that file is partial — read the source directly for the affected region.
 
-`code-outline help` for flags and rare options.
+`ast-outline help` for flags and rare options.
 ```
 
 ### Why this helps
@@ -242,8 +244,8 @@ for that file is partial — read the source directly for the affected region.
 Print the file's classes, methods, properties, fields with line ranges.
 
 ```bash
-code-outline path/to/File.cs
-code-outline path/to/module.py --no-private --no-fields
+ast-outline path/to/File.cs
+ast-outline path/to/module.py --no-private --no-fields
 ```
 
 Flags:
@@ -258,10 +260,10 @@ Flags:
 ### `show` — extract source of a symbol
 
 ```bash
-code-outline show File.cs TakeDamage
-code-outline show File.cs PlayerController.TakeDamage   # disambiguate overloads
-code-outline show service.py UserService.get
-code-outline show File.cs TakeDamage Heal Die           # several at once
+ast-outline show File.cs TakeDamage
+ast-outline show File.cs PlayerController.TakeDamage   # disambiguate overloads
+ast-outline show service.py UserService.get
+ast-outline show File.cs TakeDamage Heal Die           # several at once
 ```
 
 Matching is **suffix-based**: `Foo.Bar` matches any `*.Foo.Bar`. If multiple
@@ -270,7 +272,7 @@ declarations match, all are printed with a summary.
 ### `digest` — one-page module map
 
 ```bash
-code-outline digest src/
+ast-outline digest src/
 ```
 
 Sample output:
@@ -288,7 +290,7 @@ src/services/
 ### `implements` — find subclasses / implementations
 
 ```bash
-code-outline implements IDamageable src/
+ast-outline implements IDamageable src/
 ```
 
 AST-based — no false positives from comments or unrelated mentions.
@@ -306,7 +308,7 @@ src/Puppies.cs:12  class Puppy : Dog          [via Dog]
 Add `--direct` / `-d` to restrict to level-1 subclasses only:
 
 ```bash
-code-outline implements --direct IDamageable src/
+ast-outline implements --direct IDamageable src/
 ```
 
 The search works across any number of files and nested directories —
@@ -316,12 +318,12 @@ segment of the type name (stripping generics and namespace prefixes).
 ### `prompt` — print the agent prompt snippet
 
 ```bash
-code-outline prompt
-code-outline prompt >> AGENTS.md
+ast-outline prompt
+ast-outline prompt >> AGENTS.md
 ```
 
 Prints the canonical copy-paste snippet used to steer LLM coding agents
-to prefer `code-outline` over full reads. English, universal across
+to prefer `ast-outline` over full reads. English, universal across
 Claude Opus 4.7 / Sonnet 4.6 / Haiku 4.5. Running it ensures you always
 get the current recommended version.
 
@@ -363,7 +365,7 @@ class UserService  L31-58
 
 ### `show` with ancestor context
 
-`code-outline show <file> <Symbol>` prints a `# in: ...` breadcrumb
+`ast-outline show <file> <Symbol>` prints a `# in: ...` breadcrumb
 between the header and the body so you know what the extracted code is
 nested inside, without a second `outline` call:
 
@@ -418,17 +420,17 @@ matches how agentic coding tools like Claude Code actually work.
 ## Development
 
 ```bash
-git clone https://github.com/dim-s/code-outline.git
-cd code-outline
+git clone https://github.com/dim-s/ast-outline.git
+cd ast-outline
 
 # Create a venv and install in editable mode
 uv venv
 uv pip install -e .
 
 # Run against the included samples
-.venv/bin/code-outline tests/sample.cs
-.venv/bin/code-outline tests/sample.py
-.venv/bin/code-outline digest tests/
+.venv/bin/ast-outline tests/sample.cs
+.venv/bin/ast-outline tests/sample.py
+.venv/bin/ast-outline digest tests/
 ```
 
 ### Running the tests
@@ -459,7 +461,7 @@ dedicated fixture directory and a `tests/unit/test_<lang>_adapter.py` file.
 
 ### Adding a new language
 
-Create `src/code_outline/adapters/<lang>.py` implementing the
+Create `src/ast_outline/adapters/<lang>.py` implementing the
 `LanguageAdapter` protocol (see `adapters/base.py`). Then register it in
 `adapters/__init__.py`. The core renderers and CLI pick it up automatically
 — no further wiring needed.

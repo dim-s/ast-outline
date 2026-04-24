@@ -1,8 +1,8 @@
 """Tests for the C# adapter."""
 from __future__ import annotations
 
-from code_outline.adapters.csharp import CSharpAdapter
-from code_outline.core import (
+from ast_outline.adapters.csharp import CSharpAdapter
+from ast_outline.core import (
     KIND_CLASS,
     KIND_CTOR,
     KIND_ENUM,

@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from code_outline.adapters.markdown import MarkdownAdapter
-from code_outline.core import (
+from ast_outline.adapters.markdown import MarkdownAdapter
+from ast_outline.core import (
     KIND_CODE_BLOCK,
     KIND_HEADING,
     Declaration,

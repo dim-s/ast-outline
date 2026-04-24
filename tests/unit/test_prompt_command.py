@@ -1,13 +1,13 @@
-"""Tests for the `code-outline prompt` subcommand and the underlying
-AGENT_PROMPT constant that lives in `code_outline._prompt`.
+"""Tests for the `ast-outline prompt` subcommand and the underlying
+AGENT_PROMPT constant that lives in `ast_outline._prompt`.
 
 This subcommand prints the canonical copy-paste LLM-agent snippet used
-to wire up coding agents (Claude, Cursor, etc.) to prefer `code-outline`
+to wire up coding agents (Claude, Cursor, etc.) to prefer `ast-outline`
 over full-file reads. Tests check:
 
 - The CLI command exits 0 and prints the snippet to stdout.
 - Output is pure markdown (no ANSI colour codes, no extra banners) so
-  `code-outline prompt >> AGENTS.md` produces a clean append.
+  `ast-outline prompt >> AGENTS.md` produces a clean append.
 - `help prompt` renders a topic-specific guide mentioning the subcommand.
 - The constant's content is well-formed: hits every major rule that the
   prompt-tuner review deemed load-bearing. If someone edits
@@ -16,8 +16,8 @@ over full-file reads. Tests check:
 """
 from __future__ import annotations
 
-from code_outline._prompt import AGENT_PROMPT
-from code_outline.cli import main
+from ast_outline._prompt import AGENT_PROMPT
+from ast_outline.cli import main
 
 
 # --- CLI end-to-end ------------------------------------------------------
@@ -64,7 +64,7 @@ def test_help_prompt_topic(capsys):
     out = capsys.readouterr().out
     assert rc == 0
     # Topic-specific guide, not the general one
-    assert "code-outline prompt" in out
+    assert "ast-outline prompt" in out
     assert "USAGE" in out
     assert "EXAMPLES" in out
 
@@ -72,7 +72,7 @@ def test_help_prompt_topic(capsys):
 def test_general_help_mentions_prompt_command(capsys):
     main(["help"])
     out = capsys.readouterr().out
-    assert "code-outline prompt" in out
+    assert "ast-outline prompt" in out
 
 
 # --- Snippet content checks (catch drift, don't over-assert wording) ----
@@ -91,7 +91,10 @@ def test_snippet_mentions_every_supported_file_extension():
     when extensions diverge from the constant."""
     # The prompt-tuner review kept the full extension list deliberately
     # (Haiku concreteness). Assert each supported ext appears at least once.
-    for ext in [".cs", ".py", ".pyi", ".ts", ".tsx", ".js", ".jsx", ".java", ".md"]:
+    for ext in [
+        ".cs", ".py", ".pyi", ".ts", ".tsx", ".js", ".jsx",
+        ".java", ".kt", ".kts", ".scala", ".sc", ".md",
+    ]:
         assert f"`{ext}`" in AGENT_PROMPT, f"snippet missing extension {ext!r}"
 
 
@@ -100,9 +103,9 @@ def test_snippet_covers_all_four_subcommands():
     facing exploration subcommand. Dropping one would regress the
     snippet's completeness."""
     for cmd in ("digest", "show", "implements"):
-        assert f"code-outline {cmd}" in AGENT_PROMPT, f"snippet missing {cmd!r}"
-    # And the default outline invocation (bare `code-outline <file>`)
-    assert "`code-outline <file>`" in AGENT_PROMPT
+        assert f"ast-outline {cmd}" in AGENT_PROMPT, f"snippet missing {cmd!r}"
+    # And the default outline invocation (bare `ast-outline <file>`)
+    assert "`ast-outline <file>`" in AGENT_PROMPT
 
 
 def test_snippet_contains_parse_error_safety_clause():
@@ -150,7 +153,7 @@ def test_snippet_fits_rough_length_budget():
 
 
 def test_snippet_ends_with_newline():
-    """Appending with `code-outline prompt >> AGENTS.md` must leave a
+    """Appending with `ast-outline prompt >> AGENTS.md` must leave a
     clean newline so the next line doesn't concatenate."""
     assert AGENT_PROMPT.endswith("\n")
 
@@ -159,7 +162,7 @@ def test_snippet_ends_with_newline():
 
 
 def test_appending_snippet_produces_valid_markdown(tmp_path, capsys):
-    """Simulate `code-outline prompt >> ~/AGENTS.md` flow: append output
+    """Simulate `ast-outline prompt >> ~/AGENTS.md` flow: append output
     to an existing markdown file, ensure the result is parseable by eye
     (has required headers, no binary noise)."""
     existing = tmp_path / "AGENTS.md"

@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
-# code-outline one-command installer for macOS / Linux.
+# ast-outline one-command installer for macOS / Linux.
 #
 # Usage:
-#   curl -LsSf https://raw.githubusercontent.com/dim-s/code-outline/main/scripts/install.sh | bash
+#   curl -LsSf https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.sh | bash
 #
 # This installs:
 #   1. `uv` (if missing) — the Python package manager we use.
-#   2. `code-outline` globally as a uv-managed tool.
+#   2. `ast-outline` globally as a uv-managed tool.
+#      A backward-compat `code-outline` CLI alias is also installed for
+#      users coming from the pre-0.3.0 name.
 #
-# Uninstall later with: uv tool uninstall code-outline
+# Uninstall later with: uv tool uninstall ast-outline
 
 set -euo pipefail
 
-REPO_URL="${CODE_OUTLINE_REPO:-https://github.com/dim-s/code-outline.git}"
-REF="${CODE_OUTLINE_REF:-main}"
+# Accept both new and legacy env-var names so migration is seamless for
+# anyone who scripted the old installer.
+REPO_URL="${AST_OUTLINE_REPO:-${CODE_OUTLINE_REPO:-https://github.com/dim-s/ast-outline.git}}"
+REF="${AST_OUTLINE_REF:-${CODE_OUTLINE_REF:-main}}"
 
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m==>\033[0m %s\n' "$*" >&2; }
@@ -34,26 +38,27 @@ if ! command -v uv >/dev/null 2>&1; then
     fi
 
     if ! command -v uv >/dev/null 2>&1; then
-        fail "uv was installed but is not on PATH. Open a new shell and re-run this script, or install code-outline manually with: uv tool install git+$REPO_URL"
+        fail "uv was installed but is not on PATH. Open a new shell and re-run this script, or install ast-outline manually with: uv tool install git+$REPO_URL"
     fi
 else
     say "uv already installed: $(uv --version)"
 fi
 
-# 2. Install code-outline --------------------------------------------------
+# 2. Install ast-outline ---------------------------------------------------
 
-say "installing code-outline from $REPO_URL (ref: $REF)"
+say "installing ast-outline from $REPO_URL (ref: $REF)"
 uv tool install --force "git+$REPO_URL@$REF"
 
 # 3. Verify ---------------------------------------------------------------
 
-if command -v code-outline >/dev/null 2>&1; then
+if command -v ast-outline >/dev/null 2>&1; then
     say "installed successfully:"
-    code-outline --help | head -6 || true
+    ast-outline --help | head -6 || true
     echo
-    say "try:  code-outline help"
+    say "try:  ast-outline help"
+    say "(legacy \`code-outline\` command is also installed as an alias)"
 else
-    warn "code-outline is installed but not yet on PATH."
+    warn "ast-outline is installed but not yet on PATH."
     warn "add this to your shell profile:"
     warn '    export PATH="$HOME/.local/bin:$PATH"'
     warn "then restart your terminal."

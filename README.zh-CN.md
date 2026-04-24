@@ -1,6 +1,8 @@
-# code-outline
+# ast-outline
 
 [English](./README.md) · [Русский](./README.ru.md) · **简体中文**
+
+> **v0.3.0 已由 `code-outline` 重命名** 为 `ast-outline`，以加入 [ast-grep](https://github.com/ast-grep/ast-grep) 推广的 `ast-*` 家族命名约定。旧 CLI 命令 `code-outline` 在 0.4.x 期间继续作为向后兼容别名保留。
 
 > 基于 AST 的快速源码**结构化大纲**工具 —— 输出类、方法和签名及其行号范围，
 > **不包含方法体**。专为大模型编码代理（LLM coding agents）设计：先看清文件
@@ -14,14 +16,14 @@
 
 ## 项目目的
 
-**`code-outline` 的存在是为了让大模型编码代理在浏览陌生代码库时更快、更省钱、更聪明。**
+**`ast-outline` 的存在是为了让大模型编码代理在浏览陌生代码库时更快、更省钱、更聪明。**
 
 现代的 Agent 编码工具（Claude Code、Cursor 的 Agent 模式、Aider、Copilot Chat、
 自建 CLI Agent）都是通过**直接读取文件**来探索代码库 —— 而不是靠 embeddings
 或向量检索。这种方式可靠，但代价高：一个 1000 行的文件，Agent 为了回答
 *"这里有哪些方法？"* 就得花费 1000 行的 token。
 
-`code-outline` 填平了这个缺口。它是给 Agent 的**预读层**：
+`ast-outline` 填平了这个缺口。它是给 Agent 的**预读层**：
 
 1. **Token 节省 —— 通常 5–10 倍。** 当 Agent 只需要结构层面的理解时，
    用 outline 代替完整文件读取。
@@ -35,7 +37,7 @@
 
 ### 典型 Agent 工作流
 
-**没有 `code-outline` 之前：**
+**没有 `ast-outline` 之前：**
 
 ```
 Agent: Read Player.cs            # 1200 行 token
@@ -45,12 +47,12 @@ Agent: grep "IDamageable" src/   # 噪声多，很多误匹配
 ...
 ```
 
-**用了 `code-outline` 之后：**
+**用了 `ast-outline` 之后：**
 
 ```
-Agent: code-outline digest src/Combat         # ~100 行，整个模块一览
-Agent: code-outline implements IDamageable    # 精准列表，无 grep 噪声
-Agent: code-outline show Player.cs TakeDamage # 只取需要的方法体
+Agent: ast-outline digest src/Combat         # ~100 行，整个模块一览
+Agent: ast-outline implements IDamageable    # 精准列表，无 grep 噪声
+Agent: ast-outline show Player.cs TakeDamage # 只取需要的方法体
 ```
 
 结果：**同等的代码理解度，token 量和往返次数都是原来的零头。**
@@ -71,7 +73,7 @@ Agent: code-outline show Player.cs TakeDamage # 只取需要的方法体
 | Markdown   | `.md`、`.markdown`、`.mdx`、`.mdown` —— 标题目录 + 代码块 |
 
 新增语言只需要加一个适配器文件。见
-[`src/code_outline/adapters/`](src/code_outline/adapters/)。
+[`src/ast_outline/adapters/`](src/ast_outline/adapters/)。
 
 ---
 
@@ -82,10 +84,10 @@ Agent: code-outline show Player.cs TakeDamage # 只取需要的方法体
 需要 [`uv`](https://docs.astral.sh/uv/)（一个快速的 Python 包管理器）：
 
 ```bash
-uv tool install git+https://github.com/dim-s/code-outline.git
+uv tool install git+https://github.com/dim-s/ast-outline.git
 ```
 
-这会把 `code-outline` CLI 全局安装到 `~/.local/bin`（Mac / Linux）或
+这会把 `ast-outline` CLI 全局安装到 `~/.local/bin`（Mac / Linux）或
 `%USERPROFILE%\.local\bin`（Windows）—— 确保该目录在你的 `PATH` 中。
 
 还没装 `uv`？
@@ -102,29 +104,29 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 
 ```bash
 # macOS / Linux
-curl -LsSf https://raw.githubusercontent.com/dim-s/code-outline/main/scripts/install.sh | bash
+curl -LsSf https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.sh | bash
 
 # Windows (PowerShell)
-iwr -useb https://raw.githubusercontent.com/dim-s/code-outline/main/scripts/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.ps1 | iex
 ```
 
 ### 备选：`pipx`
 
 ```bash
-pipx install git+https://github.com/dim-s/code-outline.git
+pipx install git+https://github.com/dim-s/ast-outline.git
 ```
 
 ### 备选：`pip`（在已激活的 venv 中）
 
 ```bash
-pip install git+https://github.com/dim-s/code-outline.git
+pip install git+https://github.com/dim-s/ast-outline.git
 ```
 
 ### 升级 / 卸载
 
 ```bash
-uv tool upgrade code-outline
-uv tool uninstall code-outline
+uv tool upgrade ast-outline
+uv tool uninstall ast-outline
 ```
 
 ---
@@ -133,27 +135,27 @@ uv tool uninstall code-outline
 
 ```bash
 # 单个文件的结构化大纲
-code-outline path/to/Player.cs
-code-outline path/to/user_service.py
+ast-outline path/to/Player.cs
+ast-outline path/to/user_service.py
 
 # 整个目录（递归查找所有受支持的扩展名）
-code-outline src/
+ast-outline src/
 
 # 打印某个具体方法的源码
-code-outline show Player.cs TakeDamage
+ast-outline show Player.cs TakeDamage
 
 # 一次提取多个方法
-code-outline show Player.cs TakeDamage Heal Die
+ast-outline show Player.cs TakeDamage Heal Die
 
 # 整个模块的公共 API 精简视图
-code-outline digest src/Services
+ast-outline digest src/Services
 
 # 找出所有继承/实现指定类型的类
-code-outline implements IDamageable src/
+ast-outline implements IDamageable src/
 
 # 内置帮助
-code-outline help
-code-outline help show
+ast-outline help
+ast-outline help show
 ```
 
 ---
@@ -162,40 +164,40 @@ code-outline help show
 
 **这是本工具的主要使用场景。** 把下面的片段加到你的 `CLAUDE.md`、
 `AGENTS.md`、子 Agent 配置或任何引导编码 Agent 的系统提示里。之后
-Agent 就会优先用 `code-outline` 而不是直接读完整文件。
+Agent 就会优先用 `ast-outline` 而不是直接读完整文件。
 
-同样的片段也随工具一起发布 —— `code-outline prompt` 会原样打印它，
+同样的片段也随工具一起发布 —— `ast-outline prompt` 会原样打印它，
 不用手动复制就能直接追加到项目的 agent 配置里：
 
 ```bash
-code-outline prompt >> AGENTS.md
-code-outline prompt >> .claude/CLAUDE.md
-code-outline prompt | pbcopy   # macOS 剪贴板
+ast-outline prompt >> AGENTS.md
+ast-outline prompt >> .claude/CLAUDE.md
+ast-outline prompt | pbcopy   # macOS 剪贴板
 ```
 
 ### 提示词片段（直接复制）
 
 ```markdown
-## 代码探索 —— 优先用 `code-outline`，而不是完整读取
+## 代码探索 —— 优先用 `ast-outline`，而不是完整读取
 
 对于 `.cs`、`.py`、`.pyi`、`.ts`、`.tsx`、`.js`、`.jsx`、`.java`、`.kt`、`.kts`、
-`.scala`、`.sc` 和 `.md` 文件，先用 `code-outline` 读结构，再考虑打开完整内容。
+`.scala`、`.sc` 和 `.md` 文件，先用 `ast-outline` 读结构，再考虑打开完整内容。
 方法体只在你已经确定需要某一个时才去取。
 
 哪一步能回答问题就停在哪一步：
 
-1. **不熟悉的目录** —— `code-outline digest <dir>`：一页地图，列出每个
+1. **不熟悉的目录** —— `ast-outline digest <dir>`：一页地图，列出每个
    文件的类型和公共方法。
 
-2. **单个文件的结构** —— `code-outline <file>`：签名 + 行号范围，不含
+2. **单个文件的结构** —— `ast-outline <file>`：签名 + 行号范围，不含
    方法体（比完整读取少用 5–10 倍 token）。
 
-3. **某个方法 / 类 / markdown 段落** —— `code-outline show <file> <Symbol>`。
+3. **某个方法 / 类 / markdown 段落** —— `ast-outline show <file> <Symbol>`。
    后缀匹配：`TakeDamage`，有歧义时用 `Player.TakeDamage`。一次取多个：
-   `code-outline show Player.cs TakeDamage Heal Die`。markdown 的符号名
+   `ast-outline show Player.cs TakeDamage Heal Die`。markdown 的符号名
    就是标题文本。
 
-4. **谁继承/实现了某个类型** —— `code-outline implements <Type> <dir>`：
+4. **谁继承/实现了某个类型** —— `ast-outline implements <Type> <dir>`：
    基于 AST（不用 `grep`），默认是传递性的 —— 间接匹配会带 `[via Parent]`
    标记。加 `--direct` 只显示直接子类。
 
@@ -204,7 +206,7 @@ code-outline prompt | pbcopy   # macOS 剪贴板
 如果 outline 头部包含 `# WARNING: N parse errors`，说明该文件的 outline
 是不完整的 —— 直接读取受影响区域的源码。
 
-`code-outline help` 查看完整标志和冷门选项。
+`ast-outline help` 查看完整标志和冷门选项。
 ```
 
 ### 为什么有效
@@ -235,8 +237,8 @@ code-outline prompt | pbcopy   # macOS 剪贴板
 打印文件中的类、方法、属性、字段及其行号范围。
 
 ```bash
-code-outline path/to/File.cs
-code-outline path/to/module.py --no-private --no-fields
+ast-outline path/to/File.cs
+ast-outline path/to/module.py --no-private --no-fields
 ```
 
 选项：
@@ -251,10 +253,10 @@ code-outline path/to/module.py --no-private --no-fields
 ### `show` —— 按符号名取出源码
 
 ```bash
-code-outline show File.cs TakeDamage
-code-outline show File.cs PlayerController.TakeDamage   # 区分重载
-code-outline show service.py UserService.get
-code-outline show File.cs TakeDamage Heal Die           # 一次多个
+ast-outline show File.cs TakeDamage
+ast-outline show File.cs PlayerController.TakeDamage   # 区分重载
+ast-outline show service.py UserService.get
+ast-outline show File.cs TakeDamage Heal Die           # 一次多个
 ```
 
 匹配采用**后缀方式**：`Foo.Bar` 可匹配任何 `*.Foo.Bar`。如有多个匹配，
@@ -263,7 +265,7 @@ code-outline show File.cs TakeDamage Heal Die           # 一次多个
 ### `digest` —— 模块单页地图
 
 ```bash
-code-outline digest src/
+ast-outline digest src/
 ```
 
 示例输出：
@@ -281,7 +283,7 @@ src/services/
 ### `implements` —— 找出子类 / 实现
 
 ```bash
-code-outline implements IDamageable src/
+ast-outline implements IDamageable src/
 ```
 
 基于 AST —— 不会被注释或无关引用干扰。**默认是传递性的**：如果
@@ -298,7 +300,7 @@ src/Puppies.cs:12  class Puppy : Dog          [via Dog]
 加上 `--direct` / `-d` 可以只限定为直接子类（第一层）：
 
 ```bash
-code-outline implements --direct IDamageable src/
+ast-outline implements --direct IDamageable src/
 ```
 
 搜索可以跨任意数量的文件和嵌套目录 —— 不依赖「文件名 = 类名」的约定。
@@ -307,11 +309,11 @@ code-outline implements --direct IDamageable src/
 ### `prompt` —— 打印 LLM agent 提示片段
 
 ```bash
-code-outline prompt
-code-outline prompt >> AGENTS.md
+ast-outline prompt
+ast-outline prompt >> AGENTS.md
 ```
 
-打印规范的复制粘贴片段，用于引导 LLM 编码 agent 优先使用 `code-outline`
+打印规范的复制粘贴片段，用于引导 LLM 编码 agent 优先使用 `ast-outline`
 而不是完整读取。英文，跨 Claude Opus 4.7 / Sonnet 4.6 / Haiku 4.5 通用。
 每次运行都能拿到当前版本的推荐片段。
 
@@ -352,7 +354,7 @@ class UserService  L31-58
 
 ### 带祖先上下文的 `show`
 
-`code-outline show <file> <Symbol>` 会在头部和方法体之间打印一行
+`ast-outline show <file> <Symbol>` 会在头部和方法体之间打印一行
 `# in: ...` 面包屑 —— 列出所属的 namespace/类链路，这样你无需再次调用
 `outline` 就能知道提取出来的代码嵌套在哪里：
 
@@ -404,17 +406,17 @@ Code 这类 Agent 编码工具的真实工作方式保持一致。
 ## 本地开发
 
 ```bash
-git clone https://github.com/dim-s/code-outline.git
-cd code-outline
+git clone https://github.com/dim-s/ast-outline.git
+cd ast-outline
 
 # 创建 venv 并以 editable 模式安装
 uv venv
 uv pip install -e .
 
 # 在仓库自带的样本上试运行
-.venv/bin/code-outline tests/sample.cs
-.venv/bin/code-outline tests/sample.py
-.venv/bin/code-outline digest tests/
+.venv/bin/ast-outline tests/sample.cs
+.venv/bin/ast-outline tests/sample.py
+.venv/bin/ast-outline digest tests/
 ```
 
 ### 运行测试
@@ -444,7 +446,7 @@ CLI。Fixture 放在 `tests/fixtures/`，测试不会越出该目录。任何新
 
 ### 新增一门语言
 
-在 `src/code_outline/adapters/<lang>.py` 创建新文件，实现
+在 `src/ast_outline/adapters/<lang>.py` 创建新文件，实现
 `LanguageAdapter` 协议（见 `adapters/base.py`）。然后在
 `adapters/__init__.py` 中注册即可。核心渲染器和 CLI 会自动识别，
 无需其他接线。

@@ -17,8 +17,8 @@ Covers Kotlin-specific ground that Java tests don't exercise:
 """
 from __future__ import annotations
 
-from code_outline.adapters.kotlin import KotlinAdapter
-from code_outline.core import (
+from ast_outline.adapters.kotlin import KotlinAdapter
+from ast_outline.core import (
     KIND_CLASS,
     KIND_CTOR,
     KIND_DELEGATE,
@@ -75,7 +75,7 @@ def test_adapter_extension_set():
 
 
 def test_kotlin_files_discovered_via_collect_files(kotlin_dir):
-    from code_outline.adapters import collect_files, get_adapter_for
+    from ast_outline.adapters import collect_files, get_adapter_for
 
     files = collect_files([kotlin_dir])
     kt_files = [f for f in files if f.suffix in {".kt", ".kts"}]
@@ -545,7 +545,7 @@ def test_annotation_stripper_handles_use_site_target():
     """`@file:JvmName(...)` and `@get:JvmStatic` have a `use-site target`
     followed by a colon before the identifier — the stripper must consume
     both segments."""
-    from code_outline.adapters.kotlin import _strip_leading_annotations
+    from ast_outline.adapters.kotlin import _strip_leading_annotations
 
     assert _strip_leading_annotations("@file:JvmName(\"X\") class Foo").startswith(
         "class Foo"
@@ -652,7 +652,7 @@ def test_broken_syntax_reports_error_count(kotlin_dir):
 
 
 def test_outline_renderer_smoke(kotlin_dir):
-    from code_outline.core import OutlineOptions, render_outline
+    from ast_outline.core import OutlineOptions, render_outline
 
     r = KotlinAdapter().parse(kotlin_dir / "user_service.kt")
     text = render_outline(r, OutlineOptions())
@@ -662,8 +662,8 @@ def test_outline_renderer_smoke(kotlin_dir):
 
 
 def test_digest_includes_kotlin_types(kotlin_dir):
-    from code_outline.adapters import collect_files
-    from code_outline.core import DigestOptions, render_digest
+    from ast_outline.adapters import collect_files
+    from ast_outline.core import DigestOptions, render_digest
 
     files = collect_files([kotlin_dir])
     kt_files = [f for f in files if f.suffix in {".kt", ".kts"}]

@@ -1,4 +1,4 @@
-"""CLI entry point for code-outline."""
+"""CLI entry point for ast-outline (legacy name: code-outline)."""
 from __future__ import annotations
 
 import argparse
@@ -31,8 +31,12 @@ def main(argv: list[str] | None = None) -> int:
         argv = ["outline", *argv]
 
     parser = argparse.ArgumentParser(
-        prog="code-outline",
-        description="Structural outline for C#/Python source files. Signatures with line numbers — no method bodies.",
+        # `prog` is intentionally left unset so argparse picks up the actual
+        # invoked binary name from sys.argv[0]. That way `ast-outline foo.py`
+        # surfaces `ast-outline: error: ...` and the backward-compat
+        # `ast-outline foo.py` alias still shows its own name — zero
+        # confusion for existing users during the rebrand window.
+        description="AST-based structural outline for source files. Signatures with line numbers — no method bodies.",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -93,7 +97,7 @@ def _cmd_prompt(_args) -> int:
     """Print the canonical copy-paste LLM-agent prompt snippet verbatim.
 
     No trailing newline muting — `print` adds one, matching the shape
-    expected by shell pipelines like `code-outline prompt >> AGENTS.md`.
+    expected by shell pipelines like `ast-outline prompt >> AGENTS.md`.
     """
     # AGENT_PROMPT ends with `\n` already; `print` adds another → a
     # single blank separator line, which is what agent-config files want.
@@ -130,7 +134,7 @@ def _parse_paths(paths: list[Path], glob: str | None = None) -> tuple[list[Parse
 def _cmd_outline(args) -> int:
     paths_raw = getattr(args, "paths", None) or []
     if not paths_raw:
-        print("No input files. Try: code-outline Player.cs", file=sys.stderr)
+        print("No input files. Try: ast-outline Player.cs", file=sys.stderr)
         return 2
 
     opts = OutlineOptions(
@@ -304,7 +308,7 @@ def _strip_leading_doc(src: str) -> str:
 
 
 GUIDE_GENERAL = """\
-code-outline — structural outline for source files
+ast-outline — structural outline for source files
 
 WHAT IT DOES
     Prints class/method/function/field signatures with line numbers,
@@ -322,23 +326,23 @@ SUPPORTED LANGUAGES
     Markdown    .md
 
 COMMANDS
-    code-outline outline <paths...>          Print outline of files or dirs
-    code-outline show <file> <symbols...>    Print source of one or more symbols
-    code-outline digest <paths...>           Compact public-API map of a dir
-    code-outline implements <type> <paths>   Find subclasses/implementations
-    code-outline prompt                      Print the canonical agent prompt snippet
-    code-outline help [topic]                Show this guide (or topic-specific)
+    ast-outline outline <paths...>          Print outline of files or dirs
+    ast-outline show <file> <symbols...>    Print source of one or more symbols
+    ast-outline digest <paths...>           Compact public-API map of a dir
+    ast-outline implements <type> <paths>   Find subclasses/implementations
+    ast-outline prompt                      Print the canonical agent prompt snippet
+    ast-outline help [topic]                Show this guide (or topic-specific)
 
 QUICK EXAMPLES
-    code-outline Player.cs
-    code-outline services/user_service.py
-    code-outline Assets/Scripts --no-private --no-fields
-    code-outline show Player.cs TakeDamage Heal
-    code-outline show user_service.py UserService.get_by_id
-    code-outline digest Assets/Scripts
-    code-outline digest scripts/
-    code-outline implements IDamageable Assets/Scripts
-    code-outline implements BaseValidator scripts/
+    ast-outline Player.cs
+    ast-outline services/user_service.py
+    ast-outline Assets/Scripts --no-private --no-fields
+    ast-outline show Player.cs TakeDamage Heal
+    ast-outline show user_service.py UserService.get_by_id
+    ast-outline digest Assets/Scripts
+    ast-outline digest scripts/
+    ast-outline implements IDamageable Assets/Scripts
+    ast-outline implements BaseValidator scripts/
 
 OUTPUT FORMAT
     # path/to/File.cs (N lines)
@@ -359,20 +363,20 @@ OUTPUT FORMAT
 
 TIPS FOR LLM AGENTS
     1. Start broad → narrow:
-         code-outline digest <dir>        # architecture map of the module
-         code-outline <file>              # one file in detail
-         code-outline show <file> <Name>  # body of a specific symbol
+         ast-outline digest <dir>        # architecture map of the module
+         ast-outline <file>              # one file in detail
+         ast-outline show <file> <Name>  # body of a specific symbol
     2. Looking for "who implements/extends X?" — use `implements`, not grep.
     3. Symbol matching is suffix-based: `Foo.Bar` matches `*.Foo.Bar`.
     4. Use `--no-private --no-fields` for a pure public-API view.
 """
 
 GUIDE_OUTLINE = """\
-code-outline outline — structural overview of source files
+ast-outline outline — structural overview of source files
 
 USAGE
-    code-outline outline <paths...> [flags]
-    code-outline <paths...> [flags]
+    ast-outline outline <paths...> [flags]
+    ast-outline <paths...> [flags]
 
 SUPPORTED
     C# (.cs), Python (.py, .pyi), TypeScript/JavaScript (.ts/.tsx/.js/.jsx),
@@ -387,17 +391,17 @@ FLAGS
     --glob PATTERN  Custom glob for directory mode (default: all supported)
 
 EXAMPLES
-    code-outline Foo.cs
-    code-outline service.py
-    code-outline src/ --no-private --no-fields --no-attrs
-    code-outline Foo.cs Bar.py   # mixed languages at once
+    ast-outline Foo.cs
+    ast-outline service.py
+    ast-outline src/ --no-private --no-fields --no-attrs
+    ast-outline Foo.cs Bar.py   # mixed languages at once
 """
 
 GUIDE_SHOW = """\
-code-outline show — extract source of one or more symbols
+ast-outline show — extract source of one or more symbols
 
 USAGE
-    code-outline show <file> <symbols...> [--no-doc]
+    ast-outline show <file> <symbols...> [--no-doc]
 
 SYMBOL SYNTAX
     Short name:      TakeDamage        get_by_id
@@ -407,8 +411,8 @@ SYMBOL SYNTAX
 
 MULTIPLE SYMBOLS
     Pass several names in one call:
-        code-outline show Player.cs TakeDamage Heal Die
-        code-outline show user_service.py get_by_id create update
+        ast-outline show Player.cs TakeDamage Heal Die
+        ast-outline show user_service.py get_by_id create update
 
 BEHAVIOR
     - One match: prints its source (including preceding doc).
@@ -421,10 +425,10 @@ FLAGS
 """
 
 GUIDE_DIGEST = """\
-code-outline digest — compact public-API map of a directory
+ast-outline digest — compact public-API map of a directory
 
 USAGE
-    code-outline digest <paths...> [flags]
+    ast-outline digest <paths...> [flags]
 
 WHAT IT DOES
     Walks directory, lists every source file as:
@@ -439,16 +443,16 @@ FLAGS
     --max-members N     Truncate long member lists (default: 50)
 
 EXAMPLES
-    code-outline digest Assets/Scripts
-    code-outline digest scripts/
-    code-outline digest src/Services src/Domain
+    ast-outline digest Assets/Scripts
+    ast-outline digest scripts/
+    ast-outline digest src/Services src/Domain
 """
 
 GUIDE_IMPLEMENTS = """\
-code-outline implements — find subclasses / implementations of a type
+ast-outline implements — find subclasses / implementations of a type
 
 USAGE
-    code-outline implements <TypeName> <paths...> [--direct]
+    ast-outline implements <TypeName> <paths...> [--direct]
 
 WHAT IT DOES
     AST-based search across every parsed file for classes / structs /
@@ -467,36 +471,36 @@ WHAT IT DOES
     no reliance on filename↔classname convention.
 
 EXAMPLES
-    code-outline implements IDamageable Assets/Scripts
-    code-outline implements MonoBehaviour Assets/Scripts/App/Audio
-    code-outline implements --direct BaseService src/
+    ast-outline implements IDamageable Assets/Scripts
+    ast-outline implements MonoBehaviour Assets/Scripts/App/Audio
+    ast-outline implements --direct BaseService src/
 """
 
 
 GUIDE_PROMPT = """\
-code-outline prompt — print the canonical agent prompt snippet
+ast-outline prompt — print the canonical agent prompt snippet
 
 USAGE
-    code-outline prompt
+    ast-outline prompt
 
 WHAT IT DOES
     Prints the copy-paste-ready markdown snippet that steers an LLM
-    coding agent (Claude, Cursor, etc.) to prefer `code-outline` over
+    coding agent (Claude, Cursor, etc.) to prefer `ast-outline` over
     full-file reads. English, universal — calibrated to work across
     Claude Opus 4.7 / Sonnet 4.6 / Haiku 4.5 out of the box.
 
-    The snippet ships with the tool so `code-outline prompt` always
+    The snippet ships with the tool so `ast-outline prompt` always
     emits the current recommended version, not a stale copy someone
     saved a year ago.
 
 EXAMPLES
     # Append straight into a project's agent config
-    code-outline prompt >> AGENTS.md
-    code-outline prompt >> .claude/CLAUDE.md
+    ast-outline prompt >> AGENTS.md
+    ast-outline prompt >> .claude/CLAUDE.md
 
     # Pipe into clipboard
-    code-outline prompt | pbcopy          # macOS
-    code-outline prompt | xclip -sel c    # Linux
+    ast-outline prompt | pbcopy          # macOS
+    ast-outline prompt | xclip -sel c    # Linux
 """
 
 

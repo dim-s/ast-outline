@@ -1,8 +1,8 @@
 """Tests for the Python adapter."""
 from __future__ import annotations
 
-from code_outline.adapters.python import PythonAdapter
-from code_outline.core import (
+from ast_outline.adapters.python import PythonAdapter
+from ast_outline.core import (
     KIND_CLASS,
     KIND_CTOR,
     KIND_FIELD,
@@ -187,7 +187,7 @@ def test_stacked_decorators_all_captured(python_dir):
 
 
 def test_decorated_function_byte_range_includes_decorators(python_dir):
-    """So `code-outline show` prints the decorator line together with the def."""
+    """So `ast-outline show` prints the decorator line together with the def."""
     path = python_dir / "decorators_edge.py"
     result = PythonAdapter().parse(path)
     widget = _find(result.declarations, kind=KIND_CLASS, name="Widget")

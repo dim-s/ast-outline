@@ -1,15 +1,16 @@
 [project]
-name = "code-outline"
-version = "0.2.0b0"
-description = "Structural outline for source files (C#, Python, TypeScript/JavaScript, Java, Kotlin, Scala, Markdown) — classes, methods, signatures without bodies. Optimized for LLM coding agents."
+name = "ast-outline"
+version = "0.3.0"
+description = "AST-based structural outline for source files (C#, Python, TypeScript/JavaScript, Java, Kotlin, Scala, Markdown) — tree-sitter-powered, LLM-agent-first. Complement to ast-grep: ast-grep searches, ast-outline overviews."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-    { name = "code-outline contributors" },
+    { name = "ast-outline contributors" },
 ]
 keywords = [
     "ast",
+    "ast-grep",
     "tree-sitter",
     "outline",
     "llm",
@@ -53,19 +54,24 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dim-s/code-outline"
-Issues = "https://github.com/dim-s/code-outline/issues"
-Repository = "https://github.com/dim-s/code-outline"
+Homepage = "https://github.com/dim-s/ast-outline"
+Issues = "https://github.com/dim-s/ast-outline/issues"
+Repository = "https://github.com/dim-s/ast-outline"
 
 [project.scripts]
-code-outline = "code_outline.cli:main"
+# Primary binary. Pre-1.0 rebrand from `code-outline` → `ast-outline` joins
+# the `ast-*` family convention popularised by ast-grep.
+ast-outline = "ast_outline.cli:main"
+# Backward-compat alias kept through 0.4.x; removed in 1.0 alongside a
+# final deprecation release of the old PyPI package.
+code-outline = "ast_outline.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/code_outline"]
+packages = ["src/ast_outline"]
 
 [tool.hatch.build.targets.sdist]
 include = [

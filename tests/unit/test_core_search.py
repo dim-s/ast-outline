@@ -1,12 +1,12 @@
 """Tests for find_symbols and find_implementations."""
 from __future__ import annotations
 
-from code_outline.adapters.csharp import CSharpAdapter
-from code_outline.adapters.java import JavaAdapter
-from code_outline.adapters.kotlin import KotlinAdapter
-from code_outline.adapters.python import PythonAdapter
-from code_outline.adapters.scala import ScalaAdapter
-from code_outline.core import (
+from ast_outline.adapters.csharp import CSharpAdapter
+from ast_outline.adapters.java import JavaAdapter
+from ast_outline.adapters.kotlin import KotlinAdapter
+from ast_outline.adapters.python import PythonAdapter
+from ast_outline.adapters.scala import ScalaAdapter
+from ast_outline.core import (
     find_implementations,
     find_symbols,
     _normalize_type_name,
@@ -94,7 +94,7 @@ def test_find_symbols_top_level_has_no_ancestors():
     ancestor_signatures."""
     from pathlib import Path
     fixtures = Path(__file__).parent.parent / "fixtures"
-    from code_outline.adapters.java import JavaAdapter
+    from ast_outline.adapters.java import JavaAdapter
     r = JavaAdapter().parse(fixtures / "java" / "no_package.java")
     [cls_match] = [m for m in find_symbols(r, "Top") if m.kind == "class"]
     assert cls_match.ancestor_signatures == []
@@ -102,7 +102,7 @@ def test_find_symbols_top_level_has_no_ancestors():
 
 def test_find_symbols_deeply_nested_reports_full_chain(java_dir):
     """Method on a nested class inside a package: package → outer → inner."""
-    from code_outline.adapters.java import JavaAdapter
+    from ast_outline.adapters.java import JavaAdapter
     r = JavaAdapter().parse(java_dir / "user_service.java")
     # UserService.Inner.value — picks both the `value` field and the
     # `value()` method; assert on the method one.
@@ -120,7 +120,7 @@ def test_find_symbols_ancestor_signatures_strip_attributes(java_dir):
     """Ancestor signatures must NOT contain the `@Annotation` prefix —
     attrs live in a separate Declaration field and aren't in `.signature`.
     Keeps the breadcrumb line short and readable."""
-    from code_outline.adapters.java import JavaAdapter
+    from ast_outline.adapters.java import JavaAdapter
     r = JavaAdapter().parse(java_dir / "user_service.java")
     [match] = find_symbols(r, "UserService.save")
     # UserService has @Service @Deprecated — should NOT leak into breadcrumb
@@ -211,7 +211,7 @@ def test_transitive_default_python(python_dir):
 
 def test_transitive_default_typescript(fixtures_dir):
     """TypeScript class + interface chains."""
-    from code_outline.adapters.typescript import TypeScriptAdapter
+    from ast_outline.adapters.typescript import TypeScriptAdapter
     r = TypeScriptAdapter().parse(fixtures_dir / "typescript" / "hierarchy.ts")
 
     hits = find_implementations([r], "Animal")
@@ -344,7 +344,7 @@ def test_transitive_walks_across_files_and_directories(java_dir):
     Parsing the whole multidir/ tree must connect the chain across
     directory boundaries — no matching by filename, just by declared
     type name inside the IR."""
-    from code_outline.adapters import collect_files
+    from ast_outline.adapters import collect_files
 
     multidir = java_dir / "multidir"
     files = collect_files([multidir])
@@ -372,7 +372,7 @@ def test_transitive_walks_across_directories_scala(scala_dir):
     """Scala cross-directory: Animal in base/, Dog+Puppy in mammals/,
     Cat in felines/. BFS must stitch them together despite the
     namespaces being declared in separate package_clauses."""
-    from code_outline.adapters import collect_files
+    from ast_outline.adapters import collect_files
 
     multidir = scala_dir / "multidir"
     files = collect_files([multidir])
@@ -400,7 +400,7 @@ def test_transitive_walks_across_directories_kotlin(kotlin_dir):
     Puppy in mammals/, Cat in felines/. BFS must connect them regardless
     of directory layout or Kotlin's file-package decoupling (a Kotlin
     file can contain any package; there's no filename↔class mapping)."""
-    from code_outline.adapters import collect_files
+    from ast_outline.adapters import collect_files
 
     multidir = kotlin_dir / "multidir"
     files = collect_files([multidir])

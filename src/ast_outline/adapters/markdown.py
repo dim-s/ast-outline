@@ -3,7 +3,7 @@
 Produces an IR that looks like a table of contents:
 
     # README.md (342 lines)
-    # code-outline                          L1-356
+    # ast-outline                           L1-356
         ## Purpose                          L15-58
         ## Supported languages              L62-74
         ## Install                          L76-124
@@ -174,7 +174,7 @@ def _code_block_to_decl(node: Node, src: bytes) -> Declaration:
 
     Name is the info-string language (`bash`, `typescript`, …) when present,
     otherwise a synthetic `code` so the user has something to target with
-    `code-outline show`.
+    `ast-outline show`.
     """
     info = _info_string(node, src) or "code"
     signature = f"{info} code block"

@@ -1,9 +1,9 @@
 """Tests for render_outline and render_digest."""
 from __future__ import annotations
 
-from code_outline.adapters.csharp import CSharpAdapter
-from code_outline.adapters.python import PythonAdapter
-from code_outline.core import (
+from ast_outline.adapters.csharp import CSharpAdapter
+from ast_outline.adapters.python import PythonAdapter
+from ast_outline.core import (
     Declaration,
     DigestOptions,
     OutlineOptions,

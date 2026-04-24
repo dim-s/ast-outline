@@ -1,11 +1,11 @@
 """End-to-end CLI integration tests.
 
-These invoke `code_outline.cli.main` directly and capture stdout/stderr,
+These invoke `ast_outline.cli.main` directly and capture stdout/stderr,
 so we don't need to spawn a subprocess.
 """
 from __future__ import annotations
 
-from code_outline.cli import main
+from ast_outline.cli import main
 
 
 # --- Default / guide -----------------------------------------------------
@@ -15,7 +15,7 @@ def test_main_with_no_args_prints_guide(capsys):
     rc = main([])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "code-outline" in out
+    assert "ast-outline" in out
     assert "COMMANDS" in out
 
 
@@ -38,7 +38,7 @@ def test_help_topic_specific(capsys):
 
 
 def test_outline_implicit_subcommand(csharp_dir, capsys):
-    """`code-outline path.cs` with no subcommand should default to `outline`."""
+    """`ast-outline path.cs` with no subcommand should default to `outline`."""
     rc = main([str(csharp_dir / "unity_behaviour.cs")])
     out = capsys.readouterr().out
     assert rc == 0

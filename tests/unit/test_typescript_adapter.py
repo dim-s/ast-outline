@@ -1,8 +1,8 @@
 """Tests for the TypeScript / JavaScript adapter (.ts .tsx .js .jsx)."""
 from __future__ import annotations
 
-from code_outline.adapters.typescript import TypeScriptAdapter
-from code_outline.core import (
+from ast_outline.adapters.typescript import TypeScriptAdapter
+from ast_outline.core import (
     KIND_CLASS,
     KIND_CTOR,
     KIND_ENUM,

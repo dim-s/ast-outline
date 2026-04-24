@@ -23,8 +23,8 @@ Covers Scala-specific ground that Java/Kotlin tests don't exercise:
 """
 from __future__ import annotations
 
-from code_outline.adapters.scala import ScalaAdapter
-from code_outline.core import (
+from ast_outline.adapters.scala import ScalaAdapter
+from ast_outline.core import (
     KIND_CLASS,
     KIND_DELEGATE,
     KIND_ENUM,
@@ -79,7 +79,7 @@ def test_adapter_extension_set():
 
 
 def test_scala_files_discovered_via_collect_files(scala_dir):
-    from code_outline.adapters import collect_files, get_adapter_for
+    from ast_outline.adapters import collect_files, get_adapter_for
 
     files = collect_files([scala_dir])
     scala_files = [f for f in files if f.suffix in {".scala", ".sc"}]
@@ -484,7 +484,7 @@ def test_annotation_with_parens_in_string_literal():
     """Round-trip the annotation stripper on an annotation whose
     argument is a string containing parens — the parser must mask the
     literal while balancing."""
-    from code_outline.adapters.scala import _strip_leading_annotations
+    from ast_outline.adapters.scala import _strip_leading_annotations
 
     out = _strip_leading_annotations('@SuppressWarnings("(foo)") class X')
     assert out.startswith("class X")
@@ -561,7 +561,7 @@ def test_broken_syntax_reports_error_count(scala_dir):
 
 
 def test_outline_renderer_smoke(scala_dir):
-    from code_outline.core import OutlineOptions, render_outline
+    from ast_outline.core import OutlineOptions, render_outline
 
     r = ScalaAdapter().parse(scala_dir / "user_service.scala")
     text = render_outline(r, OutlineOptions())
@@ -571,8 +571,8 @@ def test_outline_renderer_smoke(scala_dir):
 
 
 def test_digest_includes_scala_types(scala_dir):
-    from code_outline.adapters import collect_files
-    from code_outline.core import DigestOptions, render_digest
+    from ast_outline.adapters import collect_files
+    from ast_outline.core import DigestOptions, render_digest
 
     files = collect_files([scala_dir])
     scala_files = [f for f in files if f.suffix in {".scala", ".sc"}]

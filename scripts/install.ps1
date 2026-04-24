@@ -1,18 +1,27 @@
-# code-outline one-command installer for Windows (PowerShell).
+# ast-outline one-command installer for Windows (PowerShell).
 #
 # Usage:
-#   iwr -useb https://raw.githubusercontent.com/dim-s/code-outline/main/scripts/install.ps1 | iex
+#   iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.ps1 | iex
 #
 # This installs:
 #   1. `uv` (if missing) - the Python package manager we use.
-#   2. `code-outline` globally as a uv-managed tool.
+#   2. `ast-outline` globally as a uv-managed tool.
+#      A backward-compat `code-outline` CLI alias is also installed for
+#      users coming from the pre-0.3.0 name.
 #
-# Uninstall later with:  uv tool uninstall code-outline
+# Uninstall later with:  uv tool uninstall ast-outline
 
 $ErrorActionPreference = 'Stop'
 
-$RepoUrl = if ($env:CODE_OUTLINE_REPO) { $env:CODE_OUTLINE_REPO } else { 'https://github.com/dim-s/code-outline.git' }
-$Ref     = if ($env:CODE_OUTLINE_REF)  { $env:CODE_OUTLINE_REF  } else { 'main' }
+# Accept both new and legacy env-var names so migration is seamless.
+$RepoUrl =
+    if ($env:AST_OUTLINE_REPO)  { $env:AST_OUTLINE_REPO }
+    elseif ($env:CODE_OUTLINE_REPO) { $env:CODE_OUTLINE_REPO }
+    else { 'https://github.com/dim-s/ast-outline.git' }
+$Ref =
+    if ($env:AST_OUTLINE_REF)  { $env:AST_OUTLINE_REF }
+    elseif ($env:CODE_OUTLINE_REF) { $env:CODE_OUTLINE_REF }
+    else { 'main' }
 
 function Say($msg) { Write-Host "==> $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "==> $msg" -ForegroundColor Yellow }
@@ -35,26 +44,27 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     }
 
     if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-        Fail "uv was installed but is not on PATH. Open a new PowerShell window and re-run this script, or install code-outline manually with: uv tool install git+$RepoUrl"
+        Fail "uv was installed but is not on PATH. Open a new PowerShell window and re-run this script, or install ast-outline manually with: uv tool install git+$RepoUrl"
     }
 } else {
     Say ("uv already installed: " + (uv --version))
 }
 
-# 2. Install code-outline -----------------------------------------------
+# 2. Install ast-outline ------------------------------------------------
 
-Say "installing code-outline from $RepoUrl (ref: $Ref)"
+Say "installing ast-outline from $RepoUrl (ref: $Ref)"
 uv tool install --force "git+$RepoUrl@$Ref"
 
 # 3. Verify -------------------------------------------------------------
 
-if (Get-Command code-outline -ErrorAction SilentlyContinue) {
+if (Get-Command ast-outline -ErrorAction SilentlyContinue) {
     Say "installed successfully:"
-    code-outline --help | Select-Object -First 6
+    ast-outline --help | Select-Object -First 6
     Write-Host ""
-    Say "try:  code-outline help"
+    Say "try:  ast-outline help"
+    Say "(legacy ``code-outline`` command is also installed as an alias)"
 } else {
-    Warn "code-outline is installed but not yet on PATH."
+    Warn "ast-outline is installed but not yet on PATH."
     Warn "add this to your PowerShell profile:"
     Warn '    $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"'
     Warn "then restart your terminal."
