@@ -74,6 +74,7 @@ embeddings и vector search. Подход надёжный, но дорогой:
 | Java       | `.java` — классы, интерфейсы, `@interface`, enum'ы, records, sealed-иерархии, generics, throws, Javadoc |
 | Kotlin     | `.kt`, `.kts` — классы, интерфейсы, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation`-классы, extension-функции, `suspend` / `inline` / `const` / `lateinit`, generics с `where`-ограничениями, `typealias`, KDoc |
 | Scala      | `.scala`, `.sc` — Scala 2 + Scala 3: классы, trait'ы, `object` / `case object`, `case class`, `sealed`-иерархии, Scala 3 `enum` / `given` / `using` / `extension`, indentation-синтаксис, higher-kinded types, context bounds, `opaque type`, type-алиасы, Scaladoc |
+| Go         | `.go` — пакеты, struct'ы (методы группируются под receiver), интерфейсы, embedding (struct и interface) как механизм «наследования», generics (Go 1.18+), type-алиасы + defined types, `iota`-enum'ы, цепочки doc-комментариев |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — оглавление по заголовкам + код-блоки |
 
 Добавление нового языка — это один новый файл-адаптер. См.
@@ -187,7 +188,7 @@ ast-outline prompt | pbcopy   # буфер обмена в macOS
 ## Изучение кода — выбирай `ast-outline` вместо полного чтения
 
 Для файлов `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`,
-`.kts`, `.scala`, `.sc` и `.md` сначала читай структуру через `ast-outline`,
+`.kts`, `.scala`, `.sc`, `.go` и `.md` сначала читай структуру через `ast-outline`,
 а не полное содержимое.
 Тела методов — только когда уже знаешь, какое именно тело тебе нужно.
 
@@ -455,7 +456,7 @@ uv pip install -e ".[dev]"
 ```
 
 Сьют (400+ тестов) покрывает все адаптеры (C#, Python, TypeScript/JS,
-Java, Kotlin, Scala, Markdown), языко-агностичные рендереры, поиск по
+Java, Kotlin, Scala, Go, Markdown), языко-агностичные рендереры, поиск по
 символам и CLI end-to-end. Фикстуры лежат в `tests/fixtures/`; тесты не
 выходят за эту директорию. Любая новая фича должна приходить с тестом;
 новый язык — с отдельной папкой фикстур и файлом
@@ -476,8 +477,8 @@ Java, Kotlin, Scala, Markdown), языко-агностичные рендере
 - [x] Адаптер Java (`.java`) — классы, интерфейсы, `@interface`, enum'ы, records, sealed-иерархии, generics, throws, Javadoc
 - [x] Адаптер Kotlin (`.kt`, `.kts`) — классы, интерфейсы, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation`-классы, extension-функции, `suspend` / `inline` / `const` / `lateinit`, generics с `where`, `typealias`, KDoc
 - [x] Адаптер Scala (`.scala`, `.sc`) — Scala 2 + Scala 3: классы, trait'ы, `object` / `case object`, `case class`, `sealed`-иерархии, Scala 3 `enum` / `given` / `using` / `extension`, indentation-синтаксис, higher-kinded types, context bounds, `opaque type`, type-алиасы, Scaladoc
+- [x] Адаптер Go (`.go`) — пакеты, struct'ы (методы группируются под receiver), интерфейсы, struct/interface embedding как «наследование», generics (Go 1.18+), type-алиасы + defined types, `iota`-enum'ы, цепочки doc-комментариев
 - [x] Адаптер Markdown (`.md`, `.markdown`, `.mdx`, `.mdown`) — TOC из заголовков + код-блоки
-- [ ] Адаптер Go
 - [ ] Адаптер Rust
 - [ ] `--format json` для программной обработки вывода
 - [ ] Опциональный multiprocessing для очень больших кодовых баз (>500 файлов)

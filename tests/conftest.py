@@ -37,3 +37,8 @@ def kotlin_dir() -> Path:
 @pytest.fixture(scope="session")
 def scala_dir() -> Path:
     return FIXTURES_DIR / "scala"
+
+
+@pytest.fixture(scope="session")
+def go_dir() -> Path:
+    return FIXTURES_DIR / "go"

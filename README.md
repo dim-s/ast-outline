@@ -73,6 +73,7 @@ the round-trips.**
 | Java       | `.java` — classes, interfaces, `@interface`, enums, records, sealed hierarchies, generics, throws, Javadoc |
 | Kotlin     | `.kt`, `.kts` — classes, interfaces, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation` classes, extension functions, `suspend` / `inline` / `const` / `lateinit`, generics with `where` constraints, `typealias`, KDoc |
 | Scala      | `.scala`, `.sc` — Scala 2 + Scala 3: classes, traits, `object` / `case object`, `case class`, `sealed` hierarchies, Scala 3 `enum` / `given` / `using` / `extension`, indentation-based bodies, higher-kinded types, context bounds, `opaque type`, `type` aliases, Scaladoc |
+| Go         | `.go` — packages, structs (with method-grouping under receiver), interfaces, struct/interface embedding as inheritance, generics (Go 1.18+), `type` aliases + defined types, `iota` enum-blocks, doc-comment chains |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — heading TOC + fenced code blocks |
 
 Adding another language is a single new adapter file. See
@@ -185,8 +186,8 @@ ast-outline prompt | pbcopy   # macOS clipboard
 ## Code exploration — prefer `ast-outline` over full reads
 
 For `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`,
-`.scala`, `.sc`, and `.md` files, read structure with `ast-outline` before
-opening full contents.
+`.scala`, `.sc`, `.go`, and `.md` files, read structure with `ast-outline`
+before opening full contents.
 Pull method bodies only once you know which ones you need.
 
 Stop at the step that answers the question:
@@ -453,7 +454,7 @@ uv pip install -e ".[dev]"
 ```
 
 The suite (400+ tests) covers every adapter (C#, Python, TypeScript/JS,
-Java, Kotlin, Scala, Markdown), the language-agnostic renderers, symbol
+Java, Kotlin, Scala, Go, Markdown), the language-agnostic renderers, symbol
 search, and the CLI end-to-end. Fixtures live under `tests/fixtures/`;
 tests never reach outside that directory.
 New behaviour should come with a test; new languages should ship with a
@@ -474,8 +475,8 @@ Create `src/ast_outline/adapters/<lang>.py` implementing the
 - [x] Java adapter (`.java`) — classes, interfaces, `@interface`, enums, records, sealed hierarchies, generics, throws, Javadoc
 - [x] Kotlin adapter (`.kt`, `.kts`) — classes, interfaces, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation` classes, extension functions, `suspend` / `inline` / `const` / `lateinit`, generics with `where` constraints, `typealias`, KDoc
 - [x] Scala adapter (`.scala`, `.sc`) — Scala 2 + Scala 3: classes, traits, `object` / `case object`, `case class`, `sealed` hierarchies, Scala 3 `enum` / `given` / `using` / `extension`, indentation-based bodies, higher-kinded types, context bounds, `opaque type`, `type` aliases, Scaladoc
+- [x] Go adapter (`.go`) — packages, structs (with method-grouping under receiver), interfaces, struct/interface embedding as inheritance, generics (Go 1.18+), `type` aliases + defined types, `iota` enum-blocks, doc-comment chains
 - [x] Markdown adapter (`.md`, `.markdown`, `.mdx`, `.mdown`) — heading TOC + code blocks
-- [ ] Go adapter
 - [ ] Rust adapter
 - [ ] `--format json` output mode for programmatic consumers
 - [ ] Optional multiprocessing for very large codebases (>500 files)

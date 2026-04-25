@@ -93,7 +93,7 @@ def test_snippet_mentions_every_supported_file_extension():
     # (Haiku concreteness). Assert each supported ext appears at least once.
     for ext in [
         ".cs", ".py", ".pyi", ".ts", ".tsx", ".js", ".jsx",
-        ".java", ".kt", ".kts", ".scala", ".sc", ".md",
+        ".java", ".kt", ".kts", ".scala", ".sc", ".go", ".md",
     ]:
         assert f"`{ext}`" in AGENT_PROMPT, f"snippet missing extension {ext!r}"
 

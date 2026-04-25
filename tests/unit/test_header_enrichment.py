@@ -15,6 +15,7 @@ Two features under test:
 from __future__ import annotations
 
 from ast_outline.adapters.csharp import CSharpAdapter
+from ast_outline.adapters.go import GoAdapter
 from ast_outline.adapters.java import JavaAdapter
 from ast_outline.adapters.kotlin import KotlinAdapter
 from ast_outline.adapters.markdown import MarkdownAdapter
@@ -62,6 +63,11 @@ def test_error_count_zero_on_clean_scala(scala_dir):
     assert r.error_count == 0
 
 
+def test_error_count_zero_on_clean_go(go_dir):
+    r = GoAdapter().parse(go_dir / "user_service.go")
+    assert r.error_count == 0
+
+
 def test_error_count_zero_on_clean_markdown(fixtures_dir):
     r = MarkdownAdapter().parse(fixtures_dir / "markdown" / "readme_style.md")
     assert r.error_count == 0
@@ -104,6 +110,11 @@ def test_error_count_nonzero_on_broken_kotlin(kotlin_dir):
 
 def test_error_count_nonzero_on_broken_scala(scala_dir):
     r = ScalaAdapter().parse(scala_dir / "broken_syntax.scala")
+    assert r.error_count > 0
+
+
+def test_error_count_nonzero_on_broken_go(go_dir):
+    r = GoAdapter().parse(go_dir / "broken_syntax.go")
     assert r.error_count > 0
 
 
@@ -425,6 +436,49 @@ def test_scala_enum_members_not_counted_as_fields(scala_dir):
 
 def test_scala_warning_line_surfaces_on_broken_file(scala_dir):
     r = ScalaAdapter().parse(scala_dir / "broken_syntax.scala")
+    lines = render_outline(r, OutlineOptions()).splitlines()
+    assert lines[1].startswith("# WARNING:")
+    assert "parse error" in lines[1]
+
+
+def test_go_header_shows_types_methods_fields(go_dir):
+    """Go counts types (struct/interface), methods, and fields (incl.
+    const/var declarations and struct fields)."""
+    r = GoAdapter().parse(go_dir / "user_service.go")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    assert " types" in first
+    assert " methods" in first
+    assert " fields" in first
+
+
+def test_go_struct_and_interface_count_as_types(go_dir):
+    """KIND_STRUCT and KIND_INTERFACE both live in TYPE_KINDS — both
+    must increment the `types` counter."""
+    r = GoAdapter().parse(go_dir / "hierarchy.go")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    import re
+    match = re.search(r"(\d+) types", first)
+    assert match is not None
+    # hierarchy.go: Animal/Dog/Puppy/Pomeranian/Cat (5 structs) +
+    # Movable/Walker (2 interfaces) + Skater (1 struct) → at least 8
+    assert int(match.group(1)) >= 8
+
+
+def test_go_typealias_not_counted_as_type(go_dir):
+    """`type Reader = io.Reader` is KIND_DELEGATE (not in TYPE_KINDS)
+    and must NOT inflate the `types` counter."""
+    r = GoAdapter().parse(go_dir / "user_service.go")
+    from ast_outline.core import _collect_counts
+
+    counts = _collect_counts(r.declarations)
+    # user_service.go declares 2 structs + 2 interfaces = 4 types.
+    # `Reader` (type alias) and `UserID` (newtype) are KIND_DELEGATE
+    # and shouldn't count.
+    assert counts["types"] == 4
+
+
+def test_go_warning_line_surfaces_on_broken_file(go_dir):
+    r = GoAdapter().parse(go_dir / "broken_syntax.go")
     lines = render_outline(r, OutlineOptions()).splitlines()
     assert lines[1].startswith("# WARNING:")
     assert "parse error" in lines[1]

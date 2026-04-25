@@ -10,6 +10,7 @@ from typing import Optional
 
 from .base import LanguageAdapter
 from .csharp import CSharpAdapter
+from .go import GoAdapter
 from .java import JavaAdapter
 from .kotlin import KotlinAdapter
 from .markdown import MarkdownAdapter
@@ -25,6 +26,7 @@ ADAPTERS: list[LanguageAdapter] = [
     JavaAdapter(),
     KotlinAdapter(),
     ScalaAdapter(),
+    GoAdapter(),
     MarkdownAdapter(),
 ]
 

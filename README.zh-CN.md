@@ -70,6 +70,7 @@ Agent: ast-outline show Player.cs TakeDamage # 只取需要的方法体
 | Java       | `.java` —— 类、接口、`@interface`、枚举、记录（record）、sealed 继承层级、泛型、throws、Javadoc |
 | Kotlin     | `.kt`、`.kts` —— 类、接口、`fun interface`、`object` / `companion object`、`data` / `sealed` / `enum` / `annotation` 类、扩展函数、`suspend` / `inline` / `const` / `lateinit`、带 `where` 约束的泛型、`typealias`、KDoc |
 | Scala      | `.scala`、`.sc` —— Scala 2 + Scala 3：类、trait、`object` / `case object`、`case class`、`sealed` 继承层级、Scala 3 `enum` / `given` / `using` / `extension`、缩进式语法体、higher-kinded 类型、context bound、`opaque type`、类型别名、Scaladoc |
+| Go         | `.go` —— 包、结构体（方法按 receiver 分组）、接口、struct/interface 嵌入作为「继承」、泛型（Go 1.18+）、类型别名 + defined type、`iota` 枚举块、文档注释链 |
 | Markdown   | `.md`、`.markdown`、`.mdx`、`.mdown` —— 标题目录 + 代码块 |
 
 新增语言只需要加一个适配器文件。见
@@ -181,7 +182,7 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
 ## 代码探索 —— 优先用 `ast-outline`，而不是完整读取
 
 对于 `.cs`、`.py`、`.pyi`、`.ts`、`.tsx`、`.js`、`.jsx`、`.java`、`.kt`、`.kts`、
-`.scala`、`.sc` 和 `.md` 文件，先用 `ast-outline` 读结构，再考虑打开完整内容。
+`.scala`、`.sc`、`.go` 和 `.md` 文件，先用 `ast-outline` 读结构，再考虑打开完整内容。
 方法体只在你已经确定需要某一个时才去取。
 
 哪一步能回答问题就停在哪一步：
@@ -439,7 +440,7 @@ uv pip install -e ".[dev]"
 ```
 
 套件（400+ 个测试）覆盖全部适配器（C#、Python、TypeScript/JS、Java、
-Kotlin、Scala、Markdown）、与语言无关的渲染器、符号搜索以及端到端的
+Kotlin、Scala、Go、Markdown）、与语言无关的渲染器、符号搜索以及端到端的
 CLI。Fixture 放在 `tests/fixtures/`，测试不会越出该目录。任何新行为都
 应带上测试；新增语言时也应附带独立的 fixture 目录和一份
 `tests/unit/test_<lang>_adapter.py`。
@@ -459,8 +460,8 @@ CLI。Fixture 放在 `tests/fixtures/`，测试不会越出该目录。任何新
 - [x] Java 适配器（`.java`）—— 类、接口、`@interface`、枚举、记录（record）、sealed 继承层级、泛型、throws、Javadoc
 - [x] Kotlin 适配器（`.kt`、`.kts`）—— 类、接口、`fun interface`、`object` / `companion object`、`data` / `sealed` / `enum` / `annotation` 类、扩展函数、`suspend` / `inline` / `const` / `lateinit`、带 `where` 约束的泛型、`typealias`、KDoc
 - [x] Scala 适配器（`.scala`、`.sc`）—— Scala 2 + Scala 3：类、trait、`object` / `case object`、`case class`、`sealed` 继承层级、Scala 3 `enum` / `given` / `using` / `extension`、缩进式语法体、higher-kinded 类型、context bound、`opaque type`、类型别名、Scaladoc
+- [x] Go 适配器（`.go`）—— 包、结构体（方法按 receiver 分组）、接口、struct/interface 嵌入作为「继承」、泛型（Go 1.18+）、类型别名 + defined type、`iota` 枚举块、文档注释链
 - [x] Markdown 适配器（`.md`、`.markdown`、`.mdx`、`.mdown`）—— 标题目录 + 代码块
-- [ ] Go 适配器
 - [ ] Rust 适配器
 - [ ] `--format json` —— 方便程序化消费
 - [ ] 针对超大代码库（>500 文件）的可选 multiprocessing

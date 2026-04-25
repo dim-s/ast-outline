@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from ast_outline.adapters.csharp import CSharpAdapter
+from ast_outline.adapters.go import GoAdapter
 from ast_outline.adapters.java import JavaAdapter
 from ast_outline.adapters.kotlin import KotlinAdapter
 from ast_outline.adapters.python import PythonAdapter
@@ -336,6 +337,48 @@ def test_sealed_trait_subclasses_scala(scala_dir):
     assert {"Circle", "Square", "UnitShape"}.issubset(names)
 
 
+def test_transitive_default_go_via_embedding(go_dir):
+    """Go's `implements` semantics here = struct embedding. Hierarchy:
+    Animal ← Dog ← Puppy ← Pomeranian, plus Cat as a sibling subclass.
+    The BFS treats embedded types as bases → transitive walk works."""
+    r = GoAdapter().parse(go_dir / "hierarchy.go")
+    hits = find_implementations([r], "Animal")
+    names = {h.name for h in hits}
+    assert {"Dog", "Cat", "Puppy", "Pomeranian", "Skater"}.issubset(names)
+
+    by_name = {h.name: h for h in hits}
+    assert by_name["Dog"].via == []                      # direct
+    assert by_name["Cat"].via == []                      # direct
+    assert by_name["Skater"].via == []                   # direct
+    assert by_name["Puppy"].via == ["Dog"]               # 1 level transitive
+    assert by_name["Pomeranian"].via == ["Dog", "Puppy"]  # 2 levels
+
+
+def test_direct_flag_go(go_dir):
+    """`--direct` strips transitive embedded chains."""
+    r = GoAdapter().parse(go_dir / "hierarchy.go")
+    direct = find_implementations([r], "Animal", transitive=False)
+    names = {h.name for h in direct}
+    assert "Dog" in names
+    assert "Cat" in names
+    assert "Skater" in names
+    # Grandchildren must be gone
+    assert "Puppy" not in names
+    assert "Pomeranian" not in names
+    for h in direct:
+        assert h.via == []
+
+
+def test_interface_embedding_chain_go(go_dir):
+    """Go interface embedding: `type Walker interface { Movable }`
+    must register as `Walker : Movable`."""
+    r = GoAdapter().parse(go_dir / "hierarchy.go")
+    hits = find_implementations([r], "Movable")
+    names = {h.name for h in hits}
+    # Walker embeds Movable — direct match.
+    assert "Walker" in names
+
+
 # --- Cross-file / cross-directory ---------------------------------------
 
 
@@ -362,6 +405,31 @@ def test_transitive_walks_across_files_and_directories(java_dir):
     assert puppy.path.endswith("Puppy.java")
 
     # Dog is in a different directory than Animal (mammals vs base).
+    dog = next(h for h in hits if h.name == "Dog")
+    cat = next(h for h in hits if h.name == "Cat")
+    assert "mammals" in dog.path
+    assert "felines" in cat.path
+
+
+def test_transitive_walks_across_directories_go(go_dir):
+    """Go cross-directory: Animal in base/, Dog+Puppy in mammals/, Cat
+    in felines/. The BFS matches by suffix-stripped type name, so
+    `base.Animal` becomes "Animal" and embedding works across dirs."""
+    from ast_outline.adapters import collect_files
+
+    multidir = go_dir / "multidir"
+    files = collect_files([multidir])
+    results = [GoAdapter().parse(f) for f in files if f.suffix == ".go"]
+
+    hits = find_implementations(results, "Animal")
+    names = {h.name for h in hits}
+    assert {"Dog", "Cat", "Puppy"}.issubset(names), f"got {names}"
+
+    puppy = next(h for h in hits if h.name == "Puppy")
+    assert puppy.via == ["Dog"]
+    assert "mammals" in puppy.path
+    assert puppy.path.endswith("puppy.go")
+
     dog = next(h for h in hits if h.name == "Dog")
     cat = next(h for h in hits if h.name == "Cat")
     assert "mammals" in dog.path
