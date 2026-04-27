@@ -78,11 +78,15 @@ def test_outline_no_lines_flag(csharp_dir, capsys):
     assert "  L" not in body
 
 
-def test_outline_missing_file_exits_nonzero(tmp_path, capsys):
+def test_outline_missing_file_returns_zero_with_note(tmp_path, capsys):
+    """LLM-friendly mode: rc=0 + short ``# note:`` line on stdout so a
+    parallel batch in Claude Code doesn't abort the whole chain."""
     rc = main(["outline", str(tmp_path / "nope.cs")])
-    err = capsys.readouterr().err
-    assert rc != 0
-    assert "no files found" in err.lower() or "no input" in err.lower()
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert captured.err == ""
+    assert "# note:" in captured.out
+    assert "no files found" in captured.out.lower() or "no input" in captured.out.lower()
 
 
 # --- show ----------------------------------------------------------------
@@ -136,11 +140,13 @@ def test_show_ambiguous_symbol_prints_all_matches(csharp_dir, capsys):
     assert "matches" in captured.err.lower()
 
 
-def test_show_not_found_exits_1(csharp_dir, capsys):
+def test_show_not_found_returns_zero_with_note(csharp_dir, capsys):
+    """LLM-friendly mode: missing symbol yields rc=0 + ``# note:`` on stdout."""
     rc = main(["show", str(csharp_dir / "unity_behaviour.cs"), "NoSuchThing"])
-    err = capsys.readouterr().err
-    assert rc == 1
-    assert "not found" in err.lower()
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "# note:" in captured.out
+    assert "not found" in captured.out.lower()
 
 
 def test_show_no_doc_strips_leading_doc(csharp_dir, capsys):
@@ -188,11 +194,13 @@ def test_digest_directory(csharp_dir, capsys):
     assert "+TakeDamage" in out
 
 
-def test_digest_missing_path_exits_nonzero(tmp_path, capsys):
+def test_digest_missing_path_returns_zero_with_note(tmp_path, capsys):
+    """LLM-friendly mode: missing path yields rc=0 + ``# note:`` on stdout."""
     rc = main(["digest", str(tmp_path / "nope")])
-    err = capsys.readouterr().err
-    assert rc != 0
-    assert "not found" in err.lower()
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "# note:" in captured.out
+    assert "not found" in captured.out.lower()
 
 
 def test_digest_include_private(csharp_dir, capsys):
@@ -227,12 +235,13 @@ def test_implements_python(fixtures_dir, capsys):
     assert "User" in out
 
 
-def test_implements_no_matches_exits_1(fixtures_dir, capsys):
+def test_implements_no_matches_returns_zero_with_note(fixtures_dir, capsys):
+    """LLM-friendly mode: empty match set yields rc=0 + note on stdout."""
     rc = main(["implements", "TotallyUnrelatedType", str(fixtures_dir)])
     captured = capsys.readouterr()
-    assert rc == 1
+    assert rc == 0
     # Transitive is default, so the "not found" message drops the word "direct"
-    assert "no implementations" in captured.err.lower()
+    assert "no implementations" in captured.out.lower()
 
 
 def test_implements_default_header_mentions_transitive(java_dir, capsys):
@@ -282,11 +291,43 @@ def test_implements_short_d_alias_works(java_dir, capsys):
 
 
 def test_implements_no_direct_matches_message(csharp_dir, capsys):
-    """With --direct and no hits, the error message uses the word 'direct'."""
+    """With --direct and no hits, the note uses the word 'direct'."""
     rc = main(["implements", "--direct", "NoSuchBase", str(csharp_dir)])
-    err = capsys.readouterr().err
-    assert rc == 1
-    assert "no direct" in err.lower()
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "no direct" in captured.out.lower()
+
+
+# --- LLM-friendly error handling -----------------------------------------
+
+
+def test_bad_subcommand_returns_zero_with_note(capsys):
+    """A bogus subcommand must NOT call ``sys.exit`` with a non-zero code —
+    that breaks parallel bash chains in Claude Code. Instead we expect a
+    ``# note:`` line on stdout and rc=0."""
+    rc = main(["help", "doesnotexist"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "# note:" in captured.out
+
+
+def test_show_missing_file_returns_zero_with_note(tmp_path, capsys):
+    rc = main(["show", str(tmp_path / "absent.cs"), "Foo"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "# note:" in captured.out
+    assert "file not found" in captured.out.lower()
+
+
+def test_show_unsupported_extension_returns_zero_with_note(tmp_path, capsys):
+    """A file with an unsupported extension is a no-op, not a crash."""
+    f = tmp_path / "hello.txt"
+    f.write_text("not source code")
+    rc = main(["show", str(f), "anything"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "# note:" in captured.out
+    assert "no adapter" in captured.out.lower()
 
 
 def test_implements_crosses_directories(java_dir, capsys):

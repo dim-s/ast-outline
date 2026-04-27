@@ -1,4 +1,14 @@
-"""CLI entry point for ast-outline (legacy name: code-outline)."""
+"""CLI entry point for ast-outline (legacy name: code-outline).
+
+Error-handling philosophy
+-------------------------
+This CLI is consumed primarily by LLM agents (Claude Code, Cursor, etc.).
+In those harnesses, a non-zero exit code from one tool call can fail the
+whole parallel batch of bash invocations. So we deliberately do NOT use
+exit codes to signal "no match" or "file not found" — instead we print a
+short ``# note: ...`` line on stdout (the channel the agent reads as the
+answer) and return 0. Real internal crashes still propagate normally.
+"""
 from __future__ import annotations
 
 import argparse
@@ -21,6 +31,31 @@ from .core import (
 SUBCOMMANDS = {"outline", "show", "help", "digest", "implements", "prompt"}
 
 
+class _LLMArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser that doesn't ``sys.exit`` on bad args.
+
+    Default ``argparse`` behavior on bad arguments is to print to stderr
+    and call ``sys.exit(2)``. For an LLM-facing CLI that breaks parallel
+    bash chains in Claude Code. Instead we raise a sentinel exception
+    that ``main()`` turns into a short ``# note:`` line on stdout +
+    ``return 0``.
+    """
+
+    def error(self, message: str) -> None:  # type: ignore[override]
+        raise _ArgParseFail(message)
+
+    def exit(self, status: int = 0, message: str | None = None) -> None:  # type: ignore[override]
+        # ``--help`` flows through ``exit(0, None)`` after print_help — let
+        # those through. Anything else (status != 0) is an arg failure.
+        if status == 0:
+            raise SystemExit(0)
+        raise _ArgParseFail(message or f"argument error (status={status})")
+
+
+class _ArgParseFail(Exception):
+    """Raised by _LLMArgumentParser instead of sys.exit on bad args."""
+
+
 def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
@@ -30,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv[0] not in SUBCOMMANDS and not argv[0].startswith("-"):
         argv = ["outline", *argv]
 
-    parser = argparse.ArgumentParser(
+    parser = _LLMArgumentParser(
         # `prog` is intentionally left unset so argparse picks up the actual
         # invoked binary name from sys.argv[0]. That way `ast-outline foo.py`
         # surfaces `ast-outline: error: ...` and the backward-compat
@@ -77,7 +112,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Print the canonical copy-paste agent prompt snippet (English, universal)",
     )
 
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except _ArgParseFail as e:
+        # Bad CLI usage. Surface it as the LLM's response on stdout and
+        # exit cleanly so a parallel batch isn't aborted by exit code 2.
+        print(f"# note: {e}")
+        return 0
 
     if args.cmd == "help":
         _print_guide(getattr(args, "topic", None))
@@ -134,8 +175,10 @@ def _parse_paths(paths: list[Path], glob: str | None = None) -> tuple[list[Parse
 def _cmd_outline(args) -> int:
     paths_raw = getattr(args, "paths", None) or []
     if not paths_raw:
-        print("No input files. Try: ast-outline Player.cs", file=sys.stderr)
-        return 2
+        # `# note:` lines go on stdout because they ARE the response to the
+        # agent — there's no successful outline to keep clean of warnings.
+        print("# note: no input files. try: ast-outline Player.cs")
+        return 0
 
     opts = OutlineOptions(
         include_private=not args.no_private,
@@ -147,45 +190,51 @@ def _cmd_outline(args) -> int:
 
     results, errors = _parse_paths([Path(p) for p in paths_raw], glob=args.glob)
     if not results and not errors:
+        exts = sorted(supported_extensions())
         print(
-            f"No files found matching supported extensions: {sorted(supported_extensions())}",
-            file=sys.stderr,
+            f"# note: no files found matching supported extensions: {exts}"
         )
-        return 2
+        return 0
 
     for i, r in enumerate(results):
         if i > 0:
             print()
         print(render_outline(r, opts))
+    # Per-file parse errors are warnings inside a successful batch — we
+    # keep them on stderr so stdout (the LLM's primary channel) holds
+    # only the actual outline content.
     for f, e in errors:
-        print(f"# ERROR processing {f}: {e}", file=sys.stderr)
+        print(f"# WARN processing {f}: {e}", file=sys.stderr)
     return 0
 
 
 def _cmd_show(args) -> int:
     path = Path(args.file)
     if not path.is_file():
-        print(f"File not found: {path}", file=sys.stderr)
-        return 2
+        print(f"# note: file not found: {path}")
+        return 0
     adapter = get_adapter_for(path)
     if adapter is None:
-        print(f"No adapter for extension {path.suffix}", file=sys.stderr)
-        return 2
+        print(f"# note: no adapter for extension {path.suffix}")
+        return 0
     try:
         result = adapter.parse(path)
     except Exception as e:
-        print(f"# ERROR parsing {path}: {e}", file=sys.stderr)
-        return 2
+        print(f"# note: parse error in {path}: {e}")
+        return 0
 
-    any_found = False
     first = True
     for symbol in args.symbols:
         matches = find_symbols(result, symbol)
         if not matches:
-            print(f"# Symbol not found: {symbol} in {path}", file=sys.stderr)
+            # Each requested symbol gets its own line. We use stdout — the
+            # LLM is iterating over these to assemble its answer; it should
+            # see "not found" inline next to the matches that did succeed.
+            print(f"# note: symbol not found: {symbol} in {path}")
             continue
-        any_found = True
         if len(matches) > 1:
+            # Disambiguation summary — informational, but still useful for
+            # the agent to see alongside the bodies it's about to read.
             print(f"# {len(matches)} matches for '{symbol}' in {path}:", file=sys.stderr)
             for m in matches:
                 print(f"#   {m.qualified_name}  L{m.start_line}-{m.end_line}  ({m.kind})", file=sys.stderr)
@@ -205,7 +254,7 @@ def _cmd_show(args) -> int:
                 chain = " → ".join(m.ancestor_signatures)
                 print(f"# in: {chain}")
             print(src)
-    return 0 if any_found else 1
+    return 0
 
 
 def _cmd_digest(args) -> int:
@@ -213,8 +262,8 @@ def _cmd_digest(args) -> int:
     missing = [p for p in paths if not p.exists()]
     if missing:
         for p in missing:
-            print(f"Path not found: {p}", file=sys.stderr)
-        return 2
+            print(f"# note: path not found: {p}")
+        return 0
     opts = DigestOptions(
         include_private=args.include_private,
         include_fields=args.include_fields,
@@ -222,11 +271,12 @@ def _cmd_digest(args) -> int:
     )
     results, errors = _parse_paths(paths)
     if not results and not errors:
-        print("# no supported files found", file=sys.stderr)
-        return 2
+        print("# note: no supported files found")
+        return 0
     print(render_digest(results, opts), end="")
+    # Per-file parse errors are warnings on a successful batch — stderr.
     for f, e in errors:
-        print(f"# ERROR processing {f}: {e}", file=sys.stderr)
+        print(f"# WARN processing {f}: {e}", file=sys.stderr)
     return 0
 
 
@@ -235,20 +285,24 @@ def _cmd_implements(args) -> int:
     missing = [p for p in paths if not p.exists()]
     if missing:
         for p in missing:
-            print(f"Path not found: {p}", file=sys.stderr)
-        return 2
+            print(f"# note: path not found: {p}")
+        return 0
     results, errors = _parse_paths(paths)
+    # Per-file parse warnings stay on stderr regardless of whether the
+    # search ends up finding matches — they describe what was skipped.
     for f, e in errors:
         print(f"# WARN parsing {f}: {e}", file=sys.stderr)
     transitive = not args.direct
     matches = find_implementations(results, args.type, transitive=transitive)
     if not matches:
         scope = "direct " if args.direct else ""
+        # "No implementations" IS the answer to the agent's question, so
+        # it goes on stdout and we return 0. The agent should be able to
+        # interpret an empty match set without the chain breaking.
         print(
-            f"# No {scope}implementations/subclasses of '{args.type}' found.",
-            file=sys.stderr,
+            f"# note: no {scope}implementations/subclasses of '{args.type}' found"
         )
-        return 1
+        return 0
     scope_label = "direct match(es)" if args.direct else "match(es)"
     suffix = "" if args.direct else " (incl. transitive)"
     print(f"# {len(matches)} {scope_label} for '{args.type}'{suffix}:")
