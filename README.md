@@ -201,7 +201,10 @@ Stop at the step that answers the question:
 3. **One method, class, or markdown section** — `ast-outline show <file>
    <Symbol>`. Suffix matching: `TakeDamage`, or `Player.TakeDamage` when
    ambiguous. Multiple at once: `ast-outline show Player.cs TakeDamage
-   Heal Die`. For markdown, the symbol is the heading text.
+   Heal Die`. For markdown, the symbol is heading text and matching is
+   case-insensitive **substring** — `"installation"` finds
+   `"2.1 Installation (macOS / Linux)"`. Multiple matches all print, so
+   you can tighten the query if needed.
 
 4. **Who implements/extends a type** — `ast-outline implements <Type>
    <dir>`: AST-accurate (skip `grep`), transitive by default with
@@ -267,8 +270,24 @@ ast-outline show service.py UserService.get
 ast-outline show File.cs TakeDamage Heal Die           # several at once
 ```
 
-Matching is **suffix-based**: `Foo.Bar` matches any `*.Foo.Bar`. If multiple
-declarations match, all are printed with a summary.
+For code, matching is **suffix-based**: `Foo.Bar` matches any `*.Foo.Bar`. If
+multiple declarations match, all are printed with a summary.
+
+For markdown, matching is **case-insensitive substring** per dotted part.
+LLM agents rarely remember the exact decoration of a heading (number prefixes
+like `1.`, trailing `(Feb 2026)`, `(Confidence: 70%)`), so a fuzzy core works:
+
+```bash
+ast-outline show forecast.md "current analysis"
+# → matches `## 1. CURRENT ANALYSIS (Feb 2026)`
+
+ast-outline show forecast.md "scenario.transit"
+# → matches `### SCENARIO A: "MANAGED TRANSIT"` under any parent
+#   heading containing "scenario"
+```
+
+If the substring matches several headings, all are printed and the
+disambiguation summary lands on stderr — tighten the query to narrow.
 
 ### `digest` — one-page module map
 

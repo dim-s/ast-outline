@@ -5,6 +5,7 @@ from ast_outline.adapters.csharp import CSharpAdapter
 from ast_outline.adapters.go import GoAdapter
 from ast_outline.adapters.java import JavaAdapter
 from ast_outline.adapters.kotlin import KotlinAdapter
+from ast_outline.adapters.markdown import MarkdownAdapter
 from ast_outline.adapters.python import PythonAdapter
 from ast_outline.adapters.scala import ScalaAdapter
 from ast_outline.core import (
@@ -127,6 +128,60 @@ def test_find_symbols_ancestor_signatures_strip_attributes(java_dir):
     # UserService has @Service @Deprecated — should NOT leak into breadcrumb
     for sig in match.ancestor_signatures:
         assert not sig.lstrip().startswith("@")
+
+
+# --- find_symbols: markdown substring matching --------------------------
+
+
+def test_markdown_substring_matches_decorated_heading(md_dir):
+    """`"ТЕКУЩИЙ АНАЛИЗ"` should match `"1. ТЕКУЩИЙ АНАЛИЗ (февраль 2026)"`.
+
+    The markdown contract is loosened to substring containment so that LLM
+    agents — which routinely don't remember number prefixes or trailing
+    parens — can actually find sections by their meaningful core."""
+    r = MarkdownAdapter().parse(md_dir / "decorated_headings.md")
+    matches = find_symbols(r, "ТЕКУЩИЙ АНАЛИЗ")
+    names = [m.qualified_name for m in matches]
+    assert any("ТЕКУЩИЙ АНАЛИЗ (февраль 2026)" in n for n in names), names
+
+
+def test_markdown_substring_is_case_insensitive(md_dir):
+    """Casefold-based — works for non-ASCII and any combination of caps."""
+    r = MarkdownAdapter().parse(md_dir / "decorated_headings.md")
+    matches = find_symbols(r, "текущий анализ")
+    assert len(matches) >= 1
+
+
+def test_markdown_substring_returns_all_overlapping_hits(md_dir):
+    """Querying a fragment shared by multiple headings returns all of them
+    so the agent sees the disambiguation set rather than a silent first-hit."""
+    r = MarkdownAdapter().parse(md_dir / "decorated_headings.md")
+    matches = find_symbols(r, "АНАЛИЗ")
+    # Both `1. ТЕКУЩИЙ АНАЛИЗ ...` and `2. РЕТРОСПЕКТИВНЫЙ АНАЛИЗ` should hit
+    names = [m.qualified_name for m in matches]
+    assert any("ТЕКУЩИЙ" in n for n in names), names
+    assert any("РЕТРОСПЕКТИВНЫЙ" in n for n in names), names
+
+
+def test_markdown_substring_with_dotted_path(md_dir):
+    """Dotted queries still work — every part is a substring against the
+    contiguous tail of the trail. `"ТЕКУЩИЙ.Политическая"` matches a nested
+    heading whose parent contains "ТЕКУЩИЙ" and whose own title contains
+    "Политическая"."""
+    r = MarkdownAdapter().parse(md_dir / "decorated_headings.md")
+    matches = find_symbols(r, "ТЕКУЩИЙ.Политическая")
+    assert len(matches) == 1
+    assert "Политическая ситуация" in matches[0].qualified_name
+
+
+def test_code_symbol_matching_remains_exact(csharp_dir):
+    """Substring relaxation must NOT leak into code-symbol lookups —
+    that would silently broaden every search and break precision."""
+    r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
+    # `TakeDam` is a substring of `TakeDamage` — but for code we only
+    # accept full-segment equality, so this query should return zero hits.
+    matches = find_symbols(r, "TakeDam")
+    assert matches == []
 
 
 # --- find_implementations -----------------------------------------------

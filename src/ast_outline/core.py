@@ -472,6 +472,14 @@ def find_symbols(result: ParseResult, symbol: str) -> list[SymbolMatch]:
 
     Matching is suffix-based — `TakeDamage` matches `Foo.Bar.TakeDamage`
     and `PlayerController.TakeDamage` also matches.
+
+    Markdown headings get a relaxed contract: case-insensitive **substring**
+    containment per dotted part. Heading text routinely carries decoration
+    an LLM agent can't be expected to remember verbatim — number prefixes
+    (``1.`` ``2.1``), trailing qualifiers (``(февраль 2026)``,
+    ``(Уверенность: 70%)``), formatting marks. So ``"ТЕКУЩИЙ АНАЛИЗ"``
+    matches ``"1. ТЕКУЩИЙ АНАЛИЗ (февраль 2026)"`` for headings, even
+    though it wouldn't for a code symbol.
     """
     parts = symbol.split(".")
     matches: list[SymbolMatch] = []
@@ -489,7 +497,11 @@ def _search_walk(
 ) -> None:
     for d in decls:
         new_trail = trail + [d.name] if d.name else trail
-        if d.name and _trail_matches(new_trail, parts):
+        # Markdown headings opt in to substring matching — see find_symbols
+        # docstring. Other kinds keep strict suffix-equality semantics so
+        # code-symbol lookups stay precise.
+        substring = d.kind == KIND_HEADING
+        if d.name and _trail_matches(new_trail, parts, substring=substring):
             # Include doc block in source slice if present
             start = d.doc_start_byte or d.start_byte
             end = d.end_byte
@@ -507,10 +519,16 @@ def _search_walk(
             _search_walk(d.children, src, new_trail, ancestors + [d], parts, out)
 
 
-def _trail_matches(trail: list[str], parts: list[str]) -> bool:
+def _trail_matches(trail: list[str], parts: list[str], *, substring: bool = False) -> bool:
     if len(parts) > len(trail):
         return False
-    return trail[-len(parts):] == parts
+    tail = trail[-len(parts):]
+    if substring:
+        # Case-insensitive containment per element. ``casefold`` (not
+        # ``lower``) so non-ASCII titles match correctly — German ß,
+        # Turkish dotted/dotless I, etc.
+        return all(p.casefold() in t.casefold() for p, t in zip(parts, tail))
+    return tail == parts
 
 
 def find_implementations(

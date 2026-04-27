@@ -465,6 +465,14 @@ SYMBOL SYNTAX
     Fully-qualified: Game.Player.PlayerController.TakeDamage
     Matching is suffix-based — short name works unless ambiguous.
 
+MARKDOWN HEADINGS — substring matching
+    For .md files, headings match by case-insensitive substring of every
+    dotted part. So `"current analysis"` finds
+    `"1. CURRENT ANALYSIS (Feb 2026)"`, and `"intro.usage"` finds the
+    nested heading `"Usage"` under any parent containing "intro".
+    If the substring matches multiple headings, all are printed and a
+    disambiguation summary lands on stderr — tighten the query to narrow.
+
 MULTIPLE SYMBOLS
     Pass several names in one call:
         ast-outline show Player.cs TakeDamage Heal Die
@@ -472,9 +480,11 @@ MULTIPLE SYMBOLS
 
 BEHAVIOR
     - One match: prints its source (including preceding doc).
-    - Multiple matches for a name (overloads, same name in different classes):
-      all are printed, summary on stderr.
-    - Exit code 1 only when NONE of the requested symbols matched.
+    - Multiple matches for a name (overloads, same name in different classes,
+      or a markdown substring spanning several headings): all are printed,
+      summary on stderr.
+    - Always exits 0 — "not found" is printed as `# note: ...` on stdout
+      so the LLM agent's parallel batch isn't aborted by an exit code.
 
 FLAGS
     --no-doc    Strip leading /// or docstring block from output

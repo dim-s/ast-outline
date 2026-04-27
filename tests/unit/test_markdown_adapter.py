@@ -34,11 +34,6 @@ def _find_all(decls, kind=None, name=None):
     return out
 
 
-@pytest.fixture
-def md_dir(fixtures_dir):
-    return fixtures_dir / "markdown"
-
-
 # --- Parse smoke ---------------------------------------------------------
 
 

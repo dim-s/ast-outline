@@ -195,8 +195,9 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
 
 3. **某个方法 / 类 / markdown 段落** —— `ast-outline show <file> <Symbol>`。
    后缀匹配：`TakeDamage`，有歧义时用 `Player.TakeDamage`。一次取多个：
-   `ast-outline show Player.cs TakeDamage Heal Die`。markdown 的符号名
-   就是标题文本。
+   `ast-outline show Player.cs TakeDamage Heal Die`。markdown 的符号是
+   标题文本，匹配为**大小写不敏感的子串**：`"current analysis"` 能命中
+   `"1. CURRENT ANALYSIS (Feb 2026)"`。如果命中多个，全部输出，可再缩窄查询。
 
 4. **谁继承/实现了某个类型** —— `ast-outline implements <Type> <dir>`：
    基于 AST（不用 `grep`），默认是传递性的 —— 间接匹配会带 `[via Parent]`
@@ -260,8 +261,23 @@ ast-outline show service.py UserService.get
 ast-outline show File.cs TakeDamage Heal Die           # 一次多个
 ```
 
-匹配采用**后缀方式**：`Foo.Bar` 可匹配任何 `*.Foo.Bar`。如有多个匹配，
+代码采用**后缀匹配**：`Foo.Bar` 可匹配任何 `*.Foo.Bar`。如有多个匹配，
 会全部打印并附带摘要。
+
+markdown 改用**大小写不敏感的子串**匹配，按点号路径的每一段子串进行包含检查。
+LLM agent 通常无法准确记住标题装饰（数字前缀 `1.`、尾随的 `(Feb 2026)`、
+`(Confidence: 70%)` 等），因此「凭意思」即可命中：
+
+```bash
+ast-outline show forecast.md "current analysis"
+# → 命中 `## 1. CURRENT ANALYSIS (Feb 2026)`
+
+ast-outline show forecast.md "scenario.transit"
+# → 命中任意带 "scenario" 字样的父标题下的
+#   `### SCENARIO A: "MANAGED TRANSIT"`
+```
+
+若子串命中多个标题，全部打印，stderr 输出消歧摘要，可再缩窄查询。
 
 ### `digest` —— 模块单页地图
 

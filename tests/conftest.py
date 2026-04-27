@@ -42,3 +42,8 @@ def scala_dir() -> Path:
 @pytest.fixture(scope="session")
 def go_dir() -> Path:
     return FIXTURES_DIR / "go"
+
+
+@pytest.fixture(scope="session")
+def md_dir() -> Path:
+    return FIXTURES_DIR / "markdown"

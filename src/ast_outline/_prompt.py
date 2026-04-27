@@ -34,7 +34,10 @@ Stop at the step that answers the question:
 3. **One method, class, or markdown section** — `ast-outline show <file>
    <Symbol>`. Suffix matching: `TakeDamage`, or `Player.TakeDamage` when
    ambiguous. Multiple at once: `ast-outline show Player.cs TakeDamage
-   Heal Die`. For markdown, the symbol is the heading text.
+   Heal Die`. For markdown, the symbol is heading text and matching is
+   case-insensitive **substring** — `"installation"` finds
+   `"2.1 Installation (macOS / Linux)"`. Multiple matches all print, so
+   you can tighten the query if needed.
 
 4. **Who implements/extends a type** — `ast-outline implements <Type>
    <dir>`: AST-accurate (skip `grep`), transitive by default with
