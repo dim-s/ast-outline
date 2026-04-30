@@ -157,17 +157,27 @@ def render_outline(result: ParseResult, opts: OutlineOptions) -> str:
 
 
 def _format_file_header(prefix: str, result: ParseResult) -> str:
-    """Build the `# path (N lines, ...)` header for one file.
+    """Build the `# path (N lines, ~N tokens, ...)` header for one file.
 
     `prefix` is the leading marker + path (e.g. `"# /abs/path.py"` for
     outline or `"  name.py"` for digest). Appended in parentheses:
-    line count, and non-zero category counters appropriate for the
-    language family — types/methods/fields for code, headings/code
-    blocks for markdown. Zero-valued categories are skipped so a
-    trivial file still reads `(42 lines)` not `(42 lines, 0 types, 0 methods)`.
+    line count, an approximate token count (so the agent can size up
+    the file before deciding between Read / outline / show), and any
+    non-zero category counters appropriate for the language family —
+    types/methods/fields for code, headings/code blocks for markdown.
+    Zero-valued categories are skipped so a trivial file reads
+    `(42 lines, ~310 tokens)` not `(42 lines, ~310 tokens, 0 types, 0 methods)`.
+
+    Token estimate is ``len(source_bytes) // 4`` — a coarse BPE-style
+    approximation, deliberately not exact (no tiktoken dep). The ``~``
+    prefix and the rule-of-thumb in the digest legend make it explicit
+    this is an order-of-magnitude figure.
     """
     counts = _collect_counts(result.declarations)
-    parts = [f"{result.line_count} lines"]
+    parts = [
+        f"{result.line_count} lines",
+        f"~{_estimate_tokens(result.source):,} tokens",
+    ]
     if result.language == "markdown":
         order = [("headings", "headings"), ("code_blocks", "code blocks")]
     else:
@@ -177,6 +187,56 @@ def _format_file_header(prefix: str, result: ParseResult) -> str:
         if n > 0:
             parts.append(f"{n} {label}")
     return f"{prefix} ({', '.join(parts)})"
+
+
+def _estimate_tokens(source: bytes) -> int:
+    """Approximate the BPE token count of `source`.
+
+    Counts **characters**, not bytes — for Cyrillic / CJK content one
+    byte ≠ one char in UTF-8, and a byte-based estimate would inflate
+    the count by 30-50% for those files. ``chars // 4`` matches Claude
+    and GPT BPE tokenizers within ±15-20% on real code/YAML/markdown,
+    which is more than enough for the size-hint heuristic.
+    """
+    return len(source.decode("utf-8", errors="replace")) // 4
+
+
+# --- Size label ----------------------------------------------------------
+#
+# Categorical descriptors of file size, displayed next to each filename
+# in `digest`. Deliberately **descriptive**, not prescriptive — the
+# label tells the agent how big the file is, the agent picks Read /
+# outline / show based on the task at hand. A directive-style label
+# (`[Read]` / `[outline]`) would override the agent's judgment in cases
+# where the file IS small but the agent still wants the structural
+# overview, or vice versa. Information beats instruction.
+#
+# The thresholds are the only "magic numbers" in the project, calibrated
+# against typical code/config sizes where outline-vs-Read trade-offs
+# meaningfully shift.
+
+_SIZE_LABEL_MEDIUM_FLOOR = 500    # below this — outline shrinks little vs full read
+_SIZE_LABEL_LARGE_FLOOR = 5000    # above this — outline alone may be long; show helps
+
+
+def _size_label(token_count: int) -> str:
+    """One of three descriptive size labels.
+
+    - ``[tiny]`` — under ~500 tokens. Outline returns roughly the same
+      content as Read, with light structural overlay.
+    - ``[medium]`` — 500-5000 tokens. Outline meaningfully compresses
+      (5-10× typical) while staying compact enough to consume whole.
+    - ``[large]`` — 5000+ tokens. Outline output itself can run long;
+      ``show`` for specific sections is the surgical follow-up.
+
+    The agent reads the label, weighs its task, and decides. We don't
+    tell it what to do.
+    """
+    if token_count < _SIZE_LABEL_MEDIUM_FLOOR:
+        return "[tiny]"
+    if token_count < _SIZE_LABEL_LARGE_FLOOR:
+        return "[medium]"
+    return "[large]"
 
 
 def _format_error_warning(result: ParseResult) -> Optional[str]:
@@ -294,7 +354,14 @@ def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optiona
     for r in results:
         grouped.setdefault(r.path.parent, []).append(r)
 
-    lines: list[str] = []
+    # Minimal legend. The labels are self-explanatory descriptive English
+    # — `[tiny]`, `[medium]`, `[large]` are universally understood as
+    # size classes. We deliberately do NOT spell out what action each
+    # label "should" trigger; that's the agent's call given its task.
+    lines: list[str] = [
+        "# size labels next to each file: [tiny] / [medium] / [large]",
+        "",
+    ]
     for directory in sorted(grouped.keys(), key=str):
         try:
             rel = str(directory.relative_to(root))
@@ -308,7 +375,13 @@ def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optiona
 
 
 def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
-    lines = [_format_file_header(f"  {result.path.name}", result)]
+    # Inject the descriptive size label between the filename and the
+    # parenthesised counters: `  name.py [medium] (95 lines, ...)`.
+    # The bracket lands right after the filename so the agent reads
+    # the size class first, then the precise counters second.
+    label = _size_label(_estimate_tokens(result.source))
+    prefix = f"  {result.path.name} {label}"
+    lines = [_format_file_header(prefix, result)]
     warn = _format_error_warning(result)
     if warn:
         # Indent under the file line so the warning lives with its file.

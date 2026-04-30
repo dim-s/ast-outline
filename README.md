@@ -298,14 +298,29 @@ ast-outline digest src/
 Sample output:
 
 ```
+# size labels next to each file: [tiny] / [medium] / [large]
+
 src/services/
-  user_service.py (140 lines)
+  __init__.py [tiny] (8 lines, ~74 tokens, 1 fields)
+  user_service.py [medium] (140 lines, ~1,200 tokens, 1 types, 5 methods)
     class UserService : IUserService  L8-138
       +get  +search  +create  +delete  +update
-  auth_service.py (95 lines)
+  auth_service.py [medium] (95 lines, ~840 tokens, 1 types, 4 methods)
     class AuthService  L10-95
       +login  +logout  +refresh  +verify_token
+  legacy_repo.py [large] (5234 lines, ~52,000 tokens, ...)
 ```
+
+Each filename gets a descriptive size label — `[tiny]` (under ~500 tokens),
+`[medium]` (500–5000), `[large]` (5000+). The labels describe the file;
+they don't prescribe an action. An LLM agent reads the label, weighs its
+task (does it need the whole file? a single section? just structure?) and
+picks Read / outline / show accordingly — the tool informs, the agent decides.
+
+The labels are calibrated against an approximate token count
+(`len(chars)/4`, ±15-20% vs real BPE tokenizers — fine for the size class).
+The same `~N tokens` count appears in every `outline` header too, so the
+size signal is available whether you ran `digest` first or not.
 
 ### `implements` — find subclasses / implementations
 

@@ -519,3 +519,131 @@ def _iter_all(decls):
         d = stack.pop()
         yield d
         stack.extend(d.children)
+
+
+# --- Token-count signal --------------------------------------------------
+
+
+def test_outline_header_includes_approx_token_count(java_dir):
+    """The header reports an approximate token count alongside lines so the
+    agent can size up a file before deciding between Read / outline / show.
+
+    We don't pin the exact value — it's a coarse ``len(bytes) // 4``
+    estimate by design — but the header MUST contain ``~`` + a digit + a
+    space + ``tokens`` after the line count."""
+    import re
+
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    assert re.search(r"\d+ lines, ~[\d,]+ tokens", first), first
+
+
+def test_outline_token_count_is_present_for_every_language(
+    csharp_dir, python_dir, java_dir, kotlin_dir, scala_dir, go_dir, fixtures_dir
+):
+    """Token count is computed inline from source bytes — must work
+    universally, no per-adapter changes required."""
+    import re
+
+    samples = [
+        CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs"),
+        PythonAdapter().parse(python_dir / "domain_model.py"),
+        JavaAdapter().parse(java_dir / "user_service.java"),
+        KotlinAdapter().parse(kotlin_dir / "user_service.kt"),
+        ScalaAdapter().parse(scala_dir / "user_service.scala"),
+        GoAdapter().parse(go_dir / "user_service.go"),
+        TypeScriptAdapter().parse(fixtures_dir / "typescript" / "storage_service.ts"),
+        MarkdownAdapter().parse(fixtures_dir / "markdown" / "readme_style.md"),
+    ]
+    for r in samples:
+        first = render_outline(r, OutlineOptions()).splitlines()[0]
+        assert re.search(r"~[\d,]+ tokens", first), f"{r.language}: {first}"
+
+
+def test_outline_token_count_grows_with_file_size(csharp_dir, fixtures_dir):
+    """Sanity check: a bigger source file produces a bigger token estimate
+    so the heuristic has any meaning at all."""
+    from ast_outline.core import _estimate_tokens
+
+    small = MarkdownAdapter().parse(fixtures_dir / "markdown" / "empty.md")
+    big = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
+    assert _estimate_tokens(small.source) < _estimate_tokens(big.source)
+
+
+# --- Digest legend -------------------------------------------------------
+
+
+def test_digest_starts_with_size_label_legend(java_dir):
+    """The digest opens with a one-line legend announcing the size
+    labels. We keep it purely descriptive — no mention of what action
+    each label implies, so the agent retains full agency on whether
+    to Read / outline / show given its specific task."""
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    out = render_digest([r], DigestOptions())
+    lines = out.splitlines()
+    assert lines[0].startswith("# size labels next to each file"), lines[0]
+    # All three descriptive labels should appear in the legend
+    assert "[tiny]" in lines[0]
+    assert "[medium]" in lines[0]
+    assert "[large]" in lines[0]
+    # Legend must NOT prescribe specific commands — that overrides agent judgment
+    for forbidden in ("Read directly", "use outline", "use show", "Read /", "outline+show"):
+        assert forbidden not in lines[0], f"legend should not be prescriptive: {lines[0]}"
+
+
+def test_digest_per_file_header_includes_token_count(java_dir):
+    """Per-file headers inside the digest carry the same ``~Nt tokens``
+    annotation as the standalone outline header — agent gets the size
+    signal whether it called ``digest`` or jumped straight to ``outline``."""
+    import re
+
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    out = render_digest([r], DigestOptions())
+    # Find the file-header line (starts with two spaces + filename)
+    file_line = next(ln for ln in out.splitlines() if ln.lstrip().startswith("user_service.java"))
+    assert re.search(r"\d+ lines, ~[\d,]+ tokens", file_line), file_line
+
+
+def test_digest_per_file_includes_size_label_bracket(java_dir):
+    """Each file line carries one of the three descriptive size labels —
+    the agent's primary at-a-glance signal for the file's bulk."""
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    out = render_digest([r], DigestOptions())
+    file_line = next(ln for ln in out.splitlines() if ln.lstrip().startswith("user_service.java"))
+    assert any(tag in file_line for tag in ("[tiny]", "[medium]", "[large]")), file_line
+
+
+def test_size_label_thresholds():
+    """The three buckets must map cleanly — boundary values verified
+    here so silent threshold drift breaks a test, not an agent."""
+    from ast_outline.core import _size_label
+
+    assert _size_label(0) == "[tiny]"
+    assert _size_label(499) == "[tiny]"
+    assert _size_label(500) == "[medium]"
+    assert _size_label(4999) == "[medium]"
+    assert _size_label(5000) == "[large]"
+    assert _size_label(1_000_000) == "[large]"
+
+
+def test_size_label_appears_before_counters_in_digest(java_dir):
+    """Visual scan order: filename → size label → counters in parens.
+    The label is the agent's primary at-a-glance signal."""
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    out = render_digest([r], DigestOptions())
+    file_line = next(ln for ln in out.splitlines() if ln.lstrip().startswith("user_service.java"))
+    bracket_pos = max(file_line.find("[tiny]"), file_line.find("[medium]"), file_line.find("[large]"))
+    paren_pos = file_line.find("(")
+    assert 0 < bracket_pos < paren_pos, file_line
+
+
+def test_token_estimate_uses_chars_not_bytes_for_cyrillic(tmp_path):
+    """Cyrillic content is 2 bytes/char in UTF-8. Counting bytes would
+    inflate the estimate by ~2× for Cyrillic files. We count characters
+    so the size hint stays accurate for non-Latin content."""
+    from ast_outline.core import _estimate_tokens
+
+    cyrillic = "А" * 1000  # 1000 chars, 2000 bytes in UTF-8
+    ascii_same_chars = "a" * 1000  # 1000 chars, 1000 bytes
+    # Both should estimate the same — chars-based, not bytes-based
+    assert _estimate_tokens(cyrillic.encode("utf-8")) == _estimate_tokens(ascii_same_chars.encode("utf-8"))

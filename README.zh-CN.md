@@ -288,14 +288,27 @@ ast-outline digest src/
 示例输出：
 
 ```
+# size labels next to each file: [tiny] / [medium] / [large]
+
 src/services/
-  user_service.py (140 lines)
+  __init__.py [tiny] (8 lines, ~74 tokens, 1 fields)
+  user_service.py [medium] (140 lines, ~1,200 tokens, 1 types, 5 methods)
     class UserService : IUserService  L8-138
       +get  +search  +create  +delete  +update
-  auth_service.py (95 lines)
+  auth_service.py [medium] (95 lines, ~840 tokens, 1 types, 4 methods)
     class AuthService  L10-95
       +login  +logout  +refresh  +verify_token
+  legacy_repo.py [large] (5234 lines, ~52,000 tokens, ...)
 ```
+
+每个文件名后会附带一个描述性的大小标签：`[tiny]`（≲500 tokens）、
+`[medium]`（500–5000）、`[large]`（5000+）。标签**描述**文件大小，
+不规定具体动作。LLM agent 读取标签，结合任务（需要整个文件？某个段落？
+只看结构？）自行选择 Read / outline / show ——工具提供信息，agent 做判断。
+
+大小估算基于 `len(chars)/4`（与真实 BPE 分词器误差 ±15-20%），对于大小
+分类足够。同一个 `~N tokens` 计数也出现在每次 `outline` 输出的文件头中，
+无论 agent 是否先跑过 `digest` 都能拿到尺寸信号。
 
 ### `implements` —— 找出子类 / 实现
 

@@ -29,7 +29,9 @@ Stop at the step that answers the question:
    of every file's types and public methods.
 
 2. **One file's shape** — `ast-outline <file>`: signatures with line
-   ranges, no bodies (5–10× smaller than a full read).
+   ranges, no bodies (5–10× smaller than a full read on non-trivial
+   files). `digest` tags each file with a size label
+   (`[tiny]` / `[medium]` / `[large]`) — context for your judgment.
 
 3. **One method, class, or markdown section** — `ast-outline show <file>
    <Symbol>`. Suffix matching: `TakeDamage`, or `Player.TakeDamage` when

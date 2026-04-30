@@ -302,14 +302,29 @@ ast-outline digest src/
 Пример вывода:
 
 ```
+# size labels next to each file: [tiny] / [medium] / [large]
+
 src/services/
-  user_service.py (140 lines)
+  __init__.py [tiny] (8 lines, ~74 tokens, 1 fields)
+  user_service.py [medium] (140 lines, ~1,200 tokens, 1 types, 5 methods)
     class UserService : IUserService  L8-138
       +get  +search  +create  +delete  +update
-  auth_service.py (95 lines)
+  auth_service.py [medium] (95 lines, ~840 tokens, 1 types, 4 methods)
     class AuthService  L10-95
       +login  +logout  +refresh  +verify_token
+  legacy_repo.py [large] (5234 lines, ~52,000 tokens, ...)
 ```
+
+К каждому файлу прилагается описательная size-метка: `[tiny]` (до ~500
+токенов), `[medium]` (500–5000), `[large]` (5000+). Метки **описывают**
+файл, а не предписывают действие. LLM-агент читает метку, оценивает свою
+задачу (нужен весь файл? одна секция? только структура?) и сам выбирает
+между Read / outline / show — инструмент информирует, агент решает.
+
+Подсчёт — `len(chars)/4`, ±15-20% от реальных BPE-токенизаторов, точности
+для классификации размера хватает. Тот же `~N tokens` появляется в шапке
+каждого `outline`-вывода — сигнал о размере доступен независимо от того,
+делал ли агент сначала `digest`.
 
 ### `implements` — найти наследников / реализации
 
