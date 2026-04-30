@@ -74,6 +74,7 @@ the round-trips.**
 | Kotlin     | `.kt`, `.kts` — classes, interfaces, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation` classes, extension functions, `suspend` / `inline` / `const` / `lateinit`, generics with `where` constraints, `typealias`, KDoc |
 | Scala      | `.scala`, `.sc` — Scala 2 + Scala 3: classes, traits, `object` / `case object`, `case class`, `sealed` hierarchies, Scala 3 `enum` / `given` / `using` / `extension`, indentation-based bodies, higher-kinded types, context bounds, `opaque type`, `type` aliases, Scaladoc |
 | Go         | `.go` — packages, structs (with method-grouping under receiver), interfaces, struct/interface embedding as inheritance, generics (Go 1.18+), `type` aliases + defined types, `iota` enum-blocks, doc-comment chains |
+| Rust       | `.rs` — modules (recursive), structs (regular / tuple / unit), unions, enums with all variant shapes, traits with supertraits as bases, **`impl` block regrouping under the target type** (inherent + `impl Trait for Foo` adds Trait to bases), `extern "C"` blocks, `macro_rules!`, type aliases, generics + lifetimes + `where` clauses, `pub` / `pub(crate)` visibility, outer doc comments (`///`, `/** */`) and `#[...]` attributes |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — heading TOC + fenced code blocks |
 | YAML       | `.yaml`, `.yml` — key hierarchy with line ranges, `[i]` sequence paths, multi-document separators, format-detect for Kubernetes / OpenAPI / GitHub Actions in the header |
 
@@ -204,8 +205,8 @@ ast-outline prompt | pbcopy   # macOS clipboard
 ## Code exploration — prefer `ast-outline` over full reads
 
 For `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`,
-`.scala`, `.sc`, `.go`, `.md`, and `.yaml`/`.yml` files, read structure with
-`ast-outline` before opening full contents.
+`.scala`, `.sc`, `.go`, `.rs`, `.md`, and `.yaml`/`.yml` files, read structure
+with `ast-outline` before opening full contents.
 
 Stop at the step that answers the question:
 
@@ -506,9 +507,9 @@ uv pip install -e ".[dev]"
 .venv/bin/pytest -k file_scoped_namespace -v
 ```
 
-The suite (400+ tests) covers every adapter (C#, Python, TypeScript/JS,
-Java, Kotlin, Scala, Go, Markdown), the language-agnostic renderers, symbol
-search, and the CLI end-to-end. Fixtures live under `tests/fixtures/`;
+The suite (600+ tests) covers every adapter (C#, Python, TypeScript/JS,
+Java, Kotlin, Scala, Go, Rust, Markdown, YAML), the language-agnostic
+renderers, symbol search, and the CLI end-to-end. Fixtures live under `tests/fixtures/`;
 tests never reach outside that directory.
 New behaviour should come with a test; new languages should ship with a
 dedicated fixture directory and a `tests/unit/test_<lang>_adapter.py` file.
@@ -529,9 +530,9 @@ Create `src/ast_outline/adapters/<lang>.py` implementing the
 - [x] Kotlin adapter (`.kt`, `.kts`) — classes, interfaces, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation` classes, extension functions, `suspend` / `inline` / `const` / `lateinit`, generics with `where` constraints, `typealias`, KDoc
 - [x] Scala adapter (`.scala`, `.sc`) — Scala 2 + Scala 3: classes, traits, `object` / `case object`, `case class`, `sealed` hierarchies, Scala 3 `enum` / `given` / `using` / `extension`, indentation-based bodies, higher-kinded types, context bounds, `opaque type`, `type` aliases, Scaladoc
 - [x] Go adapter (`.go`) — packages, structs (with method-grouping under receiver), interfaces, struct/interface embedding as inheritance, generics (Go 1.18+), `type` aliases + defined types, `iota` enum-blocks, doc-comment chains
+- [x] Rust adapter (`.rs`) — modules (recursive), structs (regular / tuple / unit), unions, enums with all variant shapes, traits + supertraits as bases, **`impl` block regrouping under the target type** (inherent + `impl Trait for Foo` adds Trait to bases), `extern "C"` blocks, `macro_rules!`, type aliases, generics + lifetimes + `where` clauses, full visibility classifier (`pub` / `pub(crate)` / `pub(super)` / `pub(in path)`), outer doc comments + `#[...]` attributes
 - [x] Markdown adapter (`.md`, `.markdown`, `.mdx`, `.mdown`) — heading TOC + code blocks
 - [x] YAML adapter (`.yaml`, `.yml`) — key hierarchy, `[i]` sequence paths, multi-document support, format-detect for Kubernetes / OpenAPI / GitHub Actions
-- [ ] Rust adapter
 - [ ] `--format json` output mode for programmatic consumers
 - [ ] Optional multiprocessing for very large codebases (>500 files)
 

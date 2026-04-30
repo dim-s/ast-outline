@@ -45,6 +45,11 @@ def go_dir() -> Path:
 
 
 @pytest.fixture(scope="session")
+def rust_dir() -> Path:
+    return FIXTURES_DIR / "rust"
+
+
+@pytest.fixture(scope="session")
 def md_dir() -> Path:
     return FIXTURES_DIR / "markdown"
 

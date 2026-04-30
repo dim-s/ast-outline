@@ -75,6 +75,7 @@ embeddings и vector search. Подход надёжный, но дорогой:
 | Kotlin     | `.kt`, `.kts` — классы, интерфейсы, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation`-классы, extension-функции, `suspend` / `inline` / `const` / `lateinit`, generics с `where`-ограничениями, `typealias`, KDoc |
 | Scala      | `.scala`, `.sc` — Scala 2 + Scala 3: классы, trait'ы, `object` / `case object`, `case class`, `sealed`-иерархии, Scala 3 `enum` / `given` / `using` / `extension`, indentation-синтаксис, higher-kinded types, context bounds, `opaque type`, type-алиасы, Scaladoc |
 | Go         | `.go` — пакеты, struct'ы (методы группируются под receiver), интерфейсы, embedding (struct и interface) как механизм «наследования», generics (Go 1.18+), type-алиасы + defined types, `iota`-enum'ы, цепочки doc-комментариев |
+| Rust       | `.rs` — модули (рекурсивно), struct'ы (regular / tuple / unit), unions, enum'ы со всеми формами variant'ов, trait'ы (supertraits → bases), **группировка `impl`-блоков под целевой тип** (inherent + `impl Trait for Foo` добавляет Trait в bases), `extern "C"`, `macro_rules!`, type-алиасы, generics + lifetimes + `where`-clauses, классификация видимости (`pub` / `pub(crate)` / `pub(super)` / `pub(in path)`), внешние doc-комментарии (`///`, `/** */`) и `#[...]`-атрибуты |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — оглавление по заголовкам + код-блоки |
 | YAML       | `.yaml`, `.yml` — иерархия ключей с диапазонами строк, `[i]` пути для sequence-элементов, multi-document сепараторы, format-detect для Kubernetes / OpenAPI / GitHub Actions в шапке |
 
@@ -189,8 +190,8 @@ ast-outline prompt | pbcopy   # буфер обмена в macOS
 ## Изучение кода — выбирай `ast-outline` вместо полного чтения
 
 Для файлов `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`,
-`.kts`, `.scala`, `.sc`, `.go`, `.md` и `.yaml`/`.yml` сначала читай структуру
-через `ast-outline`, а не полное содержимое.
+`.kts`, `.scala`, `.sc`, `.go`, `.rs`, `.md` и `.yaml`/`.yml` сначала читай
+структуру через `ast-outline`, а не полное содержимое.
 
 Останавливайся на шаге, который ответил на вопрос:
 
@@ -490,8 +491,8 @@ uv pip install -e ".[dev]"
 .venv/bin/pytest -k file_scoped_namespace -v
 ```
 
-Сьют (400+ тестов) покрывает все адаптеры (C#, Python, TypeScript/JS,
-Java, Kotlin, Scala, Go, Markdown), языко-агностичные рендереры, поиск по
+Сьют (600+ тестов) покрывает все адаптеры (C#, Python, TypeScript/JS,
+Java, Kotlin, Scala, Go, Rust, Markdown, YAML), языко-агностичные рендереры, поиск по
 символам и CLI end-to-end. Фикстуры лежат в `tests/fixtures/`; тесты не
 выходят за эту директорию. Любая новая фича должна приходить с тестом;
 новый язык — с отдельной папкой фикстур и файлом
@@ -513,9 +514,9 @@ Java, Kotlin, Scala, Go, Markdown), языко-агностичные ренде
 - [x] Адаптер Kotlin (`.kt`, `.kts`) — классы, интерфейсы, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation`-классы, extension-функции, `suspend` / `inline` / `const` / `lateinit`, generics с `where`, `typealias`, KDoc
 - [x] Адаптер Scala (`.scala`, `.sc`) — Scala 2 + Scala 3: классы, trait'ы, `object` / `case object`, `case class`, `sealed`-иерархии, Scala 3 `enum` / `given` / `using` / `extension`, indentation-синтаксис, higher-kinded types, context bounds, `opaque type`, type-алиасы, Scaladoc
 - [x] Адаптер Go (`.go`) — пакеты, struct'ы (методы группируются под receiver), интерфейсы, struct/interface embedding как «наследование», generics (Go 1.18+), type-алиасы + defined types, `iota`-enum'ы, цепочки doc-комментариев
+- [x] Адаптер Rust (`.rs`) — модули (рекурсивно), struct'ы (regular / tuple / unit), unions, enum'ы со всеми формами variant'ов, trait'ы (supertraits → bases), **группировка `impl`-блоков под целевой тип** (inherent + `impl Trait for Foo` добавляет Trait в bases), `extern "C"`, `macro_rules!`, type-алиасы, generics + lifetimes + `where`-clauses, классификация видимости (`pub` / `pub(crate)` / `pub(super)` / `pub(in path)`), внешние doc-комментарии + `#[...]`-атрибуты
 - [x] Адаптер Markdown (`.md`, `.markdown`, `.mdx`, `.mdown`) — TOC из заголовков + код-блоки
 - [x] Адаптер YAML (`.yaml`, `.yml`) — иерархия ключей, `[i]` пути для sequence-элементов, multi-document, format-detect для Kubernetes / OpenAPI / GitHub Actions
-- [ ] Адаптер Rust
 - [ ] `--format json` для программной обработки вывода
 - [ ] Опциональный multiprocessing для очень больших кодовых баз (>500 файлов)
 

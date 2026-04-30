@@ -19,8 +19,8 @@ from __future__ import annotations
 AGENT_PROMPT = """## Code exploration — prefer `ast-outline` over full reads
 
 For `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`,
-`.scala`, `.sc`, `.go`, `.md`, and `.yaml`/`.yml` files, read structure with
-`ast-outline` before opening full contents.
+`.scala`, `.sc`, `.go`, `.rs`, `.md`, and `.yaml`/`.yml` files, read structure
+with `ast-outline` before opening full contents.
 
 Stop at the step that answers the question:
 

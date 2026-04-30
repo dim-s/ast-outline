@@ -15,6 +15,7 @@ from .java import JavaAdapter
 from .kotlin import KotlinAdapter
 from .markdown import MarkdownAdapter
 from .python import PythonAdapter
+from .rust import RustAdapter
 from .scala import ScalaAdapter
 from .typescript import TypeScriptAdapter
 from .yaml import YamlAdapter
@@ -28,6 +29,7 @@ ADAPTERS: list[LanguageAdapter] = [
     KotlinAdapter(),
     ScalaAdapter(),
     GoAdapter(),
+    RustAdapter(),
     MarkdownAdapter(),
     YamlAdapter(),
 ]
