@@ -153,6 +153,28 @@ def test_snippet_fits_rough_length_budget():
     )
 
 
+def test_readme_prompt_snippet_matches_canonical_source():
+    """The English README quotes AGENT_PROMPT verbatim inside its
+    'Prompt snippet (copy-paste)' code block. Drift between the two
+    has bitten us before — when AGENT_PROMPT is tightened, people
+    forget to mirror the change in README.md and users copy a stale
+    snippet into AGENTS.md. Guard against silent drift here."""
+    from pathlib import Path
+
+    readme = Path(__file__).resolve().parents[2] / "README.md"
+    content = readme.read_text()
+    # AGENT_PROMPT ends with `\n`; strip it for the substring check
+    # so trailing-newline variations don't fail the match.
+    canonical = AGENT_PROMPT.rstrip("\n")
+    assert canonical in content, (
+        "README.md 'Prompt snippet' block has drifted from the canonical "
+        "AGENT_PROMPT. Update the snippet in README.md to match "
+        "src/ast_outline/_prompt.py exactly (the snippet is what users "
+        "copy into their AGENTS.md / CLAUDE.md — staleness gives them "
+        "outdated guidance)."
+    )
+
+
 def test_snippet_ends_with_newline():
     """Appending with `ast-outline prompt >> AGENTS.md` must leave a
     clean newline so the next line doesn't concatenate."""

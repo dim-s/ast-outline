@@ -183,33 +183,33 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
 ## 代码探索 —— 优先用 `ast-outline`，而不是完整读取
 
 对于 `.cs`、`.py`、`.pyi`、`.ts`、`.tsx`、`.js`、`.jsx`、`.java`、`.kt`、`.kts`、
-`.scala`、`.sc`、`.go` 和 `.md` 文件，先用 `ast-outline` 读结构，再考虑打开完整内容。
-方法体只在你已经确定需要某一个时才去取。
+`.scala`、`.sc`、`.go`、`.md` 和 `.yaml`/`.yml` 文件，先用 `ast-outline` 读结构，
+再考虑打开完整内容。
 
 哪一步能回答问题就停在哪一步：
 
 1. **不熟悉的目录** —— `ast-outline digest <dir>`：一页地图，列出每个
-   文件的类型和公共方法。
+   文件的类型和公共方法。每个文件后会附带大小标签
+   —— `[tiny]` / `[medium]` / `[large]` —— 当解析遇到错误、outline
+   可能不完整时再加 `[broken]`。
 
-2. **单个文件的结构** —— `ast-outline <file>`：签名 + 行号范围，不含
-   方法体（比完整读取少用 5–10 倍 token）。
+2. **单个文件的结构** —— `ast-outline <file>`:签名 + 行号范围,不含
+   方法体(对非平凡文件,比完整读取少用 5–10 倍 token)。如果头部出现
+   `# WARNING: N parse errors`,说明 outline 是不完整的 —— 直接读取受影响
+   区域的源码。
 
 3. **某个方法 / 类 / markdown 段落** —— `ast-outline show <file> <Symbol>`。
-   后缀匹配：`TakeDamage`，有歧义时用 `Player.TakeDamage`。一次取多个：
+   后缀匹配:`TakeDamage`,有歧义时用 `Player.TakeDamage`。一次取多个:
    `ast-outline show Player.cs TakeDamage Heal Die`。markdown 的符号是
-   标题文本，匹配为**大小写不敏感的子串**：`"current analysis"` 能命中
-   `"1. CURRENT ANALYSIS (Feb 2026)"`。如果命中多个，全部输出，可再缩窄查询。
+   标题文本,匹配为大小写不敏感的子串:`"installation"` 能命中
+   `"2.1 Installation (macOS / Linux)"`。
 
-4. **谁继承/实现了某个类型** —— `ast-outline implements <Type> <dir>`：
-   基于 AST（不用 `grep`），默认是传递性的 —— 间接匹配会带 `[via Parent]`
+4. **谁继承/实现了某个类型** —— `ast-outline implements <Type> <dir>`:
+   基于 AST(不用 `grep`),默认是传递性的 —— 间接匹配会带 `[via Parent]`
    标记。加 `--direct` 只显示直接子类。
 
-只有当 `show` 给出的方法体不足以提供所需上下文时，才回退到完整读取。
-
-如果 outline 头部包含 `# WARNING: N parse errors`，说明该文件的 outline
-是不完整的 —— 直接读取受影响区域的源码。
-
-`ast-outline help` 查看完整标志和冷门选项。
+只有当 `show` 给出的方法体不足以提供所需上下文时,才回退到完整读取。
+`ast-outline help` 查看完整标志。
 ```
 
 ### 为什么有效
