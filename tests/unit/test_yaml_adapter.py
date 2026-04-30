@@ -177,6 +177,48 @@ def test_id_key_priority_uses_for_github_actions(yaml_dir):
     assert any("pytest" in lbl for lbl in labels)
 
 
+def test_id_key_priority_chain_wins_over_other_scalars(yaml_dir):
+    """When a priority key (`id`/`name`/`key`/`uses`/`run`) is present,
+    the dash label uses ITS value — not the first scalar pair, even if
+    that comes earlier in source order."""
+    r = YamlAdapter().parse(yaml_dir / "seq_id_fallback.yaml")
+    section = next(d for d in r.declarations if d.name == "priority_id")
+    labels = [item.signature for item in section.children]
+    assert labels == ["- alpha", "- beta"]
+
+
+def test_id_key_priority_key_matches(yaml_dir):
+    r = YamlAdapter().parse(yaml_dir / "seq_id_fallback.yaml")
+    section = next(d for d in r.declarations if d.name == "priority_key")
+    labels = [item.signature for item in section.children]
+    assert labels == ["- alpha", "- beta"]
+
+
+def test_id_key_falls_back_to_first_scalar_for_domain_keys(yaml_dir):
+    """When NONE of the priority keys are present (`date`/`event`/
+    `step`/`country`/etc — domain-specific identifiers we can't
+    enumerate universally), the dash label falls through to the first
+    scalar pair's value in source order. Better than a bare dash —
+    gives the agent a meaningful anchor to scan."""
+    r = YamlAdapter().parse(yaml_dir / "seq_id_fallback.yaml")
+    section = next(d for d in r.declarations if d.name == "domain_fallback")
+    labels = [item.signature for item in section.children]
+    assert labels == ['- "2024-01-15"', '- "2024-02-01"', '- "2024-03-15"']
+
+
+def test_id_key_fallback_skips_complex_first_values(yaml_dir):
+    """Fallback considers only SCALAR pairs, not flow-mappings or
+    sequences. If the first pair has a complex value, fallback steps
+    over it to the next scalar pair — never invents a dash label
+    from nested structure."""
+    r = YamlAdapter().parse(yaml_dir / "seq_id_fallback.yaml")
+    section = next(d for d in r.declarations if d.name == "bare_when_first_value_is_complex")
+    [item] = section.children
+    # `matrix` is a flow_mapping — skipped. `label: only_after_complex`
+    # is the first SCALAR pair — that wins.
+    assert item.signature == "- only_after_complex"
+
+
 # --- Flow-style preservation ---------------------------------------------
 
 

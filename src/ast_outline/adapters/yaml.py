@@ -73,6 +73,10 @@ _PARSER = Parser(_LANGUAGE)
 # sequence-of-mappings item. Resolved in priority order — first hit wins.
 # `name` covers k8s containers, env vars, ports, services; `uses`/`run`
 # cover GitHub Actions steps; `id`/`key` are generic conventions.
+# When none of these match, ``_resolve_id_key`` falls through to the
+# first scalar pair's value (covers domain-specific identifiers like
+# `date` / `event` / `step` / `title` / `country` etc. without us
+# needing to enumerate every possible field name globally).
 _ID_KEYS = ("name", "id", "key", "uses", "run")
 
 # Long scalars get truncated to this many chars + ellipsis. Keeps the
@@ -570,6 +574,15 @@ def _resolve_id_key(mapping: Node, src: bytes) -> Optional[str]:
 
     Walks the immediate pairs (not nested) — for `containers: [- name:
     api ...]` we want the `api` from the OUTER `name:` pair.
+
+    Two-tier resolution:
+    1. Priority chain (`name`/`id`/`key`/`uses`/`run`) — established
+       conventions across k8s, GitHub Actions, Compose, generic data.
+    2. Fallback — first scalar pair's value, in source order. Covers
+       domain-specific identifier keys we can't enumerate universally
+       (`date` / `event` / `step` / `title` / `dimension` / domain
+       terms). Better to label the dash with `2024-01-15` than leave
+       it bare — gives the agent something to scan visually.
     """
     pairs = [c for c in mapping.named_children if c.type in ("block_mapping_pair", "flow_pair")]
     by_key: dict[str, str] = {}
@@ -591,6 +604,12 @@ def _resolve_id_key(mapping: Node, src: bytes) -> Optional[str]:
     for candidate in _ID_KEYS:
         if candidate in by_key:
             return _truncate(by_key[candidate])
+    # Fallback: first scalar pair in source order. ``by_key`` preserved
+    # insertion order (Python 3.7+), so the first inserted key is the
+    # first scalar pair encountered in the YAML.
+    if by_key:
+        first_value = next(iter(by_key.values()))
+        return _truncate(first_value)
     return None
 
 

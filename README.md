@@ -80,6 +80,23 @@ the round-trips.**
 Adding another language is a single new adapter file. See
 [`src/ast_outline/adapters/`](src/ast_outline/adapters/).
 
+#### YAML caveats
+
+Real-world YAML files routinely surface a `# WARNING: N parse errors`
+header — `tree-sitter-yaml`'s strict parser flags fairly innocuous
+inconsistencies (like a sequence item nested inside an unexpected
+mapping context) and the error region can spread well beyond the
+actual broken line. The adapter's recovery walk salvages most useful
+structure around such regions; treat the outline as best-effort and
+fall back to `Read` for the affected region when the answer is
+load-bearing.
+
+`show` for YAML matches **keys**, not value text. `show file.yaml
+"some phrase"` will not find a phrase that lives inside a string
+value — for free-text searches inside values, use `grep`/`rg`.
+`ast-outline` is structural; it complements text search rather than
+replacing it.
+
 ---
 
 ## Install
@@ -202,12 +219,15 @@ Stop at the step that answers the question:
    files). A `# WARNING: N parse errors` line in the header means the
    outline is partial — read the source for the affected region.
 
-3. **One method, class, or markdown section** — `ast-outline show <file>
-   <Symbol>`. Suffix matching: `TakeDamage`, or `Player.TakeDamage` when
-   ambiguous. Multiple at once: `ast-outline show Player.cs TakeDamage
-   Heal Die`. For markdown, the symbol is heading text and matching is
-   case-insensitive substring — `"installation"` finds
-   `"2.1 Installation (macOS / Linux)"`.
+3. **One method, class, markdown heading, or yaml key** —
+   `ast-outline show <file> <Symbol>`. Suffix matching: `TakeDamage`,
+   or `Player.TakeDamage` when ambiguous. Multiple at once:
+   `ast-outline show Player.cs TakeDamage Heal Die`. For markdown,
+   the symbol is heading text and matching is case-insensitive
+   substring — `"installation"` finds `"2.1 Installation (macOS / Linux)"`.
+   For yaml, the symbol is a dotted key path
+   (`spec.containers[0].image`) — `show` matches keys, not values, so
+   for free-text search inside values use `grep`.
 
 4. **Who implements/extends a type** — `ast-outline implements <Type>
    <dir>`: AST-accurate (skip `grep`), transitive by default with

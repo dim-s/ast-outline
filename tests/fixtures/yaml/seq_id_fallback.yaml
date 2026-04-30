@@ -1,0 +1,30 @@
+# Fixture for the sequence-of-mappings id-key fallback chain.
+# Three sections covering: priority-key match (uses ASCII id), priority
+# match through alternate (uses `key`), domain-specific fallback (uses
+# the first scalar pair when none of the priority keys match).
+
+priority_id:
+  - id: alpha
+    type: checkpoint
+  - id: beta
+    type: review
+
+priority_key:
+  - key: alpha
+    weight: 10
+  - key: beta
+    weight: 20
+
+domain_fallback:
+  - date: "2024-01-15"
+    note: regular checkup
+  - date: "2024-02-01"
+    note: follow-up
+  - date: "2024-03-15"
+    note: lab tests
+
+bare_when_first_value_is_complex:
+  # First value is a flow mapping, NOT a scalar — should fall through to
+  # bare dash, not pick up nested structure as a label.
+  - matrix: {x: 1, y: 2}
+    label: only_after_complex
