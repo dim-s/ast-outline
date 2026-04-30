@@ -413,14 +413,13 @@ def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optiona
     for r in results:
         grouped.setdefault(r.path.parent, []).append(r)
 
-    # Single-line legend. Size labels are universal English size classes;
-    # `[broken]` is plain English for files where the parse hit errors.
-    # Both labels are self-explanatory — no prescriptive actions, agent
-    # decides what to do with the information.
-    lines: list[str] = [
-        "# size labels next to each file: [tiny] / [medium] / [large]   ([broken] = syntax errors)",
-        "",
-    ]
+    # Legend lives in the canonical agent prompt (run `ast-outline prompt`
+    # to see it), not here — the size-label and `[broken]` conventions
+    # are stable and don't need to be reprinted on every digest call.
+    # The labels themselves (`[tiny]` / `[medium]` / `[large]` /
+    # `[broken]`) are descriptive English and remain readable cold even
+    # without the prompt loaded.
+    lines: list[str] = []
     for directory in sorted(grouped.keys(), key=str):
         try:
             rel = str(directory.relative_to(root))

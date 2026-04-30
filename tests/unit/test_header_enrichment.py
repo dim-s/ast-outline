@@ -573,22 +573,17 @@ def test_outline_token_count_grows_with_file_size(csharp_dir, fixtures_dir):
 # --- Digest legend -------------------------------------------------------
 
 
-def test_digest_starts_with_size_label_legend(java_dir):
-    """The digest opens with a one-line legend announcing the size
-    labels. We keep it purely descriptive — no mention of what action
-    each label implies, so the agent retains full agency on whether
-    to Read / outline / show given its specific task."""
+def test_digest_does_not_repeat_label_legend(java_dir):
+    """The digest output is intentionally legend-free — the size-label
+    and `[broken]` conventions live in the canonical agent prompt
+    (`ast-outline prompt`) so they're paid for once per session, not
+    on every digest call. The labels themselves remain readable cold."""
     r = JavaAdapter().parse(java_dir / "user_service.java")
     out = render_digest([r], DigestOptions())
-    lines = out.splitlines()
-    assert lines[0].startswith("# size labels next to each file"), lines[0]
-    # All three descriptive labels should appear in the legend
-    assert "[tiny]" in lines[0]
-    assert "[medium]" in lines[0]
-    assert "[large]" in lines[0]
-    # Legend must NOT prescribe specific commands — that overrides agent judgment
-    for forbidden in ("Read directly", "use outline", "use show", "Read /", "outline+show"):
-        assert forbidden not in lines[0], f"legend should not be prescriptive: {lines[0]}"
+    # No `# size labels` / `# rule of thumb` / similar lecture-lines.
+    for ln in out.splitlines():
+        assert "size labels next to each file" not in ln, ln
+        assert "rule of thumb" not in ln, ln
 
 
 def test_digest_per_file_header_includes_token_count(java_dir):
