@@ -1,0 +1,26 @@
+# Generic app config — no format-detect should fire here.
+database:
+  host: db.internal.acme.com
+  port: 5432
+  name: acme_prod
+  pool:
+    min: 5
+    max: 50
+  ssl:
+    mode: require
+    ca: /etc/certs/db-ca.pem
+cache:
+  redis:
+    host: redis.internal
+    port: 6379
+    db: 0
+  ttl_seconds: 3600
+  namespaces: [user, session, rate_limit]
+features:
+  new_checkout: true
+  experimental_routing: false
+  legacy_auth: deprecated_2025
+logging:
+  level: info
+  format: json
+  sinks: [stdout, sentry]

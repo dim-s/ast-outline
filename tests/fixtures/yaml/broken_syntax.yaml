@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: broken
+  namespace: prod
+data:
+  good_key: this is fine
+   indented_wrong: this triggers an error
+  - random dash where mapping expected
+malformed:
+  : value with empty key

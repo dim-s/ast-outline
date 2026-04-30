@@ -72,6 +72,7 @@ Agent: ast-outline show Player.cs TakeDamage # 只取需要的方法体
 | Scala      | `.scala`、`.sc` —— Scala 2 + Scala 3：类、trait、`object` / `case object`、`case class`、`sealed` 继承层级、Scala 3 `enum` / `given` / `using` / `extension`、缩进式语法体、higher-kinded 类型、context bound、`opaque type`、类型别名、Scaladoc |
 | Go         | `.go` —— 包、结构体（方法按 receiver 分组）、接口、struct/interface 嵌入作为「继承」、泛型（Go 1.18+）、类型别名 + defined type、`iota` 枚举块、文档注释链 |
 | Markdown   | `.md`、`.markdown`、`.mdx`、`.mdown` —— 标题目录 + 代码块 |
+| YAML       | `.yaml`、`.yml` —— 键层级（含行范围）、`[i]` 序列索引路径、多文档分隔符、Kubernetes / OpenAPI / GitHub Actions 头部格式自动识别 |
 
 新增语言只需要加一个适配器文件。见
 [`src/ast_outline/adapters/`](src/ast_outline/adapters/)。
@@ -491,6 +492,7 @@ CLI。Fixture 放在 `tests/fixtures/`，测试不会越出该目录。任何新
 - [x] Scala 适配器（`.scala`、`.sc`）—— Scala 2 + Scala 3：类、trait、`object` / `case object`、`case class`、`sealed` 继承层级、Scala 3 `enum` / `given` / `using` / `extension`、缩进式语法体、higher-kinded 类型、context bound、`opaque type`、类型别名、Scaladoc
 - [x] Go 适配器（`.go`）—— 包、结构体（方法按 receiver 分组）、接口、struct/interface 嵌入作为「继承」、泛型（Go 1.18+）、类型别名 + defined type、`iota` 枚举块、文档注释链
 - [x] Markdown 适配器（`.md`、`.markdown`、`.mdx`、`.mdown`）—— 标题目录 + 代码块
+- [x] YAML 适配器（`.yaml`、`.yml`）—— 键层级、`[i]` 序列索引路径、多文档支持、Kubernetes / OpenAPI / GitHub Actions 头部格式识别
 - [ ] Rust 适配器
 - [ ] `--format json` —— 方便程序化消费
 - [ ] 针对超大代码库（>500 文件）的可选 multiprocessing

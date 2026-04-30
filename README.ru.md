@@ -76,6 +76,7 @@ embeddings и vector search. Подход надёжный, но дорогой:
 | Scala      | `.scala`, `.sc` — Scala 2 + Scala 3: классы, trait'ы, `object` / `case object`, `case class`, `sealed`-иерархии, Scala 3 `enum` / `given` / `using` / `extension`, indentation-синтаксис, higher-kinded types, context bounds, `opaque type`, type-алиасы, Scaladoc |
 | Go         | `.go` — пакеты, struct'ы (методы группируются под receiver), интерфейсы, embedding (struct и interface) как механизм «наследования», generics (Go 1.18+), type-алиасы + defined types, `iota`-enum'ы, цепочки doc-комментариев |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — оглавление по заголовкам + код-блоки |
+| YAML       | `.yaml`, `.yml` — иерархия ключей с диапазонами строк, `[i]` пути для sequence-элементов, multi-document сепараторы, format-detect для Kubernetes / OpenAPI / GitHub Actions в шапке |
 
 Добавление нового языка — это один новый файл-адаптер. См.
 [`src/ast_outline/adapters/`](src/ast_outline/adapters/).
@@ -514,6 +515,7 @@ Java, Kotlin, Scala, Go, Markdown), языко-агностичные ренде
 - [x] Адаптер Scala (`.scala`, `.sc`) — Scala 2 + Scala 3: классы, trait'ы, `object` / `case object`, `case class`, `sealed`-иерархии, Scala 3 `enum` / `given` / `using` / `extension`, indentation-синтаксис, higher-kinded types, context bounds, `opaque type`, type-алиасы, Scaladoc
 - [x] Адаптер Go (`.go`) — пакеты, struct'ы (методы группируются под receiver), интерфейсы, struct/interface embedding как «наследование», generics (Go 1.18+), type-алиасы + defined types, `iota`-enum'ы, цепочки doc-комментариев
 - [x] Адаптер Markdown (`.md`, `.markdown`, `.mdx`, `.mdown`) — TOC из заголовков + код-блоки
+- [x] Адаптер YAML (`.yaml`, `.yml`) — иерархия ключей, `[i]` пути для sequence-элементов, multi-document, format-detect для Kubernetes / OpenAPI / GitHub Actions
 - [ ] Адаптер Rust
 - [ ] `--format json` для программной обработки вывода
 - [ ] Опциональный multiprocessing для очень больших кодовых баз (>500 файлов)

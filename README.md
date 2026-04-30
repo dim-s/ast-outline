@@ -75,6 +75,7 @@ the round-trips.**
 | Scala      | `.scala`, `.sc` — Scala 2 + Scala 3: classes, traits, `object` / `case object`, `case class`, `sealed` hierarchies, Scala 3 `enum` / `given` / `using` / `extension`, indentation-based bodies, higher-kinded types, context bounds, `opaque type`, `type` aliases, Scaladoc |
 | Go         | `.go` — packages, structs (with method-grouping under receiver), interfaces, struct/interface embedding as inheritance, generics (Go 1.18+), `type` aliases + defined types, `iota` enum-blocks, doc-comment chains |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — heading TOC + fenced code blocks |
+| YAML       | `.yaml`, `.yml` — key hierarchy with line ranges, `[i]` sequence paths, multi-document separators, format-detect for Kubernetes / OpenAPI / GitHub Actions in the header |
 
 Adding another language is a single new adapter file. See
 [`src/ast_outline/adapters/`](src/ast_outline/adapters/).
@@ -511,6 +512,7 @@ Create `src/ast_outline/adapters/<lang>.py` implementing the
 - [x] Scala adapter (`.scala`, `.sc`) — Scala 2 + Scala 3: classes, traits, `object` / `case object`, `case class`, `sealed` hierarchies, Scala 3 `enum` / `given` / `using` / `extension`, indentation-based bodies, higher-kinded types, context bounds, `opaque type`, `type` aliases, Scaladoc
 - [x] Go adapter (`.go`) — packages, structs (with method-grouping under receiver), interfaces, struct/interface embedding as inheritance, generics (Go 1.18+), `type` aliases + defined types, `iota` enum-blocks, doc-comment chains
 - [x] Markdown adapter (`.md`, `.markdown`, `.mdx`, `.mdown`) — heading TOC + code blocks
+- [x] YAML adapter (`.yaml`, `.yml`) — key hierarchy, `[i]` sequence paths, multi-document support, format-detect for Kubernetes / OpenAPI / GitHub Actions
 - [ ] Rust adapter
 - [ ] `--format json` output mode for programmatic consumers
 - [ ] Optional multiprocessing for very large codebases (>500 files)

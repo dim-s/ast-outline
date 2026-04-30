@@ -47,3 +47,8 @@ def go_dir() -> Path:
 @pytest.fixture(scope="session")
 def md_dir() -> Path:
     return FIXTURES_DIR / "markdown"
+
+
+@pytest.fixture(scope="session")
+def yaml_dir() -> Path:
+    return FIXTURES_DIR / "yaml"

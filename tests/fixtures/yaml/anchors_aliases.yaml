@@ -1,0 +1,12 @@
+defaults: &defaults
+  timeout: 30
+  retries: 3
+  log_level: info
+api:
+  <<: *defaults
+  name: api
+  port: 8080
+worker:
+  <<: *defaults
+  name: worker
+  port: 9090

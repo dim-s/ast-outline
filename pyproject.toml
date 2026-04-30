@@ -1,7 +1,7 @@
 [project]
 name = "ast-outline"
-version = "0.3.3"
-description = "AST-based structural outline for source files (C#, Python, TypeScript/JavaScript, Java, Kotlin, Scala, Go, Markdown) — tree-sitter-powered, LLM-agent-first. Complement to ast-grep: ast-grep searches, ast-outline overviews."
+version = "0.3.4"
+description = "AST-based structural outline for source files (C#, Python, TypeScript/JavaScript, Java, Kotlin, Scala, Go, Markdown, YAML) — tree-sitter-powered, LLM-agent-first. Complement to ast-grep: ast-grep searches, ast-outline overviews."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -25,6 +25,9 @@ keywords = [
     "go",
     "golang",
     "markdown",
+    "yaml",
+    "kubernetes",
+    "openapi",
     "code-navigation",
 ]
 classifiers = [
@@ -49,6 +52,7 @@ dependencies = [
     "tree-sitter-scala>=0.24",
     "tree-sitter-go>=0.23",
     "tree-sitter-markdown>=0.3",
+    "tree-sitter-yaml>=0.6",
 ]
 
 [project.optional-dependencies]

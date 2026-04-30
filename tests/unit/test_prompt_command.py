@@ -94,6 +94,7 @@ def test_snippet_mentions_every_supported_file_extension():
     for ext in [
         ".cs", ".py", ".pyi", ".ts", ".tsx", ".js", ".jsx",
         ".java", ".kt", ".kts", ".scala", ".sc", ".go", ".md",
+        ".yaml", ".yml",
     ]:
         assert f"`{ext}`" in AGENT_PROMPT, f"snippet missing extension {ext!r}"
 

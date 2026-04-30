@@ -37,6 +37,15 @@ KIND_OPERATOR = "operator"
 KIND_HEADING = "heading"
 KIND_CODE_BLOCK = "code_block"
 
+# Data/config document kinds — used by the YAML adapter. One canonical
+# kind covers every YAML construct (mapping key, sequence item, scalar
+# leaf): the renderer differentiates by whether the node has children
+# and what shape the signature has, not by sub-kinds. This keeps the
+# IR uniform — same way `KIND_HEADING` covers every markdown heading
+# regardless of level.
+KIND_YAML_KEY = "yaml_key"
+KIND_YAML_DOC = "yaml_doc"
+
 TYPE_KINDS = {KIND_CLASS, KIND_STRUCT, KIND_INTERFACE, KIND_RECORD, KIND_ENUM}
 CALLABLE_KINDS = {KIND_METHOD, KIND_FUNCTION, KIND_CTOR, KIND_DTOR, KIND_OPERATOR}
 
@@ -180,13 +189,45 @@ def _format_file_header(prefix: str, result: ParseResult) -> str:
     ]
     if result.language == "markdown":
         order = [("headings", "headings"), ("code_blocks", "code blocks")]
+    elif result.language == "yaml":
+        # YAML files report their document count when multi-doc — for
+        # k8s manifests this is the primary "what's in here" signal.
+        # Single-doc files skip the counter (`1 doc` would be noise).
+        n_docs = sum(1 for d in result.declarations if d.kind == KIND_YAML_DOC)
+        if n_docs > 1:
+            parts.append(f"{n_docs} docs")
+        order = []
     else:
         order = [("types", "types"), ("methods", "methods"), ("fields", "fields")]
     for key, label in order:
         n = counts.get(key, 0)
         if n > 0:
             parts.append(f"{n} {label}")
-    return f"{prefix} ({', '.join(parts)})"
+
+    # Format-detect annotation — appended after the closing paren with
+    # an em-dash so the eye visually separates the "what is this file"
+    # signal from the size/counter parens. Only fires for single-doc
+    # YAML where a clear format is detectable; multi-doc shows per-doc
+    # annotations in each `--- doc N of M` separator line instead.
+    suffix = ""
+    if result.language == "yaml":
+        suffix = _yaml_format_suffix(result.declarations)
+    return f"{prefix} ({', '.join(parts)}){suffix}"
+
+
+def _yaml_format_suffix(decls: list[Declaration]) -> str:
+    """Generate the `— OpenAPI 3.0.0, 23 paths` style annotation. Empty
+    string when no specific format is detected, or when the file is
+    multi-document (per-doc annotations live in the separator lines)."""
+    n_docs = sum(1 for d in decls if d.kind == KIND_YAML_DOC)
+    if n_docs > 1:
+        return ""
+    # Single-doc — detect on the top-level decls directly
+    from .adapters.yaml import _format_for_doc
+    hint = _format_for_doc(decls)
+    if hint:
+        return f" — {hint}"
+    return ""
 
 
 def _estimate_tokens(source: bytes) -> int:
@@ -295,6 +336,20 @@ def _render_decl(decl: Declaration, opts: OutlineOptions, indent: int, out: list
         return
 
     prefix = "    " * indent
+    suffix = decl.lines_suffix() if opts.include_line_numbers else ""
+
+    # YAML multi-document separator. The doc itself is a logical group
+    # but visually it's a flat horizontal slice — its children render
+    # at the SAME indent level as the separator line, not indented one
+    # level deeper. This keeps the YAML body looking like the actual
+    # YAML it represents, instead of double-indenting everything inside
+    # a multi-doc file.
+    if decl.kind == KIND_YAML_DOC:
+        out.append(prefix + decl.signature + suffix)
+        for child in decl.children:
+            _render_decl(child, opts, indent, out)
+        out.append("")  # blank line between docs for visual separation
+        return
 
     # Docs BEFORE signature (C# /// XML-doc style)
     if opts.include_xml_doc and decl.docs and not decl.docs_inside:
@@ -305,8 +360,6 @@ def _render_decl(decl: Declaration, opts: OutlineOptions, indent: int, out: list
     attrs_prefix = ""
     if opts.include_attributes and decl.attrs:
         attrs_prefix = " ".join(decl.attrs) + " "
-
-    suffix = decl.lines_suffix() if opts.include_line_numbers else ""
 
     # Namespace gets special rendering
     if decl.kind == KIND_NAMESPACE:
@@ -324,7 +377,13 @@ def _render_decl(decl: Declaration, opts: OutlineOptions, indent: int, out: list
     for child in decl.children:
         _render_decl(child, opts, indent + 1, out)
 
-    # Blank line after top-level types and namespaces for readability
+    # Blank line after top-level types and namespaces for readability.
+    # YAML keys are intentionally excluded — top-level YAML keys
+    # (`apiVersion`, `kind`, `metadata`, `spec`) sit on adjacent lines
+    # in the source file, and inserting blanks between them would make
+    # the outline look unlike the YAML it represents.
+    if decl.kind == KIND_YAML_KEY:
+        return
     if indent == 0 or decl.kind in TYPE_KINDS or decl.kind == KIND_NAMESPACE:
         out.append("")
 
@@ -354,12 +413,12 @@ def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optiona
     for r in results:
         grouped.setdefault(r.path.parent, []).append(r)
 
-    # Minimal legend. The labels are self-explanatory descriptive English
-    # — `[tiny]`, `[medium]`, `[large]` are universally understood as
-    # size classes. We deliberately do NOT spell out what action each
-    # label "should" trigger; that's the agent's call given its task.
+    # Single-line legend. Size labels are universal English size classes;
+    # `[broken]` is plain English for files where the parse hit errors.
+    # Both labels are self-explanatory — no prescriptive actions, agent
+    # decides what to do with the information.
     lines: list[str] = [
-        "# size labels next to each file: [tiny] / [medium] / [large]",
+        "# size labels next to each file: [tiny] / [medium] / [large]   ([broken] = syntax errors)",
         "",
     ]
     for directory in sorted(grouped.keys(), key=str):
@@ -379,8 +438,16 @@ def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
     # parenthesised counters: `  name.py [medium] (95 lines, ...)`.
     # The bracket lands right after the filename so the agent reads
     # the size class first, then the precise counters second.
+    #
+    # If the parse hit ERROR/MISSING nodes, append a `[broken]` marker —
+    # plain English, instantly recognisable, no legend lookup needed.
+    # Agent scanning digest sees `name.py [tiny] [broken]` and knows
+    # the file's syntax is malformed somewhere, so the outline below
+    # may be incomplete. The full `# WARNING:` line still appears
+    # beneath the filename for those who want the count of errors.
     label = _size_label(_estimate_tokens(result.source))
-    prefix = f"  {result.path.name} {label}"
+    integrity = " [broken]" if result.error_count > 0 else ""
+    prefix = f"  {result.path.name} {label}{integrity}"
     lines = [_format_file_header(prefix, result)]
     warn = _format_error_warning(result)
     if warn:
@@ -394,6 +461,19 @@ def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
             lines[-1] += "  # empty"
             return lines
         lines.extend(toc)
+        return lines
+
+    # YAML files digest as either:
+    # - top-level keys (single-doc files: `+apiVersion +kind +metadata +spec`)
+    # - per-doc separator lines (multi-doc: each `--- doc N of M — ...`)
+    # No `[yaml_key]` / `[yaml_doc]` annotations — the tag would be
+    # uniform-and-noisy for every entry.
+    if result.language == "yaml":
+        body = _digest_yaml(result.declarations, opts)
+        if not body:
+            lines[-1] += "  # empty"
+            return lines
+        lines.extend(body)
         return lines
 
     types = _flatten_types(result.declarations)
@@ -433,6 +513,29 @@ def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
                 tokens.append(f"+{f.name} [{f.kind}]")
         lines.extend(_wrap_tokens(tokens, width=100, indent="    "))
     return lines
+
+
+def _digest_yaml(decls: list[Declaration], opts: DigestOptions) -> list[str]:
+    """Render YAML declarations for the digest body.
+
+    Two shapes:
+    - Multi-document files: emit each ``KIND_YAML_DOC`` separator line
+      verbatim with its line range, so the agent sees `--- doc 1 of 3
+      — ConfigMap prod/api-config  L1-8` for every doc in the file.
+    - Single-document files: emit top-level keys as flat tokens
+      (``+apiVersion  +kind  +metadata  +spec``). No ``[yaml_key]``
+      annotation — every entry would carry it, pure noise.
+    """
+    if any(d.kind == KIND_YAML_DOC for d in decls):
+        out: list[str] = []
+        for d in decls:
+            if d.kind == KIND_YAML_DOC:
+                out.append("    " + d.signature + d.lines_suffix())
+        return out
+    tokens = [f"+{d.name}" for d in decls if d.kind == KIND_YAML_KEY]
+    if not tokens:
+        return []
+    return _wrap_tokens(tokens, width=100, indent="    ")
 
 
 def _digest_markdown(
@@ -554,10 +657,57 @@ def find_symbols(result: ParseResult, symbol: str) -> list[SymbolMatch]:
     matches ``"1. ТЕКУЩИЙ АНАЛИЗ (февраль 2026)"`` for headings, even
     though it wouldn't for a code symbol.
     """
-    parts = symbol.split(".")
+    parts = _split_query(symbol)
     matches: list[SymbolMatch] = []
     _search_walk(result.declarations, result.source, [], [], parts, matches)
     return matches
+
+
+import re as _re
+
+# Regex tokenizer for dotted/bracketed queries.
+# Matches either a `[…]` bracketed segment (sequence-index path
+# component, used by YAML) or a stretch of chars that are neither
+# a dot nor an opening bracket.
+# Examples:
+#   "Foo.Bar"               → ["Foo", "Bar"]
+#   "containers[0].image"   → ["containers", "[0]", "image"]
+#   "matrix[2][3]"          → ["matrix", "[2]", "[3]"]
+#   "[0].image"             → ["[0]", "image"]
+_QUERY_TOKEN_RE = _re.compile(r"\[[^\]]*\]|[^.\[]+")
+
+
+def _split_query(symbol: str) -> list[str]:
+    """Tokenise a dotted (and possibly bracketed) query into trail parts.
+
+    Code symbols use plain dots: ``Foo.Bar.method`` → ``["Foo", "Bar", "method"]``.
+
+    YAML / data-shaped queries can include JSONPath-style sequence
+    indices: ``spec.containers[0].image`` →
+    ``["spec", "containers", "[0]", "image"]``. The bracket part lands
+    as its OWN trail entry (matching how the YAML adapter emits
+    sequence items as ``Declaration(name="[0]")``), so suffix-matching
+    works without special cases in the walker."""
+    return _QUERY_TOKEN_RE.findall(symbol)
+
+
+def _join_trail(trail: list[str]) -> str:
+    """Build a ``qualified_name`` from a trail of declaration names.
+
+    Bracketed parts (``[0]``, ``[12]``) attach to the previous part
+    WITHOUT a dot separator, so a YAML sequence path renders as
+    ``containers[0].image`` (JSONPath-natural) instead of
+    ``containers.[0].image`` (clunky, would also need special parsing
+    on the agent side)."""
+    if not trail:
+        return ""
+    out = trail[0]
+    for part in trail[1:]:
+        if part.startswith("[") and part.endswith("]"):
+            out += part
+        else:
+            out += "." + part
+    return out
 
 
 def _search_walk(
@@ -580,7 +730,7 @@ def _search_walk(
             end = d.end_byte
             out.append(
                 SymbolMatch(
-                    qualified_name=".".join(new_trail),
+                    qualified_name=_join_trail(new_trail),
                     kind=d.kind,
                     start_line=d.start_line,
                     end_line=d.end_line,

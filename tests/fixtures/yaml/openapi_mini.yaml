@@ -1,0 +1,57 @@
+openapi: 3.0.3
+info:
+  title: Acme Mini API
+  version: 1.0.0
+  description: Tiny OpenAPI fixture for tests
+servers:
+  - url: https://api.acme.com
+  - url: https://staging.acme.com
+paths:
+  /users:
+    get:
+      summary: List users
+      operationId: listUsers
+      responses:
+        "200":
+          description: OK
+    post:
+      summary: Create user
+      operationId: createUser
+      requestBody:
+        required: true
+      responses:
+        "201":
+          description: Created
+  /users/{id}:
+    get:
+      summary: Get user
+      operationId: getUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not found
+    delete:
+      summary: Delete user
+      operationId: deleteUser
+      responses:
+        "204":
+          description: No content
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id: {type: string}
+        email: {type: string}
+        name: {type: string}
+    Error:
+      type: object
+      properties:
+        code: {type: integer}
+        message: {type: string}

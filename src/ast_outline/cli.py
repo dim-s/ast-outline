@@ -379,6 +379,7 @@ SUPPORTED LANGUAGES
     Scala       .scala, .sc
     Go          .go
     Markdown    .md
+    YAML        .yaml, .yml
 
 COMMANDS
     ast-outline outline <paths...>          Print outline of files or dirs
@@ -436,7 +437,7 @@ USAGE
 SUPPORTED
     C# (.cs), Python (.py, .pyi), TypeScript/JavaScript (.ts/.tsx/.js/.jsx),
     Java (.java), Kotlin (.kt, .kts), Scala (.scala, .sc), Go (.go),
-    Markdown (.md)
+    Markdown (.md), YAML (.yaml, .yml)
 
 FLAGS
     --no-private    Hide private members (Python: names starting with _)

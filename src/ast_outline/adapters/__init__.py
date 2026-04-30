@@ -17,6 +17,7 @@ from .markdown import MarkdownAdapter
 from .python import PythonAdapter
 from .scala import ScalaAdapter
 from .typescript import TypeScriptAdapter
+from .yaml import YamlAdapter
 
 
 ADAPTERS: list[LanguageAdapter] = [
@@ -28,6 +29,7 @@ ADAPTERS: list[LanguageAdapter] = [
     ScalaAdapter(),
     GoAdapter(),
     MarkdownAdapter(),
+    YamlAdapter(),
 ]
 
 
