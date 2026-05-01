@@ -702,8 +702,10 @@ def _digest_yaml(decls: list[Declaration], opts: DigestOptions) -> list[str]:
       verbatim with its line range, so the agent sees `--- doc 1 of 3
       — ConfigMap prod/api-config  L1-8` for every doc in the file.
     - Single-document files: emit top-level keys as flat tokens
-      (``+apiVersion  +kind  +metadata  +spec``). No ``[yaml_key]``
-      annotation — every entry would carry it, pure noise.
+      (``apiVersion, kind, metadata, spec``). No ``[yaml_key]``
+      annotation — every entry would carry it, pure noise. Tokens
+      use the same comma-space separator and bare-name form as the
+      code-digest body so YAML and code files share one mental model.
     """
     if any(d.kind == KIND_YAML_DOC for d in decls):
         out: list[str] = []
@@ -711,7 +713,7 @@ def _digest_yaml(decls: list[Declaration], opts: DigestOptions) -> list[str]:
             if d.kind == KIND_YAML_DOC:
                 out.append("    " + d.signature + d.lines_suffix())
         return out
-    tokens = [f"+{d.name}" for d in decls if d.kind == KIND_YAML_KEY]
+    tokens = [d.name for d in decls if d.kind == KIND_YAML_KEY]
     if not tokens:
         return []
     return _wrap_tokens(tokens, width=100, indent="    ")

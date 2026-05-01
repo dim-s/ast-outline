@@ -8,11 +8,15 @@ test that names what it's protecting and why."""
 from __future__ import annotations
 
 from ast_outline.adapters.csharp import CSharpAdapter
+from ast_outline.adapters.go import GoAdapter
 from ast_outline.adapters.java import JavaAdapter
 from ast_outline.adapters.kotlin import KotlinAdapter
+from ast_outline.adapters.markdown import MarkdownAdapter
 from ast_outline.adapters.python import PythonAdapter
 from ast_outline.adapters.rust import RustAdapter
 from ast_outline.adapters.scala import ScalaAdapter
+from ast_outline.adapters.typescript import TypeScriptAdapter
+from ast_outline.adapters.yaml import YamlAdapter
 from ast_outline.core import (
     CALLABLE_KINDS,
     Declaration,
@@ -512,6 +516,198 @@ def test_deprecated_member_carries_tag():
     assert (
         _member_token(method, count=3) == "OldFoo() [3 overloads] [deprecated]"
     )
+
+
+# --- Per-language modifier coverage ------------------------------------
+
+
+def test_typescript_abstract_class_modifier(fixtures_dir):
+    """TypeScript `abstract class Animal` — same `abstract` keyword
+    survives in the signature, must surface in digest."""
+    r = TypeScriptAdapter().parse(
+        fixtures_dir / "typescript" / "hierarchy.ts"
+    )
+    out = render_digest([r], DigestOptions())
+    assert "abstract class Animal" in out
+
+
+def test_typescript_decorator_renders_before_class(fixtures_dir):
+    """TS class decorator (`@Controller("/users")`) — a runtime
+    contract for frameworks like NestJS / Angular. Surfaces verbatim
+    before the kind keyword."""
+    r = TypeScriptAdapter().parse(
+        fixtures_dir / "typescript" / "decorators.ts"
+    )
+    out = render_digest([r], DigestOptions())
+    assert '@Controller("/users") class UserController' in out
+
+
+def test_java_sealed_class_modifier(java_dir):
+    """Java 17+ `sealed class` — must surface so the agent doesn't
+    propose subclasses outside the permitted list."""
+    r = JavaAdapter().parse(java_dir / "records_and_sealed.java")
+    out = render_digest([r], DigestOptions())
+    assert "sealed class com.example.demo.model.Shape" in out
+
+
+def test_java_final_class_modifier(java_dir):
+    """Java `final class` — can't be subclassed, materially affects
+    how the agent recommends extension points."""
+    r = JavaAdapter().parse(java_dir / "records_and_sealed.java")
+    out = render_digest([r], DigestOptions())
+    assert "final class com.example.demo.model.Circle" in out
+
+
+def test_kotlin_open_class_modifier(kotlin_dir):
+    """Kotlin classes are `final` by default — `open class` is the
+    explicit "you may subclass me" signal. Lose it and the agent
+    can't tell which classes are extension points."""
+    r = KotlinAdapter().parse(kotlin_dir / "hierarchy.kt")
+    out = render_digest([r], DigestOptions())
+    assert "open class zoo.Animal" in out
+
+
+def test_kotlin_sealed_class_modifier(kotlin_dir):
+    """Kotlin `sealed class` — closed hierarchy, exhaustive `when`,
+    same semantic as Java sealed."""
+    r = KotlinAdapter().parse(kotlin_dir / "data_and_sealed.kt")
+    out = render_digest([r], DigestOptions())
+    assert "sealed class com.example.demo.model.Shape" in out
+
+
+def test_kotlin_abstract_class_modifier(kotlin_dir):
+    """Kotlin `abstract class` — can't be instantiated, abstract
+    members must be implemented."""
+    r = KotlinAdapter().parse(kotlin_dir / "hierarchy.kt")
+    out = render_digest([r], DigestOptions())
+    assert "abstract class zoo.Dog" in out
+
+
+def test_scala_abstract_class_modifier(scala_dir):
+    """Scala `abstract class` — same OO semantic, surfaces same way."""
+    r = ScalaAdapter().parse(scala_dir / "hierarchy.scala")
+    out = render_digest([r], DigestOptions())
+    assert "abstract class zoo.Dog" in out
+
+
+def test_scala_sealed_trait_modifier(scala_dir):
+    """Scala `sealed trait` — combines two divergent signals (sealed
+    modifier, native `trait` keyword in place of canonical
+    `interface`). Both must survive into the digest header."""
+    r = ScalaAdapter().parse(scala_dir / "data_and_sealed.scala")
+    out = render_digest([r], DigestOptions())
+    assert "sealed trait com.example.demo.model.Shape" in out
+
+
+# --- Per-language no-regression smoke ----------------------------------
+
+
+def test_go_digest_renders_without_modifiers(go_dir):
+    """Go has no `abstract` / `sealed` / `final` keywords, so the
+    digest must surface only the kind keyword and name without any
+    leading modifier tokens. Smoke-test that the modifier extractor
+    silently returns the empty list rather than emitting noise."""
+    r = GoAdapter().parse(go_dir / "hierarchy.go")
+    out = render_digest([r], DigestOptions())
+    # Type lines must not start (after indent) with random bare
+    # words like `func` / `type` / `var` — modifier extraction
+    # whitelist only allows OO modifiers.
+    body = "\n".join(out.splitlines()[1:])
+    assert "struct zoo.Animal" in body
+    assert "interface zoo.Movable" in body
+    # Anti-regression — no spurious modifier slipped through.
+    assert "func struct" not in body
+    assert "type struct" not in body
+
+
+def test_yaml_keys_use_bare_names_no_plus_prefix(fixtures_dir):
+    """YAML key digest tokens follow the same bare-name convention as
+    code-digest member tokens. Earlier revisions used `+key` markers;
+    those are gone — YAML now reads as a comma-joined list of
+    top-level keys, consistent with the rest of digest."""
+    yaml_files = sorted(
+        p for p in (fixtures_dir / "yaml").iterdir()
+        if p.is_file() and p.suffix in {".yaml", ".yml"}
+    )
+    assert yaml_files
+    r = YamlAdapter().parse(yaml_files[0])
+    out = render_digest([r], DigestOptions())
+    body = "\n".join(out.splitlines()[1:])
+    # No bare `+key` tokens — was the old YAML form.
+    import re
+    assert not re.search(r"^\s*\+\w", body, flags=re.M), out
+    # Comma separator survives (or single-key files).
+    if "," in body:
+        assert ", " in body
+
+
+def test_markdown_digest_unaffected_by_format_changes(fixtures_dir):
+    """Markdown digest renders a heading TOC, NOT the type/member
+    tokens — so callable parens / overload tags / modifiers should
+    never appear there. Smoke-test that none of the new format
+    surface accidentally leaked into the markdown render path."""
+    md_files = sorted(
+        p for p in (fixtures_dir / "markdown").iterdir()
+        if p.is_file() and p.suffix == ".md"
+    )
+    assert md_files
+    r = MarkdownAdapter().parse(md_files[0])
+    out = render_digest([r], DigestOptions())
+    body = "\n".join(out.splitlines()[1:])
+    # No callable-marker `()` should sneak into a heading TOC.
+    assert "()" not in body
+    # No overload tag.
+    assert "overloads]" not in body
+
+
+# --- Member-level deprecation through a real adapter -------------------
+
+
+def test_member_deprecated_tag_through_java_adapter(tmp_path):
+    """Integration counterpart to the `_member_token` unit test:
+    proves a method-level `@Deprecated` annotation actually flows
+    through the Java adapter into a `[deprecated]` tag in the
+    rendered digest. Uses an inline fixture so no shared file has
+    to be edited."""
+    src = tmp_path / "Sample.java"
+    src.write_text(
+        "package demo;\n"
+        "public class Sample {\n"
+        "    @Deprecated public void oldApi() {}\n"
+        "    public void newApi() {}\n"
+        "}\n"
+    )
+    r = JavaAdapter().parse(src)
+    out = render_digest([r], DigestOptions())
+    # The deprecated method carries the tag; the fresh one doesn't.
+    assert "oldApi() [deprecated]" in out
+    assert "newApi()" in out
+    assert "newApi() [deprecated]" not in out
+
+
+def test_member_deprecated_tag_through_python_adapter(tmp_path):
+    """Same end-to-end check via the Python adapter, using a
+    `@deprecated` decorator (case-insensitive substring match means
+    the `_is_deprecated` detector accepts any decorator whose name
+    contains "deprecated")."""
+    src = tmp_path / "sample.py"
+    src.write_text(
+        "from typing import Any\n"
+        "\n"
+        "def deprecated(reason):\n"
+        "    def deco(fn): return fn\n"
+        "    return deco\n"
+        "\n"
+        "class Sample:\n"
+        "    @deprecated('use new_api instead')\n"
+        "    def old_api(self) -> None: pass\n"
+        "\n"
+        "    def new_api(self) -> None: pass\n"
+    )
+    r = PythonAdapter().parse(src)
+    out = render_digest([r], DigestOptions())
+    assert "old_api() [deprecated]" in out
+    assert "new_api() [deprecated]" not in out
 
 
 # --- Help drift guard ---------------------------------------------------
