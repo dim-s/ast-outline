@@ -319,15 +319,15 @@ ast-outline digest src/
 Sample output:
 
 ```
-# legend: name()=callable, name [kind]=non-callable, [N overloads]=N callables share name, L<a>-<b>=line range, : Base, …=inheritance
+# legend: name()=callable, name [kind]=non-callable, [N overloads]=N callables share name, [deprecated]=obsolete, L<a>-<b>=line range, : Base, …=inheritance
 src/services/
   __init__.py [tiny] (8 lines, ~74 tokens, 1 fields)
   user_service.py [medium] (140 lines, ~1,200 tokens, 1 types, 5 methods)
-    class UserService : IUserService  L8-138
-      get(), search(), create(), delete(), update()
+    @Service abstract class UserService [deprecated] : IUserService  L8-138
+      get(), search(), create(), delete(), update_v1() [deprecated]
 
   auth_service.py [medium] (95 lines, ~840 tokens, 1 types, 4 methods)
-    class AuthService  L10-95
+    [ApiController] sealed class AuthService  L10-95
       login(), logout(), refresh(), verify_token()
 
   legacy_repo.py [large] [broken] (5234 lines, ~52,000 tokens, ...)
@@ -337,11 +337,17 @@ The first line is a self-describing legend so an LLM can read the
 output cold without `ast-outline prompt` loaded. Tokens follow the
 universal programming-doc convention — `name()` for a callable,
 `name [kind]` for a property/field/event/etc., `[N overloads]` when
-several callables share a name. Members are joined with `, `; types
-that have a body get a trailing blank line as a paragraph break,
-empty types stack tightly so digest stays compact. Source-language
-keywords (Rust `trait`, Scala `object`, Kotlin `data class`) are
-preserved in the type header instead of the canonical kind.
+several callables share a name, `[deprecated]` whenever a type or
+member carries `@Deprecated` / `[Obsolete]` / `#[deprecated]`. Type
+headers also carry inline decorators / attributes (`@dataclass`,
+`[ApiController]`, `#[derive(Debug)]`) and semantic modifiers
+(`abstract`, `sealed`, `static`, `final`, `open`, `partial`) so
+runtime contracts and instantiation rules read off at a glance.
+Members are joined with `, `; types that have a body get a trailing
+blank line as a paragraph break, empty types stack tightly so digest
+stays compact. Source-language keywords (Rust `trait`, Scala
+`object`, Kotlin `data class`) are preserved in the type header
+instead of the canonical kind.
 
 Each filename gets a descriptive size label — `[tiny]` (under ~500 tokens),
 `[medium]` (500–5000), `[large]` (5000+). A `[broken]` marker appears next

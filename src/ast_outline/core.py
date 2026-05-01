@@ -410,9 +410,78 @@ def _clip_docs(docs: list[str], limit: int) -> list[str]:
 # self-explanatory and stay out of the legend to keep it short.
 _DIGEST_LEGEND = (
     "# legend: name()=callable, name [kind]=non-callable, "
-    "[N overloads]=N callables share name, L<a>-<b>=line range, "
-    ": Base, …=inheritance"
+    "[N overloads]=N callables share name, [deprecated]=obsolete, "
+    "L<a>-<b>=line range, : Base, …=inheritance"
 )
+
+
+# Type-modifier whitelist — keywords that meaningfully change how a
+# type is USED (instantiation, subclassing, scope), not visibility. We
+# already filter by visibility separately, so `public` / `private` /
+# `pub` / `pub(crate)` are intentionally NOT in this list — adding them
+# would duplicate a signal and inflate every header line.
+_TYPE_MODIFIERS = frozenset({
+    "abstract", "sealed", "final", "static", "open",
+    "partial", "inner", "inline", "value",
+})
+
+
+# Substring-match patterns for deprecation. Case-insensitive: covers
+# `@Deprecated`, `@deprecated`, `[Obsolete]`, `[Obsolete("...")]`,
+# `#[deprecated]`, `#[deprecated(since="...")]`, etc. across every
+# language's annotation / attribute syntax.
+_DEPRECATED_PATTERNS = ("deprecated", "obsolete")
+
+
+def _is_deprecated(d: Declaration) -> bool:
+    if not d.attrs:
+        return False
+    return any(
+        p in a.lower()
+        for a in d.attrs
+        for p in _DEPRECATED_PATTERNS
+    )
+
+
+def _filter_non_deprecation_attrs(attrs: list[str]) -> list[str]:
+    """Drop deprecation attrs from the list rendered before a type
+    header. Their content is replaced by the compact `[deprecated]`
+    tag so the same signal isn't shown twice."""
+    return [
+        a for a in attrs
+        if not any(p in a.lower() for p in _DEPRECATED_PATTERNS)
+    ]
+
+
+def _type_modifiers(d: Declaration) -> list[str]:
+    """Extract whitelisted modifier keywords from a type's signature.
+
+    Walks the tokens BEFORE the kind keyword (`class`, `struct`,
+    `trait`, etc.) and keeps only those in `_TYPE_MODIFIERS`. Anything
+    else (visibility, language-specific noise) is dropped.
+
+    Falls back to the canonical kind if the source-true keyword
+    (`native_kind`) isn't present in the signature — covers cases
+    like Scala `case class` where the canonical kind (RECORD) and the
+    keyword in the signature don't match. Returns the empty list when
+    no recognisable kind anchor is found.
+    """
+    sig = d.signature or ""
+    if not sig:
+        return []
+    for keyword in (d.native_kind, d.kind):
+        if not keyword:
+            continue
+        idx = sig.find(keyword + " ")
+        if idx < 0:
+            # Try without trailing space — keyword might be at end of sig.
+            if sig.endswith(keyword):
+                idx = len(sig) - len(keyword)
+            else:
+                continue
+        prefix_tokens = sig[:idx].split()
+        return [t for t in prefix_tokens if t in _TYPE_MODIFIERS]
+    return []
 
 
 def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optional[Path] = None) -> str:
@@ -507,16 +576,43 @@ def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
     # blank lines to separate paragraphs. The trailing blank after the
     # last type is removed by `render_digest`'s final `rstrip`.
     for t in types:
-        # Use the source-language native keyword when the adapter set
-        # one (e.g. Rust `trait` for KIND_INTERFACE), otherwise fall
-        # back to the canonical kind. This lets digest read truthfully
-        # against the source while the IR keeps a unified kind for
-        # search.
+        # Header layout: [attrs] [modifiers] keyword Name [deprecated]
+        # [: bases]  L<a>-<b>. Each piece is opt-in — most types carry
+        # only `keyword Name`, and the optional pieces are appended
+        # only when they exist so plain types stay terse.
         keyword = t.native_kind or t.kind
-        header = f"    {keyword} {t.name}"
+        header_parts: list[str] = []
+
+        # Attributes / decorators that aren't deprecation markers.
+        # Adapters store each attr pre-formatted (`@dataclass`,
+        # `[Serializable]`, `#[derive(Debug)]`), so a simple space-join
+        # already reads right.
+        visible_attrs = _filter_non_deprecation_attrs(t.attrs)
+        if visible_attrs:
+            header_parts.append(" ".join(visible_attrs))
+
+        # Whitelisted type modifiers (`sealed`, `abstract`, …) parsed
+        # out of the signature line. Visibility keywords are excluded
+        # — already conveyed by the visibility filter.
+        mods = _type_modifiers(t)
+        if mods:
+            header_parts.append(" ".join(mods))
+
+        # Source-language native keyword + qualified type name.
+        header_parts.append(f"{keyword} {t.name}")
+
+        # Compact deprecation tag — replaces the visible deprecation
+        # attr that we filtered out above.
+        if _is_deprecated(t):
+            header_parts.append("[deprecated]")
+
+        # Inheritance, kept at the end of the declarative part so the
+        # eye finds bases predictably (and a long base list doesn't
+        # push other tags off-screen).
         if t.bases:
-            header += " : " + ", ".join(t.bases)
-        header += t.lines_suffix()
+            header_parts.append(": " + ", ".join(t.bases))
+
+        header = "    " + " ".join(header_parts) + t.lines_suffix()
         lines.append(header)
         members = _digest_members(t, opts)
         if members:
@@ -576,6 +672,11 @@ def _member_token(d: Declaration, count: int) -> str:
       so the agent knows the name resolves to multiple callables.
     - Non-callable kinds keep their `[kind]` tag so the type stays
       inferable without any other signal.
+    - Deprecation surfaces as a trailing `[deprecated]` tag, the same
+      compact form used on type headers. We don't show the underlying
+      `@deprecated` / `[Obsolete]` attr here — member tokens are
+      length-sensitive (many on one wrap-line) and the tag carries
+      the actionable signal.
 
     No leading `+` marker — earlier digest revisions used `+name` as a
     member tag, but that visually collides with diff syntax and adds no
@@ -583,9 +684,14 @@ def _member_token(d: Declaration, count: int) -> str:
     """
     if d.kind in CALLABLE_KINDS:
         if count > 1:
-            return f"{d.name}() [{count} overloads]"
-        return f"{d.name}()"
-    return f"{d.name} [{d.kind}]"
+            base = f"{d.name}() [{count} overloads]"
+        else:
+            base = f"{d.name}()"
+    else:
+        base = f"{d.name} [{d.kind}]"
+    if _is_deprecated(d):
+        base += " [deprecated]"
+    return base
 
 
 def _digest_yaml(decls: list[Declaration], opts: DigestOptions) -> list[str]:

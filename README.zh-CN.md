@@ -294,15 +294,15 @@ ast-outline digest src/
 示例输出：
 
 ```
-# legend: name()=callable, name [kind]=non-callable, [N overloads]=N callables share name, L<a>-<b>=line range, : Base, …=inheritance
+# legend: name()=callable, name [kind]=non-callable, [N overloads]=N callables share name, [deprecated]=obsolete, L<a>-<b>=line range, : Base, …=inheritance
 src/services/
   __init__.py [tiny] (8 lines, ~74 tokens, 1 fields)
   user_service.py [medium] (140 lines, ~1,200 tokens, 1 types, 5 methods)
-    class UserService : IUserService  L8-138
-      get(), search(), create(), delete(), update()
+    @Service abstract class UserService [deprecated] : IUserService  L8-138
+      get(), search(), create(), delete(), update_v1() [deprecated]
 
   auth_service.py [medium] (95 lines, ~840 tokens, 1 types, 4 methods)
-    class AuthService  L10-95
+    [ApiController] sealed class AuthService  L10-95
       login(), logout(), refresh(), verify_token()
 
   legacy_repo.py [large] (5234 lines, ~52,000 tokens, ...)
@@ -311,10 +311,15 @@ src/services/
 第一行是自描述的图例（legend），让 LLM 在没有加载 `ast-outline prompt`
 的情况下也能直接读懂输出。token 遵循通用编程文档约定：`name()` 表示
 可调用，`name [kind]` 表示属性/字段/事件等非可调用项，`[N overloads]`
-表示多个同名可调用项被合并。成员之间用 `, ` 分隔；有方法体的类型
-末尾会加一个空行作为段落分隔，空类型紧凑堆叠以保持 digest 的紧凑性。
-源语言关键字（Rust 的 `trait`、Scala 的 `object`、Kotlin 的
-`data class`）会保留在类型行首，而不是替换成统一的 canonical kind。
+表示多个同名可调用项被合并，`[deprecated]` 表示类型/成员被标记为
+`@Deprecated` / `[Obsolete]` / `#[deprecated]`。类型行首还会带上
+内联装饰器/属性（`@dataclass`、`[ApiController]`、`#[derive(Debug)]`）
+和语义修饰符（`abstract`、`sealed`、`static`、`final`、`open`、
+`partial`）——运行时合约和实例化规则一眼可见。成员之间用 `, ` 分隔；
+有方法体的类型末尾会加一个空行作为段落分隔，空类型紧凑堆叠以保持
+digest 的紧凑性。源语言关键字（Rust 的 `trait`、Scala 的 `object`、
+Kotlin 的 `data class`）会保留在类型行首，而不是替换成统一的
+canonical kind。
 
 每个文件名后会附带一个描述性的大小标签：`[tiny]`（≲500 tokens）、
 `[medium]`（500–5000）、`[large]`（5000+）。标签**描述**文件大小，

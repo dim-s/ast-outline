@@ -305,15 +305,15 @@ ast-outline digest src/
 Пример вывода:
 
 ```
-# legend: name()=callable, name [kind]=non-callable, [N overloads]=N callables share name, L<a>-<b>=line range, : Base, …=inheritance
+# legend: name()=callable, name [kind]=non-callable, [N overloads]=N callables share name, [deprecated]=obsolete, L<a>-<b>=line range, : Base, …=inheritance
 src/services/
   __init__.py [tiny] (8 lines, ~74 tokens, 1 fields)
   user_service.py [medium] (140 lines, ~1,200 tokens, 1 types, 5 methods)
-    class UserService : IUserService  L8-138
-      get(), search(), create(), delete(), update()
+    @Service abstract class UserService [deprecated] : IUserService  L8-138
+      get(), search(), create(), delete(), update_v1() [deprecated]
 
   auth_service.py [medium] (95 lines, ~840 tokens, 1 types, 4 methods)
-    class AuthService  L10-95
+    [ApiController] sealed class AuthService  L10-95
       login(), logout(), refresh(), verify_token()
 
   legacy_repo.py [large] [broken] (5234 lines, ~52,000 tokens, ...)
@@ -323,7 +323,13 @@ src/services/
 вывод cold, без подгруженного `ast-outline prompt`. Токены следуют
 универсальной конвенции программистской документации: `name()` —
 callable, `name [kind]` — property/field/event и т.п.,
-`[N overloads]` — когда несколько callable делят одно имя. Члены
+`[N overloads]` — когда несколько callable делят одно имя,
+`[deprecated]` — когда у типа/метода стоит `@Deprecated` /
+`[Obsolete]` / `#[deprecated]`. В шапке типа также видны inline-
+декораторы и атрибуты (`@dataclass`, `[ApiController]`,
+`#[derive(Debug)]`) плюс семантические модификаторы (`abstract`,
+`sealed`, `static`, `final`, `open`, `partial`) — runtime-контракт
+и правила инстанцирования читаются с одного взгляда. Члены
 разделены `, `; типы с телом получают завершающую пустую строку
 как «paragraph break», пустые типы стекаются плотно — digest
 остаётся компактным. Source-language ключевые слова (Rust `trait`,

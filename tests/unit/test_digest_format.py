@@ -22,6 +22,7 @@ from ast_outline.core import (
     KIND_INTERFACE,
     KIND_METHOD,
     _collapse_overloads,
+    _is_deprecated,
     _member_token,
     render_digest,
 )
@@ -49,6 +50,7 @@ def test_legend_documents_each_non_obvious_token(csharp_dir):
     assert "name()" in legend
     assert "[kind]" in legend
     assert "overloads" in legend
+    assert "[deprecated]" in legend
     assert "L<a>-<b>" in legend
 
 
@@ -338,6 +340,180 @@ def test_no_blank_line_between_empty_types(csharp_dir):
     assert "record Demo.Services.Vec2" in lines[user_dto_idx + 1]
 
 
+# --- Type modifiers -----------------------------------------------------
+
+
+def test_type_modifier_extracted_from_signature(csharp_dir):
+    """`abstract class Foo` in source — the `abstract` modifier is in
+    the signature line and should appear before the kind keyword in the
+    digest header. Otherwise the agent can't tell instantiable types
+    from abstract ones at a glance."""
+    r = CSharpAdapter().parse(csharp_dir / "hierarchy.cs")
+    out = render_digest([r], DigestOptions())
+    assert "abstract class Demo.Hierarchy.Animal" in out
+
+
+def test_static_class_modifier_surfaces(csharp_dir):
+    """C# `static class` is a meaningful semantic — only static
+    members allowed, can't be instantiated. Must show in digest."""
+    r = CSharpAdapter().parse(csharp_dir / "file_scoped_ns.cs")
+    out = render_digest([r], DigestOptions())
+    assert "static class Demo.Services.UserExtensions" in out
+
+
+def test_multiple_modifiers_stack(java_dir):
+    """Java `static final` (or any combination) — both modifiers
+    surface in source order before the kind keyword."""
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    out = render_digest([r], DigestOptions())
+    # `static final class Inner` lives in the fixture.
+    assert "static final class" in out
+
+
+def test_visibility_keywords_excluded_from_modifiers(csharp_dir):
+    """`public` / `private` / `protected` / `internal` are visibility,
+    handled by the visibility filter — they must NOT appear as
+    modifiers, otherwise every header line would carry redundant
+    `public`."""
+    r = CSharpAdapter().parse(csharp_dir / "hierarchy.cs")
+    out = render_digest([r], DigestOptions())
+    # No `public class` — even though the source says `public class Animal`,
+    # the digest must drop visibility keywords.
+    assert "public class" not in out
+    assert "public abstract class" not in out
+
+
+# --- Type attrs prefix --------------------------------------------------
+
+
+def test_type_attrs_render_before_keyword(csharp_dir):
+    """C# `[RequireComponent(...)]` attrs surface before the kind
+    keyword, in the source-natural order: `[Attr] class Name`. Without
+    them the agent reads framework-bound types as if they had no
+    runtime contract."""
+    r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
+    out = render_digest([r], DigestOptions())
+    assert "[RequireComponent(typeof(Rigidbody2D))] class Demo.Combat.HeroController" in out
+
+
+def test_python_decorator_renders_before_class(python_dir):
+    """`@dataclass class Point` style — the decorator is part of the
+    type's identity; without it `class Point` reads as a regular
+    class, not a value record."""
+    r = PythonAdapter().parse(python_dir / "domain_model.py")
+    out = render_digest([r], DigestOptions())
+    assert "@dataclass class User" in out
+
+
+def test_rust_derive_attr_renders_before_struct(rust_dir):
+    """Rust `#[derive(Debug, Clone)]` is the canonical "this struct
+    auto-implements these traits" signal. Must surface in digest so
+    the agent doesn't think it has to write an impl by hand."""
+    r = RustAdapter().parse(rust_dir / "user_service.rs")
+    out = render_digest([r], DigestOptions())
+    assert "#[derive(Debug, Clone)] struct User" in out
+
+
+def test_multiple_attrs_render_space_separated(rust_dir):
+    """A struct with two attrs (`#[derive(Debug)]` + `#[repr(C)]`) shows
+    both, joined by a single space — the source-natural form for
+    inline attribute groups."""
+    r = RustAdapter().parse(rust_dir / "comments_edge.rs")
+    out = render_digest([r], DigestOptions())
+    assert "#[derive(Debug)] #[repr(C)] struct InterleavedDocAttrs" in out
+
+
+# --- Deprecated marker --------------------------------------------------
+
+
+def test_deprecated_type_carries_tag(java_dir):
+    """`@Deprecated` on a Java class surfaces as a compact
+    `[deprecated]` tag after the type name. Without it, the agent will
+    happily recommend retired APIs."""
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    out = render_digest([r], DigestOptions())
+    # UserService is annotated `@Deprecated(since = "2.0", ...)`.
+    assert "[deprecated]" in out
+    # And specifically attaches to UserService, not some other type.
+    user_service_lines = [
+        line for line in out.splitlines()
+        if "UserService" in line and "Inner" not in line and "Callback" not in line
+    ]
+    assert any("[deprecated]" in line for line in user_service_lines)
+
+
+def test_kotlin_deprecated_type_carries_tag(kotlin_dir):
+    """Kotlin `@Deprecated("use V2")` on a class surfaces as
+    `[deprecated]` tag — same pattern as Java/Rust/C#."""
+    r = KotlinAdapter().parse(kotlin_dir / "user_service.kt")
+    out = render_digest([r], DigestOptions())
+    user_service_lines = [
+        line for line in out.splitlines()
+        if "UserService" in line and "Inner" not in line and "Callback" not in line and "Companion" not in line
+    ]
+    assert any("[deprecated]" in line for line in user_service_lines)
+
+
+def test_deprecation_attr_filtered_from_visible_attrs(java_dir):
+    """When deprecation triggers the `[deprecated]` tag, the
+    underlying `@Deprecated(...)` attr must NOT also be printed in
+    the visible attrs prefix — same signal twice is noise. Other
+    attrs (e.g. `@Service`) stay visible."""
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    out = render_digest([r], DigestOptions())
+    # `@Service` should still appear (it's not a deprecation marker).
+    assert "@Service" in out
+    # `@Deprecated(...)` should NOT appear — replaced by the tag.
+    assert "@Deprecated(" not in out
+
+
+def test_is_deprecated_helper_recognises_each_pattern():
+    """`_is_deprecated` accepts every common deprecation syntax across
+    languages. Case-insensitive substring match keeps the rule simple
+    and forgiving (`@deprecated`, `@Deprecated`, `[Obsolete]`,
+    `[Obsolete("reason")]`, `#[deprecated]`, `#[deprecated(since=...)]`)."""
+    cases = [
+        "@Deprecated",
+        '@Deprecated(since = "2.0")',
+        "@deprecated",
+        "[Obsolete]",
+        '[Obsolete("Use NewMethod instead")]',
+        "#[deprecated]",
+        '#[deprecated(since = "1.2")]',
+    ]
+    for attr_text in cases:
+        d = Declaration(
+            kind=KIND_CLASS, name="X", signature="class X", attrs=[attr_text]
+        )
+        assert _is_deprecated(d), f"failed to detect deprecation in {attr_text!r}"
+
+
+def test_is_deprecated_does_not_false_positive():
+    """An attr that incidentally contains the word should NOT trigger
+    the tag — but our cheap substring rule is permissive on purpose
+    (a real attr literally named `Deprecated` IS a deprecation
+    marker). We just check non-deprecation attrs stay clean."""
+    d = Declaration(
+        kind=KIND_CLASS, name="X", signature="class X",
+        attrs=["@Component", "[Authorize]", "#[derive(Debug)]"],
+    )
+    assert not _is_deprecated(d)
+
+
+def test_deprecated_member_carries_tag():
+    """A deprecated METHOD must carry `[deprecated]` in its member
+    token, separate from the overload count tag if present."""
+    method = Declaration(
+        kind=KIND_METHOD, name="OldFoo", signature="void OldFoo()",
+        attrs=["@Deprecated"],
+    )
+    assert _member_token(method, count=1) == "OldFoo() [deprecated]"
+    # With overloads — both tags surface independently.
+    assert (
+        _member_token(method, count=3) == "OldFoo() [3 overloads] [deprecated]"
+    )
+
+
 # --- Help drift guard ---------------------------------------------------
 
 
@@ -358,6 +534,9 @@ def test_help_digest_describes_actual_format():
     assert "name()" in GUIDE_DIGEST
     assert "[kind]" in GUIDE_DIGEST
     assert "[N overloads]" in GUIDE_DIGEST
+    assert "[deprecated]" in GUIDE_DIGEST
+    assert "abstract" in GUIDE_DIGEST  # modifier example
+    assert "@dataclass" in GUIDE_DIGEST or "[Serializable]" in GUIDE_DIGEST
     assert ", " in GUIDE_DIGEST  # comma separator
     assert "blank line" in GUIDE_DIGEST  # paragraph-break rule
 
