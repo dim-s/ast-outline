@@ -581,5 +581,7 @@ def test_digest_includes_scala_types(scala_dir):
     text = render_digest(results, DigestOptions(), root=scala_dir)
     assert "UserService" in text
     assert "Point" in text
-    # case class Point → KIND_RECORD; digest header shows "record"
-    assert "record" in text
+    # `case class Point` maps to KIND_RECORD canonically (so search
+    # finds it uniformly with Java records / Kotlin data classes),
+    # but digest restores the source-true `case class` keyword.
+    assert "case class" in text

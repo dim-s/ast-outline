@@ -624,6 +624,143 @@ def test_typescript_async_function_marker(fixtures_dir):
     assert "async generateMetadata()" in out
 
 
+# --- Per-language method-marker coverage --------------------------------
+
+
+def test_csharp_async_method_marker(tmp_path):
+    """C# `public async Task Foo()` — `async` keyword in the
+    signature surfaces as a marker. No async-fixture exists in the
+    repo, so we use an inline tmp_path file to make the round-trip
+    end-to-end (signature parsing → marker extraction → digest)."""
+    src = tmp_path / "Async.cs"
+    src.write_text(
+        "namespace Demo;\n"
+        "public class Worker {\n"
+        "    public async Task DoAsync() { await Task.Yield(); }\n"
+        "    public void DoSync() { }\n"
+        "}\n"
+    )
+    r = CSharpAdapter().parse(src)
+    out = render_digest([r], DigestOptions())
+    assert "async DoAsync()" in out
+    # Sync method must not get an async marker leaked from anywhere.
+    assert "async DoSync" not in out
+
+
+def test_csharp_virtual_method_marker(tmp_path):
+    """C# `public virtual void Foo()` — `virtual` is the C#-specific
+    "you may override me" keyword, parallel to Kotlin's `open`. Less
+    common than `override`, but a meaningful API surface signal."""
+    src = tmp_path / "Virtual.cs"
+    src.write_text(
+        "namespace Demo;\n"
+        "public class Base {\n"
+        "    public virtual void Hook() { }\n"
+        "}\n"
+    )
+    r = CSharpAdapter().parse(src)
+    out = render_digest([r], DigestOptions())
+    assert "virtual Hook()" in out
+
+
+def test_kotlin_suspend_function_marker(kotlin_dir):
+    """Kotlin `suspend fun fetch()` — Kotlin's coroutine equivalent
+    of `async`. Source-true, kept as-is rather than translated to
+    `async`. Existing fixture has a top-level suspend function."""
+    r = KotlinAdapter().parse(kotlin_dir / "extensions_and_toplevel.kt")
+    out = render_digest([r], DigestOptions())
+    assert "suspend fetch()" in out
+
+
+def test_rust_async_fn_marker(tmp_path):
+    """Rust `async fn` — the `async` keyword is universal. Inline
+    fixture because no Rust async fixture exists in the repo."""
+    src = tmp_path / "fetch.rs"
+    src.write_text(
+        "pub async fn fetch(url: &str) -> String {\n"
+        "    String::new()\n"
+        "}\n"
+    )
+    r = RustAdapter().parse(src)
+    out = render_digest([r], DigestOptions())
+    assert "async fetch()" in out
+
+
+def test_rust_unsafe_fn_marker(tmp_path):
+    """Rust `unsafe fn` — flags that the callee may violate memory
+    safety. High-signal marker, agent should not propose calling
+    such a function from safe context casually."""
+    src = tmp_path / "unsafe_ops.rs"
+    src.write_text(
+        "pub unsafe fn deref_raw(p: *const i32) -> i32 {\n"
+        "    *p\n"
+        "}\n"
+    )
+    r = RustAdapter().parse(src)
+    out = render_digest([r], DigestOptions())
+    assert "unsafe deref_raw()" in out
+
+
+def test_rust_const_fn_marker(tmp_path):
+    """Rust `const fn` — compile-time evaluable. Distinct from
+    `const X: T = ...` (field), which never reaches this code path."""
+    src = tmp_path / "const_fn.rs"
+    src.write_text(
+        "pub const fn add(a: i32, b: i32) -> i32 {\n"
+        "    a + b\n"
+        "}\n"
+    )
+    r = RustAdapter().parse(src)
+    out = render_digest([r], DigestOptions())
+    assert "const add()" in out
+
+
+def test_typescript_async_class_method_marker(fixtures_dir):
+    """TypeScript class method with `async` — marker surfaces
+    inside a class body, not just on free functions."""
+    r = TypeScriptAdapter().parse(
+        fixtures_dir / "typescript" / "storage_service.ts"
+    )
+    out = render_digest([r], DigestOptions())
+    assert "async init()" in out
+    assert "async getProject()" in out
+    assert "async saveProject()" in out
+
+
+def test_scala_override_method_marker(scala_dir):
+    """Scala `override def compare()` — uses the same `override`
+    keyword as Kotlin and C#. Method markers cross-language uniform
+    where the source word coincides."""
+    r = ScalaAdapter().parse(scala_dir / "data_and_sealed.scala")
+    out = render_digest([r], DigestOptions())
+    assert "override compare()" in out
+
+
+# --- Native-kind coverage continued -------------------------------------
+
+
+def test_scala_case_class_renders_natively(scala_dir):
+    """Scala `case class` is KIND_RECORD canonically (so search /
+    `implements` find them uniformly with Java/Kotlin records), but
+    digest must restore `case class` — Scala devs don't say
+    "record", they say "case class"."""
+    r = ScalaAdapter().parse(scala_dir / "data_and_sealed.scala")
+    out = render_digest([r], DigestOptions())
+    assert "case class com.example.demo.model.Point" in out
+    assert "case class com.example.demo.model.Circle" in out
+    # And specifically NOT the canonical `record` keyword for Scala.
+    assert "record com.example.demo.model.Point" not in out
+
+
+def test_scala_case_object_renders_natively(scala_dir):
+    """Scala `case object` — same compromise as `case class`. The
+    canonical kind is KIND_CLASS, the digest restores the `case
+    object` source keyword."""
+    r = ScalaAdapter().parse(scala_dir / "data_and_sealed.scala")
+    out = render_digest([r], DigestOptions())
+    assert "case object com.example.demo.model.UnitShape" in out
+
+
 # --- Method marker skip rules -------------------------------------------
 
 

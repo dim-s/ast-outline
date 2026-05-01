@@ -355,16 +355,21 @@ def _type_to_decl(
 
 
 def _native_keyword_for_type(node: Node) -> str:
-    """Source-true keyword for a `trait` / `class` / `object` definition.
+    """Source-true keyword for a `trait` / `class` / `object` /
+    `case class` / `case object` definition.
 
-    `case class` → "class" (the `case` modifier is captured in the
-    canonical kind being KIND_RECORD; rendering "case class" in the
-    digest header would duplicate that signal).
+    Mirrors Kotlin's `data class` treatment: the canonical kind
+    (KIND_RECORD for case classes) keeps `implements`/search
+    consistent across languages, while the digest restores the
+    actual source keyword so a Scala reader sees `case class`, not
+    `record`.
     """
     if node.type == "trait_definition":
         return "trait"
     if node.type == "object_definition":
-        return "object"
+        return "case object" if _has_case_keyword(node) else "object"
+    if node.type == "class_definition" and _has_case_keyword(node):
+        return "case class"
     return ""
 
 

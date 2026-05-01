@@ -457,7 +457,7 @@ def _filter_non_deprecation_attrs(attrs: list[str]) -> list[str]:
 # Method-marker whitelist — keywords that meaningfully change how a
 # member is CALLED. Each appears in the source signature before the
 # method name (or function keyword) across the supported languages:
-# - `async` — C# / TS / Python / JS / Rust
+# - `async` — C# / TS / Python / JS / Rust (universal coroutine marker)
 # - `suspend` — Kotlin's coroutine equivalent of async
 # - `static` — C# / Java / TS / Kotlin (companion-object members)
 # - `abstract` — C# / Java / Kotlin / Scala
@@ -465,10 +465,15 @@ def _filter_non_deprecation_attrs(attrs: list[str]) -> list[str]:
 # - `override` — C# / Kotlin / Scala
 # - `open` — Kotlin's "may be overridden" (the dual of `final`)
 # - `sealed` — C# 8 sealed override / Kotlin sealed
+# - `unsafe` — Rust (callee may violate memory safety; high signal)
+# - `const` — Rust `const fn` (compile-time evaluable callable; not
+#   the same word as the C# `const` field modifier — that's only
+#   valid on fields, never enters this code path)
 _METHOD_MARKERS = frozenset({
     "async", "suspend",
     "static", "abstract", "virtual", "override",
     "open", "sealed",
+    "unsafe", "const",
 })
 
 
