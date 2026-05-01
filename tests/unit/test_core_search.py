@@ -1,13 +1,17 @@
 """Tests for find_symbols and find_implementations."""
 from __future__ import annotations
 
+import pytest
+
 from ast_outline.adapters.csharp import CSharpAdapter
 from ast_outline.adapters.go import GoAdapter
 from ast_outline.adapters.java import JavaAdapter
 from ast_outline.adapters.kotlin import KotlinAdapter
 from ast_outline.adapters.markdown import MarkdownAdapter
 from ast_outline.adapters.python import PythonAdapter
+from ast_outline.adapters.rust import RustAdapter
 from ast_outline.adapters.scala import ScalaAdapter
+from ast_outline.adapters.typescript import TypeScriptAdapter
 from ast_outline.core import (
     find_implementations,
     find_symbols,
@@ -75,6 +79,128 @@ def test_find_symbols_python_includes_decorators(python_dir):
     assert "@tracing" in match.source
     assert "@functools.lru_cache" in match.source
     assert "def compute" in match.source
+
+
+# --- find_symbols: `show <Type>` returns the WHOLE body -----------------
+#
+# Regression guard: every code-language adapter must emit a top-level type
+# Declaration whose `start_byte..end_byte` covers the full body, not just
+# the signature line. If anyone refactors an adapter to bound a type at
+# the end of its header, `show <ClassName>` would silently start returning
+# truncated bodies — these tests catch that per language.
+#
+# Each case picks a target from a fixture file that holds MULTIPLE sibling
+# types — also exercising the case the prompt advertises ("multiple types
+# in one file"). The slice must contain three markers in order: the
+# signature, an inner member, and the closing token.
+
+
+_WHOLE_TYPE_CASES = [
+    pytest.param(
+        CSharpAdapter, "csharp/hierarchy.cs", "UserService", "class",
+        "public class UserService : IReadService",
+        "public void Run() {}",
+        "public object Read() => null;",
+        id="csharp",
+    ),
+    pytest.param(
+        PythonAdapter, "python/hierarchy.py", "FileReader", "class",
+        "class FileReader(SizedReadable):",
+        "def read(self) -> str:",
+        "return 0",
+        id="python",
+    ),
+    pytest.param(
+        TypeScriptAdapter, "typescript/hierarchy.ts", "UserService", "class",
+        "export class UserService implements IReadService",
+        "run() {}",
+        "read() { return null; }",
+        id="typescript",
+    ),
+    pytest.param(
+        JavaAdapter, "java/hierarchy.java", "Pomeranian", "class",
+        "public class Pomeranian extends Puppy",
+        "public void yap() {}",
+        "}",
+        id="java",
+    ),
+    pytest.param(
+        KotlinAdapter, "kotlin/hierarchy.kt", "Skater", "class",
+        'class Skater : Animal("s"), Movable',
+        "override fun move(distance: Int) = distance * 2",
+        "}",
+        id="kotlin",
+    ),
+    pytest.param(
+        ScalaAdapter, "scala/hierarchy.scala", "Skater", "class",
+        'class Skater extends Animal("s") with Movable',
+        "override def move(distance: Int): Int = distance * 2",
+        "}",
+        id="scala",
+    ),
+    pytest.param(
+        GoAdapter, "go/hierarchy.go", "Walker", "interface",
+        "type Walker interface",
+        # Tab-indented form — the doc comment also says "adds Walk()." so
+        # the bare "Walk()" substring would match the comment before the
+        # signature. The interface body uses leading tabs.
+        "\tWalk()",
+        "}",
+        id="go",
+    ),
+    pytest.param(
+        RustAdapter, "rust/hierarchy.rs", "PackAnimal", "interface",
+        "pub trait PackAnimal: Quadruped",
+        "fn pack_size(&self) -> u32;",
+        "}",
+        id="rust",
+    ),
+    pytest.param(
+        MarkdownAdapter, "markdown/article.md", "The Argument", "heading",
+        "## The Argument",
+        "### Second Point",
+        "Details of the third point.",
+        id="markdown",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "adapter_cls, fixture_subpath, target, expected_kind, "
+    "sig_marker, mid_marker, end_marker",
+    _WHOLE_TYPE_CASES,
+)
+def test_find_symbols_returns_whole_type_body(
+    fixtures_dir,
+    adapter_cls,
+    fixture_subpath,
+    target,
+    expected_kind,
+    sig_marker,
+    mid_marker,
+    end_marker,
+):
+    r = adapter_cls().parse(fixtures_dir / fixture_subpath)
+    matches = [m for m in find_symbols(r, target) if m.kind == expected_kind]
+    assert len(matches) == 1, (
+        f"expected exactly one {expected_kind} match for {target!r} in "
+        f"{fixture_subpath}, got {len(matches)}: "
+        f"{[(m.qualified_name, m.kind) for m in matches]}"
+    )
+    [match] = matches
+    src = match.source
+    i_sig = src.find(sig_marker)
+    i_mid = src.find(mid_marker)
+    # rfind for the end marker — closing braces appear multiple times in
+    # bodies (inner method braces, etc.); the relevant one is the LAST.
+    i_end = src.rfind(end_marker)
+    assert i_sig != -1, f"signature marker missing: {sig_marker!r}\n---\n{src}"
+    assert i_mid != -1, f"body marker missing: {mid_marker!r}\n---\n{src}"
+    assert i_end != -1, f"end marker missing: {end_marker!r}\n---\n{src}"
+    assert i_sig < i_mid <= i_end, (
+        f"markers out of expected order — slice may not cover full body. "
+        f"sig@{i_sig}, mid@{i_mid}, end@{i_end}\n---\n{src}"
+    )
 
 
 # --- ancestor_signatures (breadcrumbs for `show`) ------------------------

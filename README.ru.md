@@ -205,11 +205,13 @@ ast-outline prompt | pbcopy   # буфер обмена в macOS
    файлах). Строка `# WARNING: N parse errors` в шапке означает что
    outline частичный — читай исходник для затронутой области.
 
-3. **Одно тело метода / класса / markdown-заголовка / yaml-ключа** —
-   `ast-outline show <file> <Symbol>`. Поиск по суффиксу: `TakeDamage`,
-   или `Player.TakeDamage` если имя неоднозначно. За раз несколько
-   символов: `ast-outline show Player.cs TakeDamage Heal Die`. Для
-   markdown символ — это текст заголовка, матчинг подстрочный и
+3. **Одно тело метода / типа / markdown-заголовка / yaml-ключа** —
+   `ast-outline show <file> <Symbol>`. Поиск по суффиксу: `TakeDamage`
+   для одного метода; `User` для целого типа — класс, struct,
+   interface, trait, enum (всё тело, полезно когда в файле несколько
+   типов); `Player.TakeDamage` если имя неоднозначно. За раз несколько
+   символов: `ast-outline show Player.cs TakeDamage Heal Die`. Для markdown
+   символ — это текст заголовка, матчинг подстрочный и
    регистронезависимый: `"текущий анализ"` найдёт
    `"1. ТЕКУЩИЙ АНАЛИЗ (февраль 2026)"`. Для yaml символ — точечный
    путь по ключам (`spec.containers[0].image`). `show` матчит **ключи**,

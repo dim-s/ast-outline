@@ -199,9 +199,11 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
    `# WARNING: N parse errors`,说明 outline 是不完整的 —— 直接读取受影响
    区域的源码。
 
-3. **某个方法 / 类 / markdown 标题 / yaml 键** —— `ast-outline show <file>
-   <Symbol>`。后缀匹配:`TakeDamage`,有歧义时用 `Player.TakeDamage`。
-   一次取多个:`ast-outline show Player.cs TakeDamage Heal Die`。
+3. **某个方法 / 类型 / markdown 标题 / yaml 键** —— `ast-outline show <file>
+   <Symbol>`。后缀匹配:`TakeDamage` 取单个方法;`User` 取整个类型的
+   完整主体 —— class、struct、interface、trait、enum(当一个文件里
+   有多个类型时尤其有用);有歧义时用 `Player.TakeDamage`。一次取多个:
+   `ast-outline show Player.cs TakeDamage Heal Die`。
    markdown 的符号是标题文本,匹配为大小写不敏感的子串:`"installation"`
    能命中 `"2.1 Installation (macOS / Linux)"`。yaml 的符号是点分键路径
    (`spec.containers[0].image`) —— `show` 匹配**键**,不匹配值;要在值的
