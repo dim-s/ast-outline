@@ -189,12 +189,12 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
 
 哪一步能回答问题就停在哪一步：
 
-1. **不熟悉的目录** —— `ast-outline digest <dir>`：一页地图，列出每个
+1. **不熟悉的目录** —— `ast-outline digest <paths…>`：一页地图，列出每个
    文件的类型和公共方法。每个文件后会附带大小标签
    —— `[tiny]` / `[medium]` / `[large]` —— 当解析遇到错误、outline
    可能不完整时再加 `[broken]`。
 
-2. **单个文件的结构** —— `ast-outline <file>`:签名 + 行号范围,不含
+2. **文件级结构** —— `ast-outline <paths…>`:签名 + 行号范围,不含
    方法体(对非平凡文件,比完整读取少用 5–10 倍 token)。如果头部出现
    `# WARNING: N parse errors`,说明 outline 是不完整的 —— 直接读取受影响
    区域的源码。
@@ -209,9 +209,12 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
    (`spec.containers[0].image`) —— `show` 匹配**键**,不匹配值;要在值的
    文本里做自由搜索请用 `grep`。
 
-4. **谁继承/实现了某个类型** —— `ast-outline implements <Type> <dir>`:
+4. **谁继承/实现了某个类型** —— `ast-outline implements <Type> <paths…>`:
    基于 AST(不用 `grep`),默认是传递性的 —— 间接匹配会带 `[via Parent]`
    标记。加 `--direct` 只显示直接子类。
+
+`outline`、`digest`、`implements` 都支持一次传入多个路径(文件和目录,
+混合语言均可)—— 一次性批量调用,不要循环。
 
 只有当 `show` 给出的方法体不足以提供所需上下文时,才回退到完整读取。
 `ast-outline help` 查看完整标志。
@@ -294,23 +297,27 @@ ast-outline digest src/
 示例输出：
 
 ```
-# legend: name()=callable, name [kind]=non-callable, [N overloads]=N callables share name, [deprecated]=obsolete, L<a>-<b>=line range, : Base, …=inheritance
+# legend: name()=callable, name [kind]=non-callable, marker name()=method modifier (async/static/override/…), [N overloads]=N callables share name, [deprecated]=obsolete, L<a>-<b>=line range, : Base, …=inheritance
 src/services/
   __init__.py [tiny] (8 lines, ~74 tokens, 1 fields)
   user_service.py [medium] (140 lines, ~1,200 tokens, 1 types, 5 methods)
     @Service abstract class UserService [deprecated] : IUserService  L8-138
-      get(), search(), create(), delete(), update_v1() [deprecated]
+      async get(), async search(), abstract create(), delete(), update_v1() [deprecated]
 
   auth_service.py [medium] (95 lines, ~840 tokens, 1 types, 4 methods)
     [ApiController] sealed class AuthService  L10-95
-      login(), logout(), refresh(), verify_token()
+      async login(), logout(), refresh(), override verify_token()
 
   legacy_repo.py [large] (5234 lines, ~52,000 tokens, ...)
 ```
 
 第一行是自描述的图例（legend），让 LLM 在没有加载 `ast-outline prompt`
 的情况下也能直接读懂输出。token 遵循通用编程文档约定：`name()` 表示
-可调用，`name [kind]` 表示属性/字段/事件等非可调用项，`[N overloads]`
+可调用，`name [kind]` 表示属性/字段/事件等非可调用项，方法修饰符
+（`async`、`static`、`abstract`、`override`、`virtual`，以及语言原生
+形式：Kotlin 的 `open` / `suspend`、Python 的 `@staticmethod` /
+`@classmethod` / `@abstractmethod`、Java 的 `@Override`）以前缀方式
+原样附加在方法名前——每种语言保留自己的惯用形态。`[N overloads]`
 表示多个同名可调用项被合并，`[deprecated]` 表示类型/成员被标记为
 `@Deprecated` / `[Obsolete]` / `#[deprecated]`。类型行首还会带上
 内联装饰器/属性（`@dataclass`、`[ApiController]`、`#[derive(Debug)]`）

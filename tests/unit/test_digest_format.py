@@ -28,6 +28,7 @@ from ast_outline.core import (
     _collapse_overloads,
     _is_deprecated,
     _member_token,
+    _method_markers,
     render_digest,
 )
 
@@ -64,9 +65,9 @@ def test_legend_is_a_single_line(csharp_dir):
     r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
     out = render_digest([r], DigestOptions())
     legend = out.splitlines()[0]
-    # No internal newlines, fits comfortably in a 200-col terminal.
+    # No internal newlines, fits comfortably in a wide terminal.
     assert "\n" not in legend
-    assert len(legend) < 200
+    assert len(legend) < 250
 
 
 # --- Callable marker -----------------------------------------------------
@@ -518,6 +519,245 @@ def test_deprecated_member_carries_tag():
     )
 
 
+# --- Method markers -----------------------------------------------------
+
+
+def test_csharp_abstract_method_marker(csharp_dir):
+    """C# `public abstract void Eat()` — `abstract` is a source-true
+    keyword in the signature, must surface as a method-marker prefix."""
+    r = CSharpAdapter().parse(csharp_dir / "hierarchy.cs")
+    out = render_digest([r], DigestOptions())
+    assert "abstract Eat()" in out
+
+
+def test_csharp_override_method_marker(csharp_dir):
+    """C# `public override void Eat()` — `override` is the most useful
+    member-marker for OO languages (changes polymorphism story)."""
+    r = CSharpAdapter().parse(csharp_dir / "hierarchy.cs")
+    out = render_digest([r], DigestOptions())
+    assert "override Eat()" in out
+
+
+def test_python_async_method_marker(python_dir):
+    """Python `async def push()` — `async` is the only universally
+    applicable callable marker, changes the call contract (must
+    await)."""
+    r = PythonAdapter().parse(python_dir / "async_service.py")
+    out = render_digest([r], DigestOptions())
+    assert "async push()" in out
+    assert "async pop()" in out
+    # Free async function — module-level, no parent scope.
+    assert "async run_forever()" in out
+
+
+def test_python_decorator_marker_source_true(python_dir):
+    """Python `@staticmethod` / `@classmethod` / `@abstractmethod` are
+    method markers, but they're decorators — not signature keywords.
+    We render them source-true (with the leading `@`), so a Python
+    reader recognises the form and grep against the source still
+    works."""
+    r = PythonAdapter().parse(python_dir / "async_service.py")
+    out = render_digest([r], DigestOptions())
+    # Source-true forms (with @, not translated to canonical keyword)
+    assert "@staticmethod describe()" in out
+    assert "@classmethod default()" in out
+    # Namespaced decorator preserved verbatim.
+    assert "@abc.abstractmethod" in out
+
+
+def test_python_async_and_decorator_stack(python_dir):
+    """A method with both `async` keyword and `@abstractmethod`
+    decorator surfaces both markers, in source order — signature
+    tokens first, then decorators."""
+    r = PythonAdapter().parse(python_dir / "async_service.py")
+    out = render_digest([r], DigestOptions())
+    # `async @abc.abstractmethod handle()` — async (sig) then
+    # decorator (attr).
+    assert "async @abc.abstractmethod handle()" in out
+
+
+def test_kotlin_open_method_marker(kotlin_dir):
+    """Kotlin `open fun bark()` — Kotlin uses `open` as the dual of
+    C#'s `virtual`. We keep the source-true keyword instead of
+    translating, so `open bark()` reads native to a Kotlin user."""
+    r = KotlinAdapter().parse(kotlin_dir / "hierarchy.kt")
+    out = render_digest([r], DigestOptions())
+    assert "open bark()" in out
+
+
+def test_kotlin_override_method_marker(kotlin_dir):
+    """Kotlin `override fun bark()` — same source-true keyword as in
+    Kotlin source; not translated to anything else."""
+    r = KotlinAdapter().parse(kotlin_dir / "hierarchy.kt")
+    out = render_digest([r], DigestOptions())
+    assert "override bark()" in out
+
+
+def test_java_override_annotation_marker(java_dir):
+    """Java `@Override` on a method — annotations carry the marker
+    info in Java (no `override` keyword in the language). We render
+    the annotation source-true so a Java user sees exactly what's in
+    the source."""
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    out = render_digest([r], DigestOptions())
+    assert "@Override save()" in out
+    assert "@Override close()" in out
+
+
+def test_java_abstract_method_marker(java_dir):
+    """Java `public abstract int compute()` — `abstract` is a source
+    keyword, surfaces as a marker."""
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    out = render_digest([r], DigestOptions())
+    assert "abstract compute()" in out
+
+
+def test_typescript_async_function_marker(fixtures_dir):
+    """TypeScript `export async function generateMetadata()` — the
+    `async` keyword in the signature surfaces as a callable marker
+    on a free function."""
+    r = TypeScriptAdapter().parse(
+        fixtures_dir / "typescript" / "react_page.tsx"
+    )
+    out = render_digest([r], DigestOptions())
+    assert "async generateStaticParams()" in out
+    assert "async generateMetadata()" in out
+
+
+# --- Method marker skip rules -------------------------------------------
+
+
+def test_static_marker_skipped_in_static_class(csharp_dir):
+    """A `static` keyword on every member of a `static class` is
+    redundant — the type itself already conveys the signal. Skipping
+    keeps lines short and avoids noise on every method."""
+    r = CSharpAdapter().parse(csharp_dir / "file_scoped_ns.cs")
+    out = render_digest([r], DigestOptions())
+    # UserExtensions is `static class`; DisplayLabel is its only
+    # method. The token must be plain `DisplayLabel()`, not
+    # `static DisplayLabel()`.
+    assert "static class Demo.Services.UserExtensions" in out
+    assert "DisplayLabel()" in out
+    # Specifically: no `static` marker on the member.
+    member_line = next(
+        line for line in out.splitlines() if "DisplayLabel" in line
+    )
+    assert "static DisplayLabel" not in member_line
+
+
+def test_abstract_marker_skipped_in_interface(csharp_dir):
+    """Every interface method is implicitly abstract. Showing
+    `abstract` on each one would clutter the line for zero
+    information gain — we suppress it inside interface bodies."""
+    r = CSharpAdapter().parse(csharp_dir / "hierarchy.cs")
+    out = render_digest([r], DigestOptions())
+    # IService.Run() lives in an interface — must NOT carry abstract.
+    body = "\n".join(out.splitlines())
+    iservice_idx = body.find("interface Demo.Hierarchy.IService")
+    assert iservice_idx >= 0
+    iservice_section = body[iservice_idx : iservice_idx + 200]
+    assert "Run()" in iservice_section
+    assert "abstract Run" not in iservice_section
+
+
+def test_abstract_marker_kept_outside_interface(csharp_dir):
+    """Abstract methods in an `abstract class` (not interface) MUST
+    retain the marker — there the `abstract` keyword is meaningful
+    (some methods abstract, others not). The skip rule is interface-
+    only."""
+    r = CSharpAdapter().parse(csharp_dir / "hierarchy.cs")
+    out = render_digest([r], DigestOptions())
+    # Animal is `abstract class`, Eat is `abstract Eat()` — marker stays.
+    assert "abstract Eat()" in out
+
+
+# --- _method_markers unit ------------------------------------------------
+
+
+def test_method_markers_extracted_from_signature():
+    """Direct unit test of `_method_markers`: a pure-keyword signature
+    yields the whitelisted modifier tokens, dropping visibility and
+    return-type clutter."""
+    d = Declaration(
+        kind=KIND_METHOD,
+        name="Foo",
+        signature="public async override void Foo()",
+    )
+    assert _method_markers(d, parent=None) == ["async", "override"]
+
+
+def test_method_markers_extracted_from_decorators():
+    """Decorator-only marker — `@staticmethod` becomes a marker
+    rendered verbatim, no signature keywords involved."""
+    d = Declaration(
+        kind=KIND_METHOD,
+        name="describe",
+        signature="def describe()",
+        attrs=["@staticmethod"],
+    )
+    assert _method_markers(d, parent=None) == ["@staticmethod"]
+
+
+def test_method_markers_combined_signature_and_decorator():
+    """`async` keyword + `@abc.abstractmethod` decorator — both
+    surface, signature first, decorator second (source order)."""
+    d = Declaration(
+        kind=KIND_METHOD,
+        name="handle",
+        signature="async def handle(self, event: object) -> None",
+        attrs=["@abc.abstractmethod"],
+    )
+    assert _method_markers(d, parent=None) == [
+        "async",
+        "@abc.abstractmethod",
+    ]
+
+
+def test_method_markers_static_skipped_in_static_class():
+    """Skip rule check via direct call: parent is `static class`,
+    member's `static` marker drops out."""
+    parent = Declaration(
+        kind=KIND_CLASS, name="X", signature="public static class X"
+    )
+    member = Declaration(
+        kind=KIND_METHOD, name="Build", signature="public static void Build()"
+    )
+    assert _method_markers(member, parent=parent) == []
+
+
+def test_method_markers_abstract_skipped_in_interface():
+    """Skip rule check via direct call: parent is interface, member's
+    `abstract` marker (or `@abstractmethod`) drops out — every
+    interface member is abstract by definition."""
+    iface = Declaration(
+        kind=KIND_INTERFACE, name="I", signature="public interface I"
+    )
+    member_kw = Declaration(
+        kind=KIND_METHOD, name="m", signature="public abstract void m()"
+    )
+    member_dec = Declaration(
+        kind=KIND_METHOD,
+        name="m",
+        signature="def m(self)",
+        attrs=["@abstractmethod"],
+    )
+    assert _method_markers(member_kw, parent=iface) == []
+    assert _method_markers(member_dec, parent=iface) == []
+
+
+def test_method_markers_no_false_positive_from_method_name():
+    """A method literally named `static` or `override` (legal in some
+    languages) must NOT trigger a marker — the last token before `(`
+    is the name, not a modifier, and we drop it from filtering."""
+    d = Declaration(
+        kind=KIND_METHOD,
+        name="static",
+        signature="public void static()",
+    )
+    # No markers — the only `static`-shaped token IS the name.
+    assert _method_markers(d, parent=None) == []
+
+
 # --- Per-language modifier coverage ------------------------------------
 
 
@@ -710,6 +950,29 @@ def test_member_deprecated_tag_through_python_adapter(tmp_path):
     assert "new_api() [deprecated]" not in out
 
 
+# --- Version sync guard -------------------------------------------------
+
+
+def test_version_string_matches_pyproject():
+    """`__version__` in the package and `version` in pyproject.toml
+    must agree. Drift between the two has bitten us before — pip
+    install metadata reports the pyproject value, `import; print(...)`
+    returns the package value, and a mismatch confuses both users
+    and `pip show`."""
+    import re
+    from pathlib import Path
+    from ast_outline import __version__
+
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    text = pyproject.read_text()
+    m = re.search(r'^version\s*=\s*"([^"]+)"', text, flags=re.M)
+    assert m is not None, "could not find version in pyproject.toml"
+    assert __version__ == m.group(1), (
+        f"__version__={__version__!r} but pyproject.toml has "
+        f"version={m.group(1)!r} — keep them in sync."
+    )
+
+
 # --- Help drift guard ---------------------------------------------------
 
 
@@ -732,7 +995,9 @@ def test_help_digest_describes_actual_format():
     assert "[N overloads]" in GUIDE_DIGEST
     assert "[deprecated]" in GUIDE_DIGEST
     assert "abstract" in GUIDE_DIGEST  # modifier example
+    assert "async" in GUIDE_DIGEST  # method marker example
     assert "@dataclass" in GUIDE_DIGEST or "[Serializable]" in GUIDE_DIGEST
+    assert "@Override" in GUIDE_DIGEST or "@staticmethod" in GUIDE_DIGEST
     assert ", " in GUIDE_DIGEST  # comma separator
     assert "blank line" in GUIDE_DIGEST  # paragraph-break rule
 

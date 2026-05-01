@@ -105,8 +105,8 @@ def test_snippet_covers_all_four_subcommands():
     snippet's completeness."""
     for cmd in ("digest", "show", "implements"):
         assert f"ast-outline {cmd}" in AGENT_PROMPT, f"snippet missing {cmd!r}"
-    # And the default outline invocation (bare `ast-outline <file>`)
-    assert "`ast-outline <file>`" in AGENT_PROMPT
+    # And the default outline invocation (bare `ast-outline <paths…>`)
+    assert "`ast-outline <paths…>`" in AGENT_PROMPT
 
 
 def test_snippet_contains_parse_error_safety_clause():

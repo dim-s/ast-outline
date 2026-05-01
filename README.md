@@ -210,12 +210,12 @@ with `ast-outline` before opening full contents.
 
 Stop at the step that answers the question:
 
-1. **Unfamiliar directory** — `ast-outline digest <dir>`: one-page map
+1. **Unfamiliar directory** — `ast-outline digest <paths…>`: one-page map
    of every file's types and public methods. Each file is tagged with a
    size label — `[tiny]` / `[medium]` / `[large]` — plus `[broken]`
    when parse errors may have left the outline partial.
 
-2. **One file's shape** — `ast-outline <file>`: signatures with line
+2. **File-level shape** — `ast-outline <paths…>`: signatures with line
    ranges, no bodies (5–10× smaller than a full read on non-trivial
    files). A `# WARNING: N parse errors` line in the header means the
    outline is partial — read the source for the affected region.
@@ -233,8 +233,11 @@ Stop at the step that answers the question:
    not values, so for free-text search inside values use `grep`.
 
 4. **Who implements/extends a type** — `ast-outline implements <Type>
-   <dir>`: AST-accurate (skip `grep`), transitive by default with
+   <paths…>`: AST-accurate (skip `grep`), transitive by default with
    `[via Parent]` tags on indirect matches. Add `--direct` for level-1 only.
+
+`outline`, `digest`, `implements` accept multiple paths in one call
+(files and directories, mixed languages OK) — batch instead of looping.
 
 Fall back to a full read only when you need context beyond the body
 `show` returned. `ast-outline help` for flags.
@@ -319,16 +322,16 @@ ast-outline digest src/
 Sample output:
 
 ```
-# legend: name()=callable, name [kind]=non-callable, [N overloads]=N callables share name, [deprecated]=obsolete, L<a>-<b>=line range, : Base, …=inheritance
+# legend: name()=callable, name [kind]=non-callable, marker name()=method modifier (async/static/override/…), [N overloads]=N callables share name, [deprecated]=obsolete, L<a>-<b>=line range, : Base, …=inheritance
 src/services/
   __init__.py [tiny] (8 lines, ~74 tokens, 1 fields)
   user_service.py [medium] (140 lines, ~1,200 tokens, 1 types, 5 methods)
     @Service abstract class UserService [deprecated] : IUserService  L8-138
-      get(), search(), create(), delete(), update_v1() [deprecated]
+      async get(), async search(), abstract create(), delete(), update_v1() [deprecated]
 
   auth_service.py [medium] (95 lines, ~840 tokens, 1 types, 4 methods)
     [ApiController] sealed class AuthService  L10-95
-      login(), logout(), refresh(), verify_token()
+      async login(), logout(), refresh(), override verify_token()
 
   legacy_repo.py [large] [broken] (5234 lines, ~52,000 tokens, ...)
 ```
@@ -336,18 +339,23 @@ src/services/
 The first line is a self-describing legend so an LLM can read the
 output cold without `ast-outline prompt` loaded. Tokens follow the
 universal programming-doc convention — `name()` for a callable,
-`name [kind]` for a property/field/event/etc., `[N overloads]` when
-several callables share a name, `[deprecated]` whenever a type or
-member carries `@Deprecated` / `[Obsolete]` / `#[deprecated]`. Type
-headers also carry inline decorators / attributes (`@dataclass`,
-`[ApiController]`, `#[derive(Debug)]`) and semantic modifiers
-(`abstract`, `sealed`, `static`, `final`, `open`, `partial`) so
-runtime contracts and instantiation rules read off at a glance.
-Members are joined with `, `; types that have a body get a trailing
-blank line as a paragraph break, empty types stack tightly so digest
-stays compact. Source-language keywords (Rust `trait`, Scala
-`object`, Kotlin `data class`) are preserved in the type header
-instead of the canonical kind.
+`name [kind]` for a property/field/event/etc., method markers
+(`async`, `static`, `abstract`, `override`, `virtual`, plus
+language-native forms: Kotlin `open` / `suspend`, Python
+`@staticmethod` / `@classmethod` / `@abstractmethod`, Java
+`@Override`) prefix the name source-true so each language reads in
+its own idiom. `[N overloads]` flags when several callables share a
+name; `[deprecated]` whenever a type or member carries
+`@Deprecated` / `[Obsolete]` / `#[deprecated]`. Type headers also
+carry inline decorators / attributes (`@dataclass`, `[ApiController]`,
+`#[derive(Debug)]`) and semantic modifiers (`abstract`, `sealed`,
+`static`, `final`, `open`, `partial`) so runtime contracts and
+instantiation rules read off at a glance. Members are joined with
+`, `; types that have a body get a trailing blank line as a
+paragraph break, empty types stack tightly so digest stays compact.
+Source-language keywords (Rust `trait`, Scala `object`, Kotlin
+`data class`) are preserved in the type header instead of the
+canonical kind.
 
 Each filename gets a descriptive size label — `[tiny]` (under ~500 tokens),
 `[medium]` (500–5000), `[large]` (5000+). A `[broken]` marker appears next

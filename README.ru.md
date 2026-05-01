@@ -195,12 +195,12 @@ ast-outline prompt | pbcopy   # буфер обмена в macOS
 
 Останавливайся на шаге, который ответил на вопрос:
 
-1. **Незнакомая директория** — `ast-outline digest <dir>`: карта на одну
+1. **Незнакомая директория** — `ast-outline digest <paths…>`: карта на одну
    страницу — типы и публичные методы каждого файла. К каждому файлу —
    size-метка `[tiny]` / `[medium]` / `[large]`, плюс `[broken]` если
    parse-ошибки могли оставить outline неполным.
 
-2. **Структура одного файла** — `ast-outline <file>`: сигнатуры с
+2. **Структура файлов** — `ast-outline <paths…>`: сигнатуры с
    диапазонами строк, без тел (в 5–10 раз меньше токенов на нетривиальных
    файлах). Строка `# WARNING: N parse errors` в шапке означает что
    outline частичный — читай исходник для затронутой области.
@@ -218,9 +218,12 @@ ast-outline prompt | pbcopy   # буфер обмена в macOS
    не значения — для freeform-поиска текста внутри значений → `grep`.
 
 4. **Кто наследует/реализует тип** — `ast-outline implements <Type>
-   <dir>`: AST-поиск (не нужен `grep`), транзитивный по умолчанию — внуки
+   <paths…>`: AST-поиск (не нужен `grep`), транзитивный по умолчанию — внуки
    получают метку `[via Parent]`. Добавь `--direct` для только прямых
    наследников.
+
+`outline`, `digest`, `implements` принимают несколько путей за один вызов
+(файлы и директории, разные языки вперемешку — OK) — батчь, а не цикль.
 
 Возвращайся к полному чтению только если `show` отдал тело, но нужен
 контекст за его пределами. `ast-outline help` — флаги.
@@ -305,16 +308,16 @@ ast-outline digest src/
 Пример вывода:
 
 ```
-# legend: name()=callable, name [kind]=non-callable, [N overloads]=N callables share name, [deprecated]=obsolete, L<a>-<b>=line range, : Base, …=inheritance
+# legend: name()=callable, name [kind]=non-callable, marker name()=method modifier (async/static/override/…), [N overloads]=N callables share name, [deprecated]=obsolete, L<a>-<b>=line range, : Base, …=inheritance
 src/services/
   __init__.py [tiny] (8 lines, ~74 tokens, 1 fields)
   user_service.py [medium] (140 lines, ~1,200 tokens, 1 types, 5 methods)
     @Service abstract class UserService [deprecated] : IUserService  L8-138
-      get(), search(), create(), delete(), update_v1() [deprecated]
+      async get(), async search(), abstract create(), delete(), update_v1() [deprecated]
 
   auth_service.py [medium] (95 lines, ~840 tokens, 1 types, 4 methods)
     [ApiController] sealed class AuthService  L10-95
-      login(), logout(), refresh(), verify_token()
+      async login(), logout(), refresh(), override verify_token()
 
   legacy_repo.py [large] [broken] (5234 lines, ~52,000 tokens, ...)
 ```
@@ -322,8 +325,12 @@ src/services/
 Первая строка — самообъясняющая легенда, чтобы LLM мог прочитать
 вывод cold, без подгруженного `ast-outline prompt`. Токены следуют
 универсальной конвенции программистской документации: `name()` —
-callable, `name [kind]` — property/field/event и т.п.,
-`[N overloads]` — когда несколько callable делят одно имя,
+callable, `name [kind]` — property/field/event и т.п., method-маркеры
+(`async`, `static`, `abstract`, `override`, `virtual`, плюс
+language-native формы: Kotlin `open` / `suspend`, Python
+`@staticmethod` / `@classmethod` / `@abstractmethod`, Java
+`@Override`) — префикс к имени source-true, каждый язык в своей
+идиоме. `[N overloads]` — когда несколько callable делят одно имя,
 `[deprecated]` — когда у типа/метода стоит `@Deprecated` /
 `[Obsolete]` / `#[deprecated]`. В шапке типа также видны inline-
 декораторы и атрибуты (`@dataclass`, `[ApiController]`,

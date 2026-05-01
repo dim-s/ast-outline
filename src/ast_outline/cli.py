@@ -502,17 +502,21 @@ WHAT IT DOES
       # legend: name()=callable, name [kind]=non-callable, ...
       <file>  (N lines, ~tokens)
         [Attr] <modifiers> <kind> <Name> [deprecated][ : <bases>]  L<start>-<end>
-          method1(), method2(), property [property], ...
+          <marker> method1(), method2(), property [property], ...
     Output starts with a one-line legend so it is parseable cold.
     Callable names carry `()`; properties / fields / events show
-    `[kind]`. Same-name overloads collapse to `name() [N overloads]`.
-    Type headers carry their decorators / attributes verbatim
-    (`@dataclass`, `[Serializable]`, `#[derive(Debug)]`) plus
-    semantic modifiers (`abstract`, `sealed`, `static`, `final`,
-    `open`, `partial`). Anything marked deprecated / obsolete gets
-    a trailing `[deprecated]` tag. Members are joined by `, `.
-    Types with bodies get a trailing blank line; empty types stack
-    tight.
+    `[kind]`. Method markers (`async`, `static`, `abstract`,
+    `override`, `virtual`, Kotlin `open` / `suspend`, Python
+    `@staticmethod` / `@classmethod` / `@abstractmethod`, Java
+    `@Override`) prefix the name source-true so each language reads
+    in its own idiom. Same-name overloads collapse to
+    `name() [N overloads]`. Type headers carry their decorators /
+    attributes verbatim (`@dataclass`, `[Serializable]`,
+    `#[derive(Debug)]`) plus semantic modifiers (`abstract`,
+    `sealed`, `static`, `final`, `open`, `partial`). Anything
+    marked deprecated / obsolete gets a trailing `[deprecated]` tag.
+    Members are joined by `, `. Types with bodies get a trailing
+    blank line; empty types stack tight.
 
 FLAGS
     --include-private   Include private members (Python: `_`-prefixed)

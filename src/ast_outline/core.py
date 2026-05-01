@@ -410,6 +410,7 @@ def _clip_docs(docs: list[str], limit: int) -> list[str]:
 # self-explanatory and stay out of the legend to keep it short.
 _DIGEST_LEGEND = (
     "# legend: name()=callable, name [kind]=non-callable, "
+    "marker name()=method modifier (async/static/override/…), "
     "[N overloads]=N callables share name, [deprecated]=obsolete, "
     "L<a>-<b>=line range, : Base, …=inheritance"
 )
@@ -450,6 +451,137 @@ def _filter_non_deprecation_attrs(attrs: list[str]) -> list[str]:
     return [
         a for a in attrs
         if not any(p in a.lower() for p in _DEPRECATED_PATTERNS)
+    ]
+
+
+# Method-marker whitelist — keywords that meaningfully change how a
+# member is CALLED. Each appears in the source signature before the
+# method name (or function keyword) across the supported languages:
+# - `async` — C# / TS / Python / JS / Rust
+# - `suspend` — Kotlin's coroutine equivalent of async
+# - `static` — C# / Java / TS / Kotlin (companion-object members)
+# - `abstract` — C# / Java / Kotlin / Scala
+# - `virtual` — C# (declares overridable)
+# - `override` — C# / Kotlin / Scala
+# - `open` — Kotlin's "may be overridden" (the dual of `final`)
+# - `sealed` — C# 8 sealed override / Kotlin sealed
+_METHOD_MARKERS = frozenset({
+    "async", "suspend",
+    "static", "abstract", "virtual", "override",
+    "open", "sealed",
+})
+
+
+# Decorator / annotation names that act as method markers. We render
+# these source-true (with `@` / `[` / `#[]` decoration intact) rather
+# than translating to a canonical English keyword — preserves the
+# language-native form, stays grep-friendly against the source, and
+# keeps language-specific distinctions visible (e.g. Python
+# `@staticmethod` vs `@classmethod` are semantically different and
+# both surface in the digest).
+_MARKER_DECORATORS = frozenset({
+    # Python — call-style decorators
+    "staticmethod", "classmethod",
+    "abstractmethod", "abstractclassmethod", "abstractstaticmethod",
+    # Java — annotations
+    "Override",
+})
+
+
+def _bare_attr_name(attr: str) -> str:
+    """Reduce an attr string to the bare identifier so we can match
+    against `_MARKER_DECORATORS` regardless of decoration form.
+
+    Accepts every common attr shape: `@deco`, `@deco(...)`, `@a.b.deco`,
+    `[Attr]`, `[Attr(...)]`, `#[deco]`, `#[deco(...)]`.
+    """
+    bare = attr.strip().lstrip("@")
+    if bare.startswith("#["):
+        bare = bare[2:].rstrip("]")
+    elif bare.startswith("[") and bare.endswith("]"):
+        bare = bare[1:-1]
+    paren = bare.find("(")
+    if paren > 0:
+        bare = bare[:paren]
+    if "." in bare:
+        bare = bare.rsplit(".", 1)[-1]
+    return bare.strip()
+
+
+def _decorator_marker_attr(attr: str) -> Optional[str]:
+    """Return the source-true attr text if `attr` is a marker
+    decorator / annotation, else None. The original decoration
+    (`@`, `[]`, `#[]`) is preserved so the digest reads the same as
+    the source — Python `@staticmethod`, Java `@Override`."""
+    if _bare_attr_name(attr) in _MARKER_DECORATORS:
+        return attr.strip()
+    return None
+
+
+# Classification helpers for skip rules — mapping from a marker render
+# string back to its semantic category. Lets us suppress redundant
+# `static`/`@staticmethod` on members of a static class and
+# `abstract`/`@abstractmethod` on members of an interface, regardless
+# of which surface form the source used.
+_STATIC_FORMS = ("static", "staticmethod")
+_ABSTRACT_FORMS = ("abstract", "abstractmethod")
+
+
+def _is_static_marker(rendered: str) -> bool:
+    return _bare_attr_name(rendered).lower() in _STATIC_FORMS
+
+
+def _is_abstract_marker(rendered: str) -> bool:
+    bare = _bare_attr_name(rendered).lower()
+    return bare in _ABSTRACT_FORMS or "abstractmethod" in bare
+
+
+def _method_markers(
+    decl: Declaration, parent: Optional[Declaration]
+) -> list[str]:
+    """Extract canonical method markers for a callable declaration.
+
+    Two sources are merged:
+    - Signature tokens before the method name (everything before the
+      `(` arg list, last token dropped as the name itself). Whitelist
+      filtered against `_METHOD_MARKERS`.
+    - Decorator / annotation attrs translated via `_ATTR_TO_MARKER`.
+
+    Skip rules avoid redundant noise:
+    - `static` is dropped when the parent type is itself `static`
+      (every member of a static class is implicitly static).
+    - `abstract` is dropped when the parent is an interface
+      (every interface member is implicitly abstract).
+
+    Returns markers in insertion order so the rendering reads close
+    to source-natural — `async override LoadAsync()` rather than
+    alphabetically reordered.
+    """
+    markers: list[str] = []
+    sig = decl.signature or ""
+    paren = sig.find("(")
+    if paren > 0:
+        tokens = sig[:paren].split()
+        # Drop the last token — it's the method name. The rest are
+        # modifiers and (for C#/Java) the return type, which we
+        # filter against the whitelist anyway.
+        for tok in tokens[:-1]:
+            if tok in _METHOD_MARKERS and tok not in markers:
+                markers.append(tok)
+    for a in decl.attrs:
+        m = _decorator_marker_attr(a)
+        if m and m not in markers:
+            markers.append(m)
+    skip_static = (
+        parent is not None and "static" in _type_modifiers(parent)
+    )
+    skip_abstract = (
+        parent is not None and parent.kind == KIND_INTERFACE
+    )
+    return [
+        m for m in markers
+        if not (skip_static and _is_static_marker(m))
+        and not (skip_abstract and _is_abstract_marker(m))
     ]
 
 
@@ -618,17 +750,19 @@ def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
         if members:
             collapsed = _collapse_overloads(members)
             shown = collapsed[: opts.max_members_per_type]
-            tokens = [_member_token(m, count) for m, count in shown]
+            tokens = [_member_token(m, count, parent=t) for m, count in shown]
             lines.extend(_wrap_tokens(tokens, width=100, indent="      "))
             if len(collapsed) > len(shown):
                 lines.append(f"      ... ({len(collapsed) - len(shown)} more)")
             lines.append("")  # paragraph break — types with bodies own their block
 
-    # Module-level functions / fields (common in Python)
+    # Module-level functions / fields (common in Python). No parent —
+    # skip rules don't apply, free functions render with whatever
+    # markers their signature carries (e.g. `async run_forever()`).
     if free_functions:
         collapsed = _collapse_overloads(free_functions)
         shown = collapsed[: opts.max_members_per_type]
-        tokens = [_member_token(f, count) for f, count in shown]
+        tokens = [_member_token(f, count, parent=None) for f, count in shown]
         lines.extend(_wrap_tokens(tokens, width=100, indent="    "))
     return lines
 
@@ -662,12 +796,19 @@ def _collapse_overloads(decls: list[Declaration]) -> list[tuple[Declaration, int
     return out
 
 
-def _member_token(d: Declaration, count: int) -> str:
+def _member_token(
+    d: Declaration, count: int, parent: Optional[Declaration] = None
+) -> str:
     """Render a single digest token for a member or free declaration.
 
     - Callable kinds get a `()` suffix — universally understood as
       "this is a function" in programming-doc convention, no legend
       needed for an LLM reading cold.
+    - Method markers (`async`, `static`, `abstract`, `virtual`,
+      `override`, `open`, `suspend`, `sealed`) prefix the name in
+      source order: `async fetch()`, `override Update()`,
+      `abstract Render()`. Keeps the digest line close to how the
+      source literally reads.
     - When `count > 1` the token carries an `[N overloads]` annotation
       so the agent knows the name resolves to multiple callables.
     - Non-callable kinds keep their `[kind]` tag so the type stays
@@ -678,15 +819,22 @@ def _member_token(d: Declaration, count: int) -> str:
       length-sensitive (many on one wrap-line) and the tag carries
       the actionable signal.
 
+    `parent` is the enclosing type declaration (or None for free
+    functions). It's used to apply skip rules — `static` member of
+    `static class` and `abstract` member of `interface` are
+    redundant signals, so we suppress them.
+
     No leading `+` marker — earlier digest revisions used `+name` as a
     member tag, but that visually collides with diff syntax and adds no
     semantic information beyond what `()` / `[kind]` already convey.
     """
     if d.kind in CALLABLE_KINDS:
+        markers = _method_markers(d, parent)
+        prefix = (" ".join(markers) + " ") if markers else ""
         if count > 1:
-            base = f"{d.name}() [{count} overloads]"
+            base = f"{prefix}{d.name}() [{count} overloads]"
         else:
-            base = f"{d.name}()"
+            base = f"{prefix}{d.name}()"
     else:
         base = f"{d.name} [{d.kind}]"
     if _is_deprecated(d):

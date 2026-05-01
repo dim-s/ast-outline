@@ -24,12 +24,12 @@ with `ast-outline` before opening full contents.
 
 Stop at the step that answers the question:
 
-1. **Unfamiliar directory** — `ast-outline digest <dir>`: one-page map
+1. **Unfamiliar directory** — `ast-outline digest <paths…>`: one-page map
    of every file's types and public methods. Each file is tagged with a
    size label — `[tiny]` / `[medium]` / `[large]` — plus `[broken]`
    when parse errors may have left the outline partial.
 
-2. **One file's shape** — `ast-outline <file>`: signatures with line
+2. **File-level shape** — `ast-outline <paths…>`: signatures with line
    ranges, no bodies (5–10× smaller than a full read on non-trivial
    files). A `# WARNING: N parse errors` line in the header means the
    outline is partial — read the source for the affected region.
@@ -47,8 +47,11 @@ Stop at the step that answers the question:
    not values, so for free-text search inside values use `grep`.
 
 4. **Who implements/extends a type** — `ast-outline implements <Type>
-   <dir>`: AST-accurate (skip `grep`), transitive by default with
+   <paths…>`: AST-accurate (skip `grep`), transitive by default with
    `[via Parent]` tags on indirect matches. Add `--direct` for level-1 only.
+
+`outline`, `digest`, `implements` accept multiple paths in one call
+(files and directories, mixed languages OK) — batch instead of looping.
 
 Fall back to a full read only when you need context beyond the body
 `show` returned. `ast-outline help` for flags.
