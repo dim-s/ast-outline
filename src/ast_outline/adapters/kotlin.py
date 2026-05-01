@@ -196,6 +196,13 @@ def _type_to_decl(
     interfaces (incl. `fun interface`), enum/data/sealed/annotation classes.
     """
     kind = _class_decl_kind(node)
+    # Source-true keyword for digest. Kotlin maps several constructs onto
+    # the same canonical kind for search uniformity (`data class` →
+    # KIND_RECORD, `annotation class` → KIND_INTERFACE), but the digest
+    # should print what the source actually says so the agent doesn't
+    # mistake an annotation class for an ordinary interface or a data
+    # class for a Java-style record.
+    native_kind = _kotlin_native_keyword(node, kind)
     name = _field_text(node, "name", src) or "?"
     bases = _delegation_bases(node, src)
     attrs = _annotations(node, src)
@@ -211,6 +218,7 @@ def _type_to_decl(
 
     return Declaration(
         kind=kind,
+        native_kind=native_kind,
         name=name,
         signature=signature,
         bases=bases,
@@ -244,6 +252,7 @@ def _object_to_decl(
 
     return Declaration(
         kind=KIND_CLASS,
+        native_kind="object",
         name=name,
         signature=signature,
         bases=bases,
@@ -276,6 +285,7 @@ def _companion_to_decl(
 
     return Declaration(
         kind=KIND_CLASS,
+        native_kind="companion object",
         name=name,
         signature=signature,
         bases=bases,
@@ -289,6 +299,29 @@ def _companion_to_decl(
         doc_start_byte=_resolved_doc_start(node, src),
         children=children,
     )
+
+
+def _kotlin_native_keyword(node: Node, kind: str) -> str:
+    """Return the source-true keyword for a Kotlin class_declaration when
+    the canonical kind hides it.
+
+    - `data class` → "data class" (kind=KIND_RECORD)
+    - `annotation class` → "annotation class" (kind=KIND_INTERFACE)
+    - regular class / interface / enum class → empty (canonical kind
+      already matches the source keyword)
+    """
+    mods = _modifiers_node(node)
+    if mods is None:
+        return ""
+    for m in mods.named_children:
+        if m.type != "class_modifier":
+            continue
+        token = m.text.decode("utf8", errors="replace").strip()
+        if token == "data":
+            return "data class"
+        if token == "annotation":
+            return "annotation class"
+    return ""
 
 
 def _class_decl_kind(node: Node) -> str:

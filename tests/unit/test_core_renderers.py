@@ -134,38 +134,38 @@ def test_digest_groups_by_directory(fixtures_dir):
 def test_digest_lists_type_with_member_tokens(csharp_dir):
     r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
     out = render_digest([r], DigestOptions())
-    # HeroController header and a few members as +Name tokens
+    # HeroController header; callables render with `()` (LLM-native marker).
     assert "HeroController" in out
-    assert "+TakeDamage" in out
+    assert "TakeDamage()" in out
 
 
 def test_digest_excludes_private_by_default(csharp_dir):
     r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
     out = render_digest([r], DigestOptions())
-    # Die is private; should not appear in digest
-    assert "+Die" not in out
+    # Die is private; should not appear in digest at all.
+    assert "Die()" not in out
 
 
 def test_digest_includes_private_when_asked(csharp_dir):
     r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
     out = render_digest([r], DigestOptions(include_private=True))
-    assert "+Die" in out
+    assert "Die()" in out
 
 
 def test_digest_free_module_functions_in_python(python_dir):
     r = PythonAdapter().parse(python_dir / "domain_model.py")
     out = render_digest([r], DigestOptions())
-    # Module-level public def should be listed as a free function
-    assert "+public_helper" in out
+    # Module-level public def should be listed as a free function.
+    assert "public_helper()" in out
 
 
 def test_digest_truncates_with_max_members(csharp_dir):
     r = CSharpAdapter().parse(csharp_dir / "file_scoped_ns.cs")
     out = render_digest([r], DigestOptions(max_members_per_type=1))
     # UserRepository has 4 public members; with max=1 we expect the
-    # "... +N more" trunc marker.
+    # "... (N more)" trunc marker.
     import re
-    assert re.search(r"\.\.\.\s+\+\d+\s+more", out), out
+    assert re.search(r"\.\.\.\s+\(\d+\s+more\)", out), out
 
 
 def test_digest_header_includes_line_range(csharp_dir):

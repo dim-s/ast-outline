@@ -309,6 +309,13 @@ def _type_to_decl(
     `case` keyword before `class`/`object`.
     """
     kind = _type_decl_kind(node)
+    # Carry the source-true keyword separately from the canonical kind:
+    # Scala `trait` maps to KIND_INTERFACE (so `implements` queries find
+    # mixins uniformly with Java/Rust traits) but digest should print
+    # `trait` rather than `interface` when the source actually says
+    # `trait`. Same for `object` (singleton) which lives under
+    # KIND_CLASS but wants its own keyword in the digest.
+    native = _native_keyword_for_type(node)
     name = _field_text(node, "name", src) or "?"
     bases = _extends_bases(node, src)
     attrs = _annotations(node, src)
@@ -331,6 +338,7 @@ def _type_to_decl(
 
     return Declaration(
         kind=kind,
+        native_kind=native,
         name=name,
         signature=signature,
         bases=bases,
@@ -344,6 +352,20 @@ def _type_to_decl(
         doc_start_byte=_resolved_doc_start(node, src),
         children=children,
     )
+
+
+def _native_keyword_for_type(node: Node) -> str:
+    """Source-true keyword for a `trait` / `class` / `object` definition.
+
+    `case class` → "class" (the `case` modifier is captured in the
+    canonical kind being KIND_RECORD; rendering "case class" in the
+    digest header would duplicate that signal).
+    """
+    if node.type == "trait_definition":
+        return "trait"
+    if node.type == "object_definition":
+        return "object"
+    return ""
 
 
 def _type_decl_kind(node: Node) -> str:

@@ -200,6 +200,15 @@ def _type_to_decl(
             for c in body.named_children:
                 children.extend(_child_from_body(c, src, parent_kind=kind))
 
+    # `@interface Foo` (annotation type) and `interface Foo` both map
+    # to KIND_INTERFACE in the IR. We deliberately do NOT carry a
+    # separate native_kind for `@interface`: in Java conversation,
+    # docs, and APIs the term is just "interface" / "annotation type",
+    # and rendering `@interface` in digest reads as a stray source
+    # token rather than a category. The annotation nature is recoverable
+    # from the type's `@Retention` / `@Target` attrs and from its
+    # element signatures (which carry `default` clauses).
+
     return Declaration(
         kind=kind,
         name=name,

@@ -60,6 +60,12 @@ class Declaration:
     docs: list[str] = field(default_factory=list)       # doc-comment lines as-is (/// or """)
     docs_inside: bool = False  # True → emit docs AFTER signature with +1 indent (Python docstrings)
     visibility: str = ""    # "public"/"protected"/"private"/"internal"/"" (unknown)
+    # Native source-language keyword for the declaration's kind, when it
+    # diverges from the canonical `kind`. Empty string → digest falls
+    # back to `kind`. Used by `render_digest` to print the source-true
+    # keyword (e.g. Rust `trait` / Java `@interface` / Scala `trait`)
+    # while the IR keeps a unified canonical kind for search.
+    native_kind: str = ""
     start_line: int = 0     # 1-based, inclusive
     end_line: int = 0       # 1-based, inclusive
     start_byte: int = 0     # for `show` — source slice
@@ -397,6 +403,18 @@ def _clip_docs(docs: list[str], limit: int) -> list[str]:
 # --- Digest ---------------------------------------------------------------
 
 
+# One-liner legend prepended to every digest. Keep this single line —
+# scannable, fits in a terminal, and survives copy-paste into LLM prompts
+# without wrapping. Only documents tokens that aren't plain English; size
+# labels (`[tiny]`/`[medium]`/`[large]`) and `[broken]` are
+# self-explanatory and stay out of the legend to keep it short.
+_DIGEST_LEGEND = (
+    "# legend: name()=callable, name [kind]=non-callable, "
+    "[N overloads]=N callables share name, L<a>-<b>=line range, "
+    ": Base, …=inheritance"
+)
+
+
 def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optional[Path] = None) -> str:
     """Compact per-directory public-API map across a batch of parsed files."""
     if not results:
@@ -413,13 +431,12 @@ def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optiona
     for r in results:
         grouped.setdefault(r.path.parent, []).append(r)
 
-    # Legend lives in the canonical agent prompt (run `ast-outline prompt`
-    # to see it), not here — the size-label and `[broken]` conventions
-    # are stable and don't need to be reprinted on every digest call.
-    # The labels themselves (`[tiny]` / `[medium]` / `[large]` /
-    # `[broken]`) are descriptive English and remain readable cold even
-    # without the prompt loaded.
-    lines: list[str] = []
+    # One-line legend at the top so the digest is self-describing for an
+    # LLM reading it cold (without `ast-outline prompt` loaded). The
+    # tokens cover everything that isn't plain English already
+    # (`[tiny]` / `[medium]` / `[large]` / `[broken]` are
+    # self-explanatory and don't need a legend entry).
+    lines: list[str] = [_DIGEST_LEGEND]
     for directory in sorted(grouped.keys(), key=str):
         try:
             rel = str(directory.relative_to(root))
@@ -482,36 +499,93 @@ def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
         lines[-1] += "  # no declarations"
         return lines
 
+    # Visual grouping rule: insert a blank line AFTER a type whose body
+    # rendered at least one member row. Empty types (no body lines)
+    # stack tightly so digest stays compact for declaration-heavy files.
+    # The blank serves as a paragraph break between a "type + its
+    # members" block and whatever comes next, mirroring how prose uses
+    # blank lines to separate paragraphs. The trailing blank after the
+    # last type is removed by `render_digest`'s final `rstrip`.
     for t in types:
-        header = f"    {t.kind} {t.name}"
+        # Use the source-language native keyword when the adapter set
+        # one (e.g. Rust `trait` for KIND_INTERFACE), otherwise fall
+        # back to the canonical kind. This lets digest read truthfully
+        # against the source while the IR keeps a unified kind for
+        # search.
+        keyword = t.native_kind or t.kind
+        header = f"    {keyword} {t.name}"
         if t.bases:
             header += " : " + ", ".join(t.bases)
         header += t.lines_suffix()
         lines.append(header)
         members = _digest_members(t, opts)
         if members:
-            shown = members[: opts.max_members_per_type]
-            tokens = []
-            for m in shown:
-                if m.kind in (KIND_METHOD, KIND_FUNCTION, KIND_CTOR, KIND_DTOR):
-                    tokens.append(f"+{m.name}")
-                else:
-                    tokens.append(f"+{m.name} [{m.kind}]")
+            collapsed = _collapse_overloads(members)
+            shown = collapsed[: opts.max_members_per_type]
+            tokens = [_member_token(m, count) for m, count in shown]
             lines.extend(_wrap_tokens(tokens, width=100, indent="      "))
-            if len(members) > len(shown):
-                lines.append(f"      ... +{len(members) - len(shown)} more")
+            if len(collapsed) > len(shown):
+                lines.append(f"      ... ({len(collapsed) - len(shown)} more)")
+            lines.append("")  # paragraph break — types with bodies own their block
 
     # Module-level functions / fields (common in Python)
     if free_functions:
-        shown = free_functions[: opts.max_members_per_type]
-        tokens = []
-        for f in shown:
-            if f.kind in (KIND_FUNCTION, KIND_METHOD):
-                tokens.append(f"+{f.name}")
-            else:
-                tokens.append(f"+{f.name} [{f.kind}]")
+        collapsed = _collapse_overloads(free_functions)
+        shown = collapsed[: opts.max_members_per_type]
+        tokens = [_member_token(f, count) for f, count in shown]
         lines.extend(_wrap_tokens(tokens, width=100, indent="    "))
     return lines
+
+
+def _collapse_overloads(decls: list[Declaration]) -> list[tuple[Declaration, int]]:
+    """Group consecutive same-name callables under a single representative.
+
+    Returns a list of `(decl, count)` pairs in original order, where
+    `count` is the number of callables sharing the name (1 = no
+    overloads). Non-callables always pass through with `count=1` and
+    are NOT merged even if names happen to repeat — same name across
+    different non-callable kinds (e.g. a property and a field) is rare
+    and would be a meaningful source-level distinction worth preserving.
+
+    The first occurrence "wins" — its source position represents the
+    group, so the digest still points to one concrete declaration the
+    agent can `show`. Order across groups is the order in which the
+    first occurrence appeared.
+    """
+    out: list[tuple[Declaration, int]] = []
+    index_by_name: dict[str, int] = {}
+    for d in decls:
+        if d.kind in CALLABLE_KINDS and d.name in index_by_name:
+            i = index_by_name[d.name]
+            rep, count = out[i]
+            out[i] = (rep, count + 1)
+            continue
+        if d.kind in CALLABLE_KINDS:
+            index_by_name[d.name] = len(out)
+        out.append((d, 1))
+    return out
+
+
+def _member_token(d: Declaration, count: int) -> str:
+    """Render a single digest token for a member or free declaration.
+
+    - Callable kinds get a `()` suffix — universally understood as
+      "this is a function" in programming-doc convention, no legend
+      needed for an LLM reading cold.
+    - When `count > 1` the token carries an `[N overloads]` annotation
+      so the agent knows the name resolves to multiple callables.
+    - Non-callable kinds keep their `[kind]` tag so the type stays
+      inferable without any other signal.
+
+    No leading `+` marker — earlier digest revisions used `+name` as a
+    member tag, but that visually collides with diff syntax and adds no
+    semantic information beyond what `()` / `[kind]` already convey.
+    """
+    if d.kind in CALLABLE_KINDS:
+        if count > 1:
+            return f"{d.name}() [{count} overloads]"
+        return f"{d.name}()"
+    return f"{d.name} [{d.kind}]"
 
 
 def _digest_yaml(decls: list[Declaration], opts: DigestOptions) -> list[str]:
@@ -594,6 +668,7 @@ def _flatten_types(decls: list[Declaration], prefix: str = "") -> list[Declarati
                 attrs=d.attrs,
                 docs=d.docs,
                 visibility=d.visibility,
+                native_kind=d.native_kind,
                 start_line=d.start_line,
                 end_line=d.end_line,
                 start_byte=d.start_byte,
@@ -623,12 +698,24 @@ def _digest_members(type_decl: Declaration, opts: DigestOptions) -> list[Declara
 
 
 def _wrap_tokens(tokens: list[str], width: int, indent: str) -> list[str]:
+    """Wrap a flat list of digest tokens into width-bounded lines.
+
+    Uses `", "` (comma-space) as the inter-token separator — universally
+    understood as a list separator across programming docs, English
+    prose, and CSV. Stronger LLM signal than double-space: BPE
+    tokenisers split commas into discrete tokens, and natural-language
+    training data overwhelmingly uses commas to delimit list items, so
+    attention reliably treats each piece as a separate element.
+
+    Identifier tokens never contain commas (kind tags are single words
+    like `property` / `field`), so the separator is unambiguous.
+    """
     if not tokens:
         return []
     out: list[str] = []
     cur = indent
     for tok in tokens:
-        piece = ("  " if cur != indent else "") + tok
+        piece = (", " if cur != indent else "") + tok
         if len(cur) + len(piece) > width and cur != indent:
             out.append(cur)
             cur = indent + tok

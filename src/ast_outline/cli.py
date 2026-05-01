@@ -499,10 +499,15 @@ USAGE
 
 WHAT IT DOES
     Walks directory, lists every source file as:
-      <file>  (N lines)
+      # legend: name()=callable, name [kind]=non-callable, ...
+      <file>  (N lines, ~tokens)
         <kind> <Name>[ : <bases>]  L<start>-<end>
-          +method1  +method2  +property [prop]  ...
-    One-page architecture view of a whole module in a single call.
+          method1(), method2(), property [property], ...
+    Output starts with a one-line legend so it is parseable cold.
+    Callable names carry `()`; properties / fields / events show
+    `[kind]`. Same-name overloads collapse to `name() [N overloads]`.
+    Members are joined by `, `. Types with bodies get a trailing
+    blank line; empty types stack tight.
 
 FLAGS
     --include-private   Include private members (Python: `_`-prefixed)

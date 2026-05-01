@@ -305,16 +305,30 @@ ast-outline digest src/
 Пример вывода:
 
 ```
+# legend: name()=callable, name [kind]=non-callable, [N overloads]=N callables share name, L<a>-<b>=line range, : Base, …=inheritance
 src/services/
   __init__.py [tiny] (8 lines, ~74 tokens, 1 fields)
   user_service.py [medium] (140 lines, ~1,200 tokens, 1 types, 5 methods)
     class UserService : IUserService  L8-138
-      +get  +search  +create  +delete  +update
+      get(), search(), create(), delete(), update()
+
   auth_service.py [medium] (95 lines, ~840 tokens, 1 types, 4 methods)
     class AuthService  L10-95
-      +login  +logout  +refresh  +verify_token
+      login(), logout(), refresh(), verify_token()
+
   legacy_repo.py [large] [broken] (5234 lines, ~52,000 tokens, ...)
 ```
+
+Первая строка — самообъясняющая легенда, чтобы LLM мог прочитать
+вывод cold, без подгруженного `ast-outline prompt`. Токены следуют
+универсальной конвенции программистской документации: `name()` —
+callable, `name [kind]` — property/field/event и т.п.,
+`[N overloads]` — когда несколько callable делят одно имя. Члены
+разделены `, `; типы с телом получают завершающую пустую строку
+как «paragraph break», пустые типы стекаются плотно — digest
+остаётся компактным. Source-language ключевые слова (Rust `trait`,
+Scala `object`, Kotlin `data class`) сохраняются в шапке типа
+вместо канонического kind.
 
 К каждому файлу прилагается описательная size-метка: `[tiny]` (до ~500
 токенов), `[medium]` (500–5000), `[large]` (5000+). Дополнительная метка

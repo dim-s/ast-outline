@@ -629,6 +629,7 @@ def _trait_to_decl(node: Node, src: bytes) -> Optional[Declaration]:
 
     return Declaration(
         kind=KIND_INTERFACE,
+        native_kind="trait",
         name=name,
         signature=sig,
         bases=bases,

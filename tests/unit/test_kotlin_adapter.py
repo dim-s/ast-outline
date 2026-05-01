@@ -672,4 +672,6 @@ def test_digest_includes_kotlin_types(kotlin_dir):
     text = render_digest(results, DigestOptions(), root=kotlin_dir)
     assert "UserService" in text
     assert "Point" in text
-    assert "record" in text  # data class → record kind in digest
+    # Digest carries the source-true keyword `data class` (Kotlin maps
+    # to KIND_RECORD canonically but renders the native keyword).
+    assert "data class" in text

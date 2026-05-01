@@ -191,7 +191,8 @@ def test_digest_directory(csharp_dir, capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "HeroController" in out
-    assert "+TakeDamage" in out
+    # Callables render with `()` suffix and no `+` prefix.
+    assert "TakeDamage()" in out
 
 
 def test_digest_missing_path_returns_zero_with_note(tmp_path, capsys):
@@ -207,7 +208,7 @@ def test_digest_include_private(csharp_dir, capsys):
     rc = main(["digest", str(csharp_dir), "--include-private"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "+Die" in out
+    assert "Die()" in out
 
 
 # --- implements ----------------------------------------------------------
