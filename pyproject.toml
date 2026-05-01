@@ -1,6 +1,6 @@
 [project]
 name = "ast-outline"
-version = "0.4.1"
+version = "0.4.2"
 description = "AST-based structural outline for source files (C#, Python, TypeScript/JavaScript, Java, Kotlin, Scala, Go, Rust, Markdown, YAML) — tree-sitter-powered, LLM-agent-first. Complement to ast-grep: ast-grep searches, ast-outline overviews."
 readme = "README.md"
 requires-python = ">=3.10"

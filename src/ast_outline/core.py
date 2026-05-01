@@ -567,12 +567,31 @@ def _method_markers(
     paren = sig.find("(")
     if paren > 0:
         tokens = sig[:paren].split()
-        # Drop the last token — it's the method name. The rest are
-        # modifiers and (for C#/Java) the return type, which we
-        # filter against the whitelist anyway.
-        for tok in tokens[:-1]:
-            if tok in _METHOD_MARKERS and tok not in markers:
-                markers.append(tok)
+        # Find where the method name lives in the token sequence.
+        # Direct match first; on miss (e.g. C# `Foo<T>` token vs name
+        # `Foo`) fall back to the last token. This matters for JS-
+        # shaped signatures like `export const add = (a, b) => …`
+        # where the last token before `(` is `=`, not the name —
+        # using `decl.name` as the anchor stops modifier scanning at
+        # `add` and avoids leaking markers from past the name.
+        try:
+            name_idx = tokens.index(decl.name)
+        except ValueError:
+            name_idx = max(0, len(tokens) - 1)
+        # `const` is meaningful only when applied to a function
+        # definition (Rust `const fn ...`). In JS/TS the same word
+        # introduces a const-bound variable (`const x = …`), which
+        # in the arrow-function case otherwise looks like a callable
+        # signature. Require the `fn` keyword to disambiguate.
+        has_fn_keyword = "fn" in tokens
+        for tok in tokens[:name_idx]:
+            if tok not in _METHOD_MARKERS:
+                continue
+            if tok == "const" and not has_fn_keyword:
+                continue
+            if tok in markers:
+                continue
+            markers.append(tok)
     for a in decl.attrs:
         m = _decorator_marker_attr(a)
         if m and m not in markers:

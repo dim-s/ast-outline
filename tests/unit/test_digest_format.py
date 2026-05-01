@@ -736,6 +736,64 @@ def test_scala_override_method_marker(scala_dir):
     assert "override compare()" in out
 
 
+# --- JavaScript coverage ------------------------------------------------
+
+
+def test_javascript_class_and_methods_render(fixtures_dir):
+    """Plain JavaScript files (`.js`) are parsed by the TS adapter
+    using the TypeScript grammar (TS is a superset of JS). Class
+    declarations and methods surface in digest the same way as in
+    `.ts`, with no JS-specific noise."""
+    r = TypeScriptAdapter().parse(
+        fixtures_dir / "typescript" / "plain_module.js"
+    )
+    out = render_digest([r], DigestOptions())
+    assert "class Counter" in out
+    assert "constructor()" in out
+    assert "increment()" in out
+    assert "reset()" in out
+
+
+def test_javascript_function_declaration_renders(fixtures_dir):
+    """JS `export function greet(name)` — function declaration
+    surfaces as a free callable."""
+    r = TypeScriptAdapter().parse(
+        fixtures_dir / "typescript" / "plain_module.js"
+    )
+    out = render_digest([r], DigestOptions())
+    assert "greet()" in out
+
+
+def test_javascript_const_arrow_does_not_emit_const_marker(fixtures_dir):
+    """JS `export const add = (a, b) => a + b` — `const` here is a
+    variable-binding keyword, NOT a Rust-style `const fn` callable
+    modifier. It must NOT surface as a method marker; that would
+    misrepresent JS semantics ("the binding is const" vs "the
+    function is compile-time evaluable")."""
+    r = TypeScriptAdapter().parse(
+        fixtures_dir / "typescript" / "plain_module.js"
+    )
+    out = render_digest([r], DigestOptions())
+    # The arrow assignment should render as a plain callable (no
+    # `const` marker leaked from the variable declaration).
+    assert "add()" in out
+    assert "const add" not in out
+
+
+def test_rust_const_fn_marker_still_works(tmp_path):
+    """Regression guard against the JS `const` fix: Rust's genuine
+    `const fn` (compile-time evaluable callable) must keep its
+    marker. The disambiguator is the presence of the `fn` keyword
+    in the signature."""
+    src = tmp_path / "rust_const.rs"
+    src.write_text(
+        "pub const fn add(a: i32, b: i32) -> i32 { a + b }\n"
+    )
+    r = RustAdapter().parse(src)
+    out = render_digest([r], DigestOptions())
+    assert "const add()" in out
+
+
 # --- Native-kind coverage continued -------------------------------------
 
 
