@@ -6,21 +6,16 @@
 # This installs:
 #   1. `uv` (if missing) - the Python package manager we use.
 #   2. `ast-outline` globally as a uv-managed tool.
-#      A backward-compat `code-outline` CLI alias is also installed for
-#      users coming from the pre-0.3.0 name.
 #
 # Uninstall later with:  uv tool uninstall ast-outline
 
 $ErrorActionPreference = 'Stop'
 
-# Accept both new and legacy env-var names so migration is seamless.
 $RepoUrl =
-    if ($env:AST_OUTLINE_REPO)  { $env:AST_OUTLINE_REPO }
-    elseif ($env:CODE_OUTLINE_REPO) { $env:CODE_OUTLINE_REPO }
+    if ($env:AST_OUTLINE_REPO) { $env:AST_OUTLINE_REPO }
     else { 'https://github.com/dim-s/ast-outline.git' }
 $Ref =
-    if ($env:AST_OUTLINE_REF)  { $env:AST_OUTLINE_REF }
-    elseif ($env:CODE_OUTLINE_REF) { $env:CODE_OUTLINE_REF }
+    if ($env:AST_OUTLINE_REF) { $env:AST_OUTLINE_REF }
     else { 'main' }
 
 function Say($msg) { Write-Host "==> $msg" -ForegroundColor Green }
@@ -62,7 +57,6 @@ if (Get-Command ast-outline -ErrorAction SilentlyContinue) {
     ast-outline --help | Select-Object -First 6
     Write-Host ""
     Say "try:  ast-outline help"
-    Say "(legacy ``code-outline`` command is also installed as an alias)"
 } else {
     Warn "ast-outline is installed but not yet on PATH."
     Warn "add this to your PowerShell profile:"

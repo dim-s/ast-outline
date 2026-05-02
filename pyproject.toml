@@ -1,6 +1,6 @@
 [project]
 name = "ast-outline"
-version = "0.4.3"
+version = "0.5.0"
 description = "AST-based structural outline for source files (C#, Python, TypeScript/JavaScript, Java, Kotlin, Scala, Go, Rust, Markdown, YAML) — tree-sitter-powered, LLM-agent-first. Complement to ast-grep: ast-grep searches, ast-outline overviews."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -68,12 +68,7 @@ Issues = "https://github.com/dim-s/ast-outline/issues"
 Repository = "https://github.com/dim-s/ast-outline"
 
 [project.scripts]
-# Primary binary. Pre-1.0 rebrand from `code-outline` → `ast-outline` joins
-# the `ast-*` family convention popularised by ast-grep.
 ast-outline = "ast_outline.cli:main"
-# Backward-compat alias kept through 0.4.x; removed in 1.0 alongside a
-# final deprecation release of the old PyPI package.
-code-outline = "ast_outline.cli:main"
 
 [build-system]
 requires = ["hatchling"]

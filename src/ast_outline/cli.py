@@ -1,4 +1,4 @@
-"""CLI entry point for ast-outline (legacy name: code-outline).
+"""CLI entry point for ast-outline.
 
 Error-handling philosophy
 -------------------------

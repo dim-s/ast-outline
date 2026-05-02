@@ -2,11 +2,12 @@
 
 **English** · [Русский](./README.ru.md) · [简体中文](./README.zh-CN.md)
 
-> **Renamed from `code-outline` in v0.3.0** to join the `ast-*` family convention popularised by [ast-grep](https://github.com/ast-grep/ast-grep). The legacy `code-outline` CLI command still works as a backward-compat alias through 0.4.x.
-
 > Fast, AST-based **structural outline** for source files — classes, methods,
 > signatures with line numbers, but **no method bodies**. Built for LLM coding
 > agents that should read the *shape* of a file before reading the whole thing.
+>
+> Sibling to [ast-grep](https://github.com/ast-grep/ast-grep) in the `ast-*`
+> family: **`ast-grep` searches** code structurally, **`ast-outline` overviews** it.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 ![Python: 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)

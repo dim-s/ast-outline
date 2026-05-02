@@ -2,11 +2,12 @@
 
 [English](./README.md) · [Русский](./README.ru.md) · **简体中文**
 
-> **v0.3.0 已由 `code-outline` 重命名** 为 `ast-outline`，以加入 [ast-grep](https://github.com/ast-grep/ast-grep) 推广的 `ast-*` 家族命名约定。旧 CLI 命令 `code-outline` 在 0.4.x 期间继续作为向后兼容别名保留。
-
 > 基于 AST 的快速源码**结构化大纲**工具 —— 输出类、方法和签名及其行号范围，
 > **不包含方法体**。专为大模型编码代理（LLM coding agents）设计：先看清文件
 > 的"骨架"，再决定要不要读完整内容。
+>
+> 与 [ast-grep](https://github.com/ast-grep/ast-grep) 同属 `ast-*` 家族：
+> **`ast-grep` 用于结构化*搜索*** 代码，**`ast-outline` 用于结构化*概览*** 代码。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 ![Python: 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)

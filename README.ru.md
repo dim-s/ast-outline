@@ -2,11 +2,12 @@
 
 [English](./README.md) · **Русский** · [简体中文](./README.zh-CN.md)
 
-> **Переименован из `code-outline` в v0.3.0** — встраиваемся в семейство `ast-*` по соглашению [ast-grep](https://github.com/ast-grep/ast-grep). Старая CLI-команда `code-outline` продолжает работать как backward-compat alias через 0.4.x.
-
 > Быстрый **структурный outline** исходников на основе AST — классы, методы,
 > сигнатуры с номерами строк, но **без тел методов**. Сделан для LLM-агентов,
 > которым нужно понять *форму* файла раньше, чем читать его целиком.
+>
+> Сосед [ast-grep](https://github.com/ast-grep/ast-grep) в семействе `ast-*`:
+> **`ast-grep` ищет** по структуре кода, **`ast-outline` показывает обзор**.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 ![Python: 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)

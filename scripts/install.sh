@@ -7,17 +7,13 @@
 # This installs:
 #   1. `uv` (if missing) — the Python package manager we use.
 #   2. `ast-outline` globally as a uv-managed tool.
-#      A backward-compat `code-outline` CLI alias is also installed for
-#      users coming from the pre-0.3.0 name.
 #
 # Uninstall later with: uv tool uninstall ast-outline
 
 set -euo pipefail
 
-# Accept both new and legacy env-var names so migration is seamless for
-# anyone who scripted the old installer.
-REPO_URL="${AST_OUTLINE_REPO:-${CODE_OUTLINE_REPO:-https://github.com/dim-s/ast-outline.git}}"
-REF="${AST_OUTLINE_REF:-${CODE_OUTLINE_REF:-main}}"
+REPO_URL="${AST_OUTLINE_REPO:-https://github.com/dim-s/ast-outline.git}"
+REF="${AST_OUTLINE_REF:-main}"
 
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m==>\033[0m %s\n' "$*" >&2; }
@@ -56,7 +52,6 @@ if command -v ast-outline >/dev/null 2>&1; then
     ast-outline --help | head -6 || true
     echo
     say "try:  ast-outline help"
-    say "(legacy \`code-outline\` command is also installed as an alias)"
 else
     warn "ast-outline is installed but not yet on PATH."
     warn "add this to your shell profile:"
