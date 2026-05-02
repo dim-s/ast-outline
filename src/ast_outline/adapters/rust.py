@@ -151,6 +151,8 @@ class RustAdapter:
         tree = _PARSER.parse(src)
         declarations: list[Declaration] = []
         _walk_items(tree.root_node, src, declarations)
+        imports: list[str] = []
+        _collect_imports(tree.root_node, src, imports)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -158,7 +160,28 @@ class RustAdapter:
             line_count=src.count(b"\n") + 1,
             declarations=declarations,
             error_count=count_parse_errors(tree.root_node),
+            imports=imports,
         )
+
+
+# --- Imports --------------------------------------------------------------
+
+
+def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+    """Rust `use` declarations + legacy `extern crate`. Source-true text
+    preserves visibility (`pub use ...` for re-exports), nested groups
+    (`use foo::{Bar, Baz}`), aliasing (`as Qux`), and wildcards (`*`).
+
+    `mod foo;` (submodule declaration without a body) is NOT included
+    — it is a structural file-tree marker, not an import in the
+    "where does this code pull from" sense. Keeping `--imports`
+    semantically clean (only consumption-direction statements) avoids
+    confusing the agent with mixed concepts."""
+    for child in root.named_children:
+        if child.type in ("use_declaration", "extern_crate_declaration"):
+            text = _collapse_ws(_text(child, src)).rstrip(";").strip()
+            if text:
+                out.append(text)
 
 
 # --- Item walk -----------------------------------------------------------

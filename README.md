@@ -241,6 +241,15 @@ directories, mixed languages OK) — batch instead of looping. Type
 headers in both renderers carry inheritance as `: Base, Trait`, so the
 shape of class hierarchies is visible without a separate query.
 
+When you need to know **what a file pulls in** or **where a referenced
+type / function comes from**, add `--imports` to `outline` or `digest`.
+The file header gets an `imports:` line listing every
+`import` / `use` / `using` statement verbatim in the language's native
+syntax — `from .core import X`, `use foo::Bar`,
+`import { X } from './foo'`. Read the imports, then call `outline` /
+`show` on the source file instead of grepping for the definition. Skip
+the flag for routine structure reads — it adds one line per file.
+
 Fall back to a full read only when you need context beyond the body
 `show` returned. `ast-outline help` for flags.
 ```
@@ -298,7 +307,32 @@ Flags:
 - `--no-docs` — hide `///` XML-doc / docstrings
 - `--no-attrs` — hide `[Attributes]` / `@decorators`
 - `--no-lines` — hide line-number suffixes
+- `--imports` — show file's imports (see below)
 - `--glob PATTERN` — restrict directory mode to a pattern
+
+#### `--imports` — see what each file depends on
+
+`outline` and `digest` both accept `--imports`. When set, each file's
+header is followed by an `imports:` line listing its
+`import` / `use` / `using` statements verbatim, in the language's own
+syntax — no synthetic format for the agent to learn:
+
+```
+$ ast-outline service.py --imports
+# src/services/user_service.py (140 lines, ~1,200 tokens, 1 types, 5 methods)
+# imports: from .core import UserBase; from .utils import parse_id; from typing import Optional
+class UserService(UserBase):  L8-138
+    ...
+```
+
+Multi-line and grouped forms are flattened: Go's `import (...)` block
+becomes individual `import "fmt"` lines; multi-line TypeScript
+`import { X, Y } from './long'` collapses to one line. Imports inside
+function or class bodies are omitted — only file-level dependencies
+are shown.
+
+Useful when the agent needs to know where a referenced type lives, or
+what a file pulls in, before deciding which file to read next.
 
 ### `show` — extract source of a symbol
 

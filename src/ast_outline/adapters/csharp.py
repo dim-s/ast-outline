@@ -68,6 +68,8 @@ class CSharpAdapter:
         tree = _PARSER.parse(src)
         declarations: list[Declaration] = []
         _walk_top(tree.root_node, src, declarations)
+        imports: list[str] = []
+        _collect_imports(tree.root_node, src, imports)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -75,7 +77,26 @@ class CSharpAdapter:
             line_count=src.count(b"\n") + 1,
             declarations=declarations,
             error_count=count_parse_errors(tree.root_node),
+            imports=imports,
         )
+
+
+# --- Imports --------------------------------------------------------------
+
+
+def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+    """C# `using` directives at file scope. Source-true preserves
+    every shape: plain (`using System`), static (`using static
+    System.Math`), alias (`using Foo = System.Bar`), and global
+    (`global using System`). Block-scoped `using` inside a `namespace
+    Foo { ... }` is intentionally not collected — those are scoped to
+    the namespace, not file-level dependencies, and adding them would
+    blur the meaning of the imports list."""
+    for child in root.named_children:
+        if child.type == "using_directive":
+            text = _collapse_ws(_text(child, src)).rstrip(";").strip()
+            if text:
+                out.append(text)
 
 
 # --- Walk -----------------------------------------------------------------

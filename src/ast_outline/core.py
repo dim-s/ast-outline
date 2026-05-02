@@ -93,6 +93,21 @@ class ParseResult:
     # renderers surface this as a warning line so the consuming agent
     # knows the outline isn't authoritative for that file.
     error_count: int = 0
+    # Import / use / using statements as **source-true language-native
+    # text**, one statement per entry. The adapter is responsible for
+    # un-grouping multi-line imports (Go `import (\n "a"\n "b"\n)` →
+    # ["import \"a\"", "import \"b\""]), expanding nested forms (Rust
+    # `use a::{b, c}` → ["use a::b", "use a::c"]), and collapsing line
+    # continuations into single statements. The strings read like the
+    # language they came from — Python `from .core import X`,
+    # TypeScript `import { X } from './core'`, Rust `use crate::utils::X`,
+    # Go `import "fmt"`. Any LLM that knows the source language reads
+    # the imports list without learning a synthetic format.
+    #
+    # Empty list when the language has no imports (markdown, yaml) or
+    # the file has none. Renderers ignore this unless the caller opts in
+    # via `OutlineOptions.show_imports` / `DigestOptions.show_imports`.
+    imports: list[str] = field(default_factory=list)
 
 
 # --- Options --------------------------------------------------------------
@@ -106,6 +121,12 @@ class OutlineOptions:
     include_attributes: bool = True
     include_line_numbers: bool = True
     max_doc_lines: int = 6
+    # When True, the renderer prints an `# imports: ...` annotation line
+    # under the file header, listing every import normalized by the
+    # adapter. Off by default — most outline calls don't need
+    # dependency direction, and adding the line unconditionally would
+    # bloat output for a signal that only some agent tasks consume.
+    show_imports: bool = False
 
 
 @dataclass
@@ -116,6 +137,10 @@ class DigestOptions:
     # Markdown-only: cap heading depth in TOC digest (1=H1 only, 3=H1..H3, …).
     # Code blocks are shown only when include_fields is True.
     max_heading_depth: int = 3
+    # See `OutlineOptions.show_imports`. When True, each file block in
+    # the digest gets an `imports: ...` line indented under the file
+    # header.
+    show_imports: bool = False
 
 
 # --- Match types ----------------------------------------------------------
@@ -145,9 +170,35 @@ def render_outline(result: ParseResult, opts: OutlineOptions) -> str:
     warn = _format_error_warning(result)
     if warn:
         lines.append(warn)
+    if opts.show_imports and result.imports:
+        lines.append("# " + _format_imports_line(result.imports))
     for decl in result.declarations:
         _render_decl(decl, opts, indent=0, out=lines)
     return "\n".join(lines)
+
+
+def _format_imports_line(imports: list[str]) -> str:
+    """Render the imports annotation as `imports: <stmt>; <stmt>; ...`.
+
+    Each entry is already a complete, source-true import statement in
+    the file's native language (`from .core import X`,
+    `use foo::Bar as Q`, `import { Foo } from './core'`,
+    `import "fmt"`). We join with `; ` — semicolon is a statement
+    separator in nearly every supported language, so the joined line
+    reads like a sequence of sibling import statements that just
+    happen to be on one line. No synthetic format for the LLM to
+    learn; any agent that recognises the source language recognises
+    the output.
+
+    Caveat: a TypeScript / JS module specifier could theoretically
+    contain a literal `; ` inside a string (`import x from "./a;b"`).
+    That would make the joined line ambiguous to a strict
+    string-splitter. Real-world impact: zero — module paths almost
+    never carry a semicolon, and this output is consumed by LLMs that
+    parse statements semantically, not by `split("; ")`. We accept the
+    edge case rather than escape or switch separators.
+    """
+    return "imports: " + "; ".join(imports)
 
 
 # --- Header helpers (shared between outline + digest) --------------------
@@ -676,6 +727,10 @@ def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
     if warn:
         # Indent under the file line so the warning lives with its file.
         lines.append("  " + warn)
+    if opts.show_imports and result.imports:
+        # 4-space indent matches type-header indent so the imports line
+        # sits visually inside the file's block.
+        lines.append("    " + _format_imports_line(result.imports))
 
     # Markdown files digest as a hierarchical TOC, not a type/member list.
     if result.language == "markdown":

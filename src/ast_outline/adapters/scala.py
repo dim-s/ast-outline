@@ -106,6 +106,8 @@ class ScalaAdapter:
         tree = _PARSER.parse(src)
         declarations: list[Declaration] = []
         _walk_top(tree.root_node, src, declarations)
+        imports: list[str] = []
+        _collect_imports(tree.root_node, src, imports)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -113,7 +115,30 @@ class ScalaAdapter:
             line_count=src.count(b"\n") + 1,
             declarations=declarations,
             error_count=count_parse_errors(tree.root_node),
+            imports=imports,
         )
+
+
+# --- Imports --------------------------------------------------------------
+
+
+def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+    """Scala imports — `import foo.bar.Baz`, `import foo.{A, B}`,
+    `import foo.{A => Renamed}`, `import foo.*` (Scala 3) or
+    `import foo._` (Scala 2). Source-true text reads as either dialect.
+
+    Limitation: imports inside a **braced** `package foo { ... }` body
+    are not collected. That form is rare in modern Scala (braceless
+    `package foo` followed by file-level declarations is the idiom),
+    and the file-level imports are what an agent typically needs for a
+    "where does this file pull from" view. If a real-world need
+    surfaces, descend into `package_object` and braced `package_clause`
+    bodies."""
+    for child in root.named_children:
+        if child.type == "import_declaration":
+            text = _collapse_ws(_text(child, src)).strip()
+            if text:
+                out.append(text)
 
 
 # --- Top-level walk -------------------------------------------------------

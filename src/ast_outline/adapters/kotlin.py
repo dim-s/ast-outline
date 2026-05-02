@@ -91,6 +91,8 @@ class KotlinAdapter:
         tree = _PARSER.parse(src)
         declarations: list[Declaration] = []
         _walk_top(tree.root_node, src, declarations)
+        imports: list[str] = []
+        _collect_imports(tree.root_node, src, imports)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -98,7 +100,21 @@ class KotlinAdapter:
             line_count=src.count(b"\n") + 1,
             declarations=declarations,
             error_count=count_parse_errors(tree.root_node),
+            imports=imports,
         )
+
+
+# --- Imports --------------------------------------------------------------
+
+
+def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+    """Kotlin imports are top-level only. Source-true text — `import foo.Bar`,
+    `import foo.*`, `import foo.Bar as Baz` — reads as the language."""
+    for child in root.named_children:
+        if child.type == "import":
+            text = _collapse_ws(_text(child, src)).strip()
+            if text:
+                out.append(text)
 
 
 # --- Walk -----------------------------------------------------------------

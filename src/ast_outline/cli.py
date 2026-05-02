@@ -87,6 +87,11 @@ def main(argv: list[str] | None = None) -> int:
     p_digest.add_argument("--include-private", action="store_true")
     p_digest.add_argument("--include-fields", action="store_true")
     p_digest.add_argument("--max-members", type=int, default=50)
+    p_digest.add_argument(
+        "--imports",
+        action="store_true",
+        help="Show each file's import / use / using statements as a header line",
+    )
 
     p_help = sub.add_parser("help", help="Show usage guide with examples")
     p_help.add_argument(
@@ -122,13 +127,13 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _cmd_prompt(_args) -> int:
-    """Print the canonical copy-paste LLM-agent prompt snippet verbatim.
-
-    No trailing newline muting — `print` adds one, matching the shape
-    expected by shell pipelines like `ast-outline prompt >> AGENTS.md`.
-    """
-    # AGENT_PROMPT ends with `\n` already; `print` adds another → a
-    # single blank separator line, which is what agent-config files want.
+    """Print the canonical copy-paste LLM-agent prompt snippet verbatim."""
+    # AGENT_PROMPT already terminates with `\n`. `end=""` suppresses
+    # `print`'s extra newline, so stdout receives exactly the snippet
+    # text + a single trailing `\n`. Matches the shape expected by
+    # shell pipelines (`ast-outline prompt >> AGENTS.md` appends one
+    # newline; the user inserts a blank separator line by hand if they
+    # want one between existing content and the snippet).
     print(AGENT_PROMPT, end="")
     return 0
 
@@ -140,6 +145,11 @@ def _add_outline_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--no-docs", action="store_true")
     p.add_argument("--no-attrs", action="store_true")
     p.add_argument("--no-lines", action="store_true")
+    p.add_argument(
+        "--imports",
+        action="store_true",
+        help="Show each file's import / use / using statements as a header line",
+    )
     p.add_argument("--glob", default=None, help="Custom glob for directory mode (default: all supported extensions)")
 
 
@@ -180,6 +190,7 @@ def _cmd_outline(args) -> int:
         include_xml_doc=not args.no_docs,
         include_attributes=not args.no_attrs,
         include_line_numbers=not args.no_lines,
+        show_imports=args.imports,
     )
 
     results, errors = _parse_paths(paths, glob=args.glob)
@@ -262,6 +273,7 @@ def _cmd_digest(args) -> int:
         include_private=args.include_private,
         include_fields=args.include_fields,
         max_members_per_type=args.max_members,
+        show_imports=args.imports,
     )
     results, errors = _parse_paths(paths)
     if not results and not errors:
@@ -398,12 +410,14 @@ FLAGS
     --no-docs       Hide doc comments (/// XML-doc or docstrings)
     --no-attrs      Hide [Attributes] / @decorators
     --no-lines      Hide line number suffixes
+    --imports       Show file's imports (source-true, language-native)
     --glob PATTERN  Custom glob for directory mode (default: all supported)
 
 EXAMPLES
     ast-outline Foo.cs
     ast-outline service.py
     ast-outline src/ --no-private --no-fields --no-attrs
+    ast-outline service.py --imports     # add `# imports: ...` header
     ast-outline Foo.cs Bar.py   # mixed languages at once
 """
 
@@ -475,11 +489,13 @@ FLAGS
     --include-private   Include private members (Python: `_`-prefixed)
     --include-fields    Include fields / module-level assignments
     --max-members N     Truncate long member lists (default: 50)
+    --imports           Show each file's imports (source-true, language-native)
 
 EXAMPLES
     ast-outline digest Assets/Scripts
     ast-outline digest scripts/
     ast-outline digest src/Services src/Domain
+    ast-outline digest src/ --imports        # see what each file depends on
 """
 
 GUIDE_PROMPT = """\

@@ -217,6 +217,14 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
 —— 一次性批量调用,不要循环。两个渲染器的类型头都会带上 `: Base, Trait`
 形式的继承关系,所以无需单独查询就能看到类层次结构的形态。
 
+当你需要知道**某个文件拉了什么进来**,或**被引用的类型 / 函数住在哪里**
+时,给 `outline` 或 `digest` 加上 `--imports`。文件头会多出一行
+`imports:`,按文件本身的语言语法逐条列出 `import` / `use` / `using`
+语句 —— `from .core import X`、`use foo::Bar`、
+`import { X } from './foo'`。读完这一行直接对源文件调用
+`outline` / `show`,不用再 `grep` 找定义。常规读结构时不要带这个
+flag —— 它每个文件多出一行。
+
 只有当 `show` 给出的方法体不足以提供所需上下文时,才回退到完整读取。
 `ast-outline help` 查看完整标志。
 ```
@@ -272,7 +280,29 @@ ast-outline path/to/module.py --no-private --no-fields
 - `--no-docs` —— 隐藏 `///` XML 文档注释和 docstring
 - `--no-attrs` —— 隐藏 `[Attributes]` 和 `@decorator`
 - `--no-lines` —— 隐藏行号后缀
+- `--imports` —— 显示文件的 imports（详见下文）
 - `--glob PATTERN` —— 自定义目录模式下的匹配规则
+
+#### `--imports` —— 查看每个文件依赖什么
+
+`outline` 与 `digest` 都接受 `--imports`。开启后，文件头之后会多出一行
+`imports:`，按文件原本的语言语法逐条列出 `import` / `use` / `using`
+语句 —— 没有需要 agent 单独学习的合成格式：
+
+```
+$ ast-outline service.py --imports
+# src/services/user_service.py (140 行, ~1,200 tokens, 1 types, 5 methods)
+# imports: from .core import UserBase; from .utils import parse_id; from typing import Optional
+class UserService(UserBase):  L8-138
+    ...
+```
+
+多行与分组形式会被展平：Go 的 `import (...)` 块拆成独立的
+`import "fmt"` 行；多行 TS 的 `import { X, Y } from './long'`
+合并到同一行。函数体或类体内部的 import 不会出现在列表里 —— 只展示
+文件级依赖。
+
+当 agent 想确认某个被引用的类型在哪里、或某个文件到底拉了什么进来再决定下一步读哪个文件时很有用。
 
 ### `show` —— 按符号名取出源码
 

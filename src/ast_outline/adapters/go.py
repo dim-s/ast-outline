@@ -92,6 +92,8 @@ class GoAdapter:
         tree = _PARSER.parse(src)
         declarations: list[Declaration] = []
         _walk_top(tree.root_node, src, declarations)
+        imports: list[str] = []
+        _collect_imports(tree.root_node, src, imports)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -99,7 +101,30 @@ class GoAdapter:
             line_count=src.count(b"\n") + 1,
             declarations=declarations,
             error_count=count_parse_errors(tree.root_node),
+            imports=imports,
         )
+
+
+# --- Imports --------------------------------------------------------------
+
+
+def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+    """Go imports come in two shapes: single-line `import "fmt"` and
+    grouped `import ( "a"; "b" )`. We flatten both into a flat list of
+    `import <spec>` lines, each carrying one spec — agents see the same
+    syntactic form regardless of whether the source used grouping. The
+    spec text preserves package alias (`f "fmt"`) and blank-import
+    sentinel (`_ "side/effect"`) verbatim."""
+    for child in root.named_children:
+        if child.type != "import_declaration":
+            continue
+        for sub in child.named_children:
+            if sub.type == "import_spec":
+                out.append(f"import {_collapse_ws(_text(sub, src)).strip()}")
+            elif sub.type == "import_spec_list":
+                for spec in sub.named_children:
+                    if spec.type == "import_spec":
+                        out.append(f"import {_collapse_ws(_text(spec, src)).strip()}")
 
 
 # --- Top-level walk -------------------------------------------------------

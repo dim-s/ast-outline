@@ -47,6 +47,8 @@ class PythonAdapter:
         tree = _PARSER.parse(src)
         decls: list[Declaration] = []
         _walk_module(tree.root_node, src, decls)
+        imports: list[str] = []
+        _collect_imports(tree.root_node, src, imports)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -54,7 +56,117 @@ class PythonAdapter:
             line_count=src.count(b"\n") + 1,
             declarations=decls,
             error_count=count_parse_errors(tree.root_node),
+            imports=imports,
         )
+
+
+# --- Imports --------------------------------------------------------------
+#
+# We collect imports from top-level statements PLUS the bodies of
+# top-level `if` / `try` blocks. The `if TYPE_CHECKING:` pattern is the
+# 99% case for non-top-level imports and keeping it visible in the
+# overview matches what an agent expects ("this file imports X for
+# typing only"). We deliberately do NOT descend into function or class
+# bodies — local imports there are usually circular-dep workarounds, low
+# signal for an architectural read.
+
+
+# Block types we descend into, looking for additional imports. `block`
+# itself is the suite-of-statements that follows a colon-introducer in
+# Python (`if cond:` body, `try:` body, `else:` body, etc.) — descending
+# here covers `if TYPE_CHECKING:`, `try: import foo / except ImportError: import bar`,
+# and any conditionally-guarded imports without us hand-listing every
+# clause type.
+_PY_IMPORT_DESCEND = {
+    "if_statement", "elif_clause", "else_clause",
+    "try_statement", "except_clause", "finally_clause",
+    "block",
+}
+
+
+def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+    for child in root.named_children:
+        kind = child.type
+        if kind == "import_statement":
+            _emit_import_statement(child, src, out)
+        elif kind == "import_from_statement":
+            _emit_import_from(child, src, out)
+        elif kind in _PY_IMPORT_DESCEND:
+            _collect_imports(child, src, out)
+        # function_definition / class_definition / decorated_definition →
+        # not descended; their imports are local-scope and intentionally
+        # excluded from the file-level overview.
+
+
+def _emit_import_statement(node: Node, src: bytes, out: list[str]) -> None:
+    """`import a`, `import a as b`, `import a, b, c as d`.
+
+    Each comma-separated entry becomes its own `import ...` line in the
+    output. Splitting comma-joined imports keeps every line one
+    statement, which makes counting and reading straightforward — the
+    agent doesn't need to parse a comma-list within a single import to
+    see what's pulled.
+    """
+    for c in node.named_children:
+        if c.type == "dotted_name":
+            out.append(f"import {_text(c, src)}")
+        elif c.type == "aliased_import":
+            name = c.child_by_field_name("name")
+            alias = c.child_by_field_name("alias")
+            if name is not None and alias is not None:
+                out.append(f"import {_text(name, src)} as {_text(alias, src)}")
+
+
+def _emit_import_from(node: Node, src: bytes, out: list[str]) -> None:
+    """`from M import X, Y, Z`, including relative `from .M import X`,
+    wildcard `from M import *`, and multi-line parenthesized lists.
+
+    Names are joined with `, ` on a single line — that's how Python
+    naturally writes a `from` import, and stays compact when the list
+    is short. Long lists wrap in the source via parens; we collapse
+    them to one comma-list, since the renderer joins all entries with
+    `; ` anyway and an agent sees one long line either way.
+
+    On any unexpected AST shape we fall back to the raw source text of
+    the whole `import_from_statement` (with whitespace collapsed and
+    trailing punctuation trimmed). Falling back to source text is
+    safer than emitting a synthesised string built from partial fields,
+    which could lose meaning silently if a future grammar revision
+    moves things around.
+    """
+    module_node = node.child_by_field_name("module_name")
+    module = _text(module_node, src) if module_node is not None else ""
+
+    # Wildcard form: `from M import *`. Use named_children for
+    # consistency with the rest of the function — wildcard_import is a
+    # named node so it appears in either iterator.
+    has_wildcard = any(c.type == "wildcard_import" for c in node.named_children)
+    if has_wildcard:
+        if module:
+            out.append(f"from {module} import *")
+        else:
+            # Should not happen on valid Python (parser always sets
+            # module_name for `from X import *`). Defensive fallback —
+            # raw source preserves the original relative dots so we
+            # don't silently emit `from . import *` when the source
+            # said `from .. import *` or `from ... import *`.
+            out.append(_collapse_ws(_text(node, src)).strip())
+        return
+
+    names: list[str] = []
+    # `name` field appears multiple times — one per imported binding.
+    for c in node.children_by_field_name("name"):
+        if c.type == "dotted_name":
+            names.append(_text(c, src))
+        elif c.type == "aliased_import":
+            n = c.child_by_field_name("name")
+            a = c.child_by_field_name("alias")
+            if n is not None and a is not None:
+                names.append(f"{_text(n, src)} as {_text(a, src)}")
+    if names:
+        # Python's `from .` shape: `from . import sub` — module is just
+        # dots, no name after them. Render as-is.
+        out.append(f"from {module} import {', '.join(names)}")
 
 
 # --- Walk -----------------------------------------------------------------

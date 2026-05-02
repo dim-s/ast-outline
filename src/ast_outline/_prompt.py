@@ -51,6 +51,15 @@ directories, mixed languages OK) — batch instead of looping. Type
 headers in both renderers carry inheritance as `: Base, Trait`, so the
 shape of class hierarchies is visible without a separate query.
 
+When you need to know **what a file pulls in** or **where a referenced
+type / function comes from**, add `--imports` to `outline` or `digest`.
+The file header gets an `imports:` line listing every
+`import` / `use` / `using` statement verbatim in the language's native
+syntax — `from .core import X`, `use foo::Bar`,
+`import { X } from './foo'`. Read the imports, then call `outline` /
+`show` on the source file instead of grepping for the definition. Skip
+the flag for routine structure reads — it adds one line per file.
+
 Fall back to a full read only when you need context beyond the body
 `show` returned. `ast-outline help` for flags.
 """

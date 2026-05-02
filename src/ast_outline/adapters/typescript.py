@@ -74,6 +74,8 @@ class TypeScriptAdapter:
         tree = parser.parse(src)
         decls: list[Declaration] = []
         _walk_module(tree.root_node, src, decls)
+        imports: list[str] = []
+        _collect_imports(tree.root_node, src, imports)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -81,7 +83,33 @@ class TypeScriptAdapter:
             line_count=src.count(b"\n") + 1,
             declarations=decls,
             error_count=count_parse_errors(tree.root_node),
+            imports=imports,
         )
+
+
+# --- Imports --------------------------------------------------------------
+#
+# TS/JS `import` statements are top-level only (ESM rule). We collect the
+# source text of every `import_statement` at module-scope verbatim,
+# collapse internal whitespace (multi-line `import { X,\n Y } from ...`
+# → one line), and strip the trailing semicolon. Source-true output is
+# what any LLM agent already knows how to read; no synthetic format.
+#
+# Out of scope for `--imports`:
+# - `require(...)` calls in .js/.cjs (a runtime function, not an import
+#   statement; pattern-matching the LHS = .name and RHS = call form is
+#   fragile and noisy)
+# - `import('...')` dynamic expressions (runtime, not declarative)
+# - `export ... from '...'` re-exports (separate concern, would need a
+#   sibling --exports flag)
+
+
+def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+    for child in root.named_children:
+        if child.type == "import_statement":
+            text = _collapse_ws(_text(child, src)).rstrip(";").strip()
+            if text:
+                out.append(text)
 
 
 # --- Walk -----------------------------------------------------------------

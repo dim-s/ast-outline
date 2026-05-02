@@ -93,6 +93,8 @@ class JavaAdapter:
         tree = _PARSER.parse(src)
         declarations: list[Declaration] = []
         _walk_top(tree.root_node, src, declarations)
+        imports: list[str] = []
+        _collect_imports(tree.root_node, src, imports)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -100,7 +102,22 @@ class JavaAdapter:
             line_count=src.count(b"\n") + 1,
             declarations=declarations,
             error_count=count_parse_errors(tree.root_node),
+            imports=imports,
         )
+
+
+# --- Imports --------------------------------------------------------------
+
+
+def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+    """Java imports are top-level only. Source-true text reads natively
+    (`import java.util.List`, `import static foo.Bar.baz`,
+    `import com.example.*`) — no synthetic format needed."""
+    for child in root.named_children:
+        if child.type == "import_declaration":
+            text = _collapse_ws(_text(child, src)).rstrip(";").strip()
+            if text:
+                out.append(text)
 
 
 # --- Walk -----------------------------------------------------------------
