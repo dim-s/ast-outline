@@ -180,6 +180,13 @@ def _cmd_outline(args) -> int:
         print("# note: no input files. try: ast-outline Player.cs")
         return 0
 
+    paths = [Path(p) for p in paths_raw]
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        for p in missing:
+            print(f"# note: path not found: {p}")
+        return 0
+
     opts = OutlineOptions(
         include_private=not args.no_private,
         include_fields=not args.no_fields,
@@ -188,7 +195,7 @@ def _cmd_outline(args) -> int:
         include_line_numbers=not args.no_lines,
     )
 
-    results, errors = _parse_paths([Path(p) for p in paths_raw], glob=args.glob)
+    results, errors = _parse_paths(paths, glob=args.glob)
     if not results and not errors:
         exts = sorted(supported_extensions())
         print(

@@ -81,12 +81,14 @@ def test_outline_no_lines_flag(csharp_dir, capsys):
 def test_outline_missing_file_returns_zero_with_note(tmp_path, capsys):
     """LLM-friendly mode: rc=0 + short ``# note:`` line on stdout so a
     parallel batch in Claude Code doesn't abort the whole chain."""
-    rc = main(["outline", str(tmp_path / "nope.cs")])
+    nope = tmp_path / "nope.cs"
+    rc = main(["outline", str(nope)])
     captured = capsys.readouterr()
     assert rc == 0
     assert captured.err == ""
     assert "# note:" in captured.out
-    assert "no files found" in captured.out.lower() or "no input" in captured.out.lower()
+    assert "path not found" in captured.out.lower()
+    assert str(nope) in captured.out
 
 
 # --- show ----------------------------------------------------------------
