@@ -215,6 +215,17 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
 `ast-outline help` 查看完整标志。
 ```
 
+### 注意：子 Agent
+
+`CLAUDE.md` / `AGENTS.md` 只能影响**主 Agent**。Claude Code 的隔离子 Agent
+（内置 `Explore`、`.claude/agents/*.md` 里的任何文件）只能看到自己的
+system prompt。要让 `Explore` 用上 `ast-outline`，请用
+`.claude/agents/Explore.md`（或 `~/.claude/agents/Explore.md`）覆盖它，
+并把 `ast-outline prompt` 的输出放进 body。
+
+Cursor、Aider 和直接调用 API 的客户端没有嵌套子 Agent —— 在那里
+`CLAUDE.md` / system prompt 就够了。
+
 ### 为什么有效
 
 - **上下文较浅的新 Agent**（比如 Claude Code 的 `Explore`）可以用一次调用

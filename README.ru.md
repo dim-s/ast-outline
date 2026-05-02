@@ -224,6 +224,18 @@ ast-outline prompt | pbcopy   # буфер обмена в macOS
 контекст за его пределами. `ast-outline help` — флаги.
 ```
 
+### Внимание: субагенты
+
+`CLAUDE.md` / `AGENTS.md` доходят **только до главного агента**.
+Изолированные субагенты Claude Code (встроенный `Explore`, любые файлы
+из `.claude/agents/*.md`) видят только собственный system prompt. Чтобы
+`Explore` пошёл через `ast-outline`, перекрой его файлом
+`.claude/agents/Explore.md` (или `~/.claude/agents/Explore.md`) и положи
+в body вывод `ast-outline prompt`.
+
+Cursor, Aider и прямые API-клиенты вложенных субагентов не имеют —
+там `CLAUDE.md` / system prompt достаточно.
+
 ### Почему это помогает
 
 - **Свежие субагенты с чистым контекстом** (типа `Explore` в Claude Code)

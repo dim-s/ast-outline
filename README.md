@@ -238,6 +238,17 @@ Fall back to a full read only when you need context beyond the body
 `show` returned. `ast-outline help` for flags.
 ```
 
+### Heads up: subagents
+
+`CLAUDE.md` / `AGENTS.md` reach only the **main agent**. Claude Code's
+isolated subagents (built-in `Explore`, anything in `.claude/agents/*.md`)
+see only their own system prompt. To make `Explore` use `ast-outline`,
+shadow it with `.claude/agents/Explore.md` (or `~/.claude/agents/Explore.md`)
+and put the `ast-outline prompt` output in the body.
+
+Cursor, Aider, and direct API clients have no isolated subagents —
+`CLAUDE.md` / system prompt is enough there.
+
 ### Why this helps
 
 - **Fresh subagents with shallow context** (like Claude Code's `Explore`
