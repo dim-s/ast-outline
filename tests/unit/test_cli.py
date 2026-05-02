@@ -34,6 +34,31 @@ def test_help_topic_specific(capsys):
     assert "symbols" in out.lower()
 
 
+def test_version_flag_long(capsys):
+    """`--version` follows the universal CLI convention and prints
+    version + author on dedicated lines so a script can grep one
+    field without prose-parsing."""
+    from ast_outline import __version__
+
+    rc = main(["--version"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert f"ast-outline {__version__}" in out
+    assert "Dmitrii Zaitsev" in out
+    assert "github.com/dim-s/ast-outline" in out
+
+
+def test_version_flag_short(capsys):
+    """`-V` short form mirrors `git --version` / `rg --version` —
+    both spellings produce identical output."""
+    from ast_outline import __version__
+
+    rc = main(["-V"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert f"ast-outline {__version__}" in out
+
+
 # --- outline -------------------------------------------------------------
 
 

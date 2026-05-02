@@ -61,6 +61,12 @@ def main(argv: list[str] | None = None) -> int:
     if not argv:
         _print_guide()
         return 0
+    # Standalone `--version` / `-V` follows the universal CLI convention
+    # (`git --version`, `python --version`, `rg --version`). We handle it
+    # before argparse subcommand dispatch so the user doesn't need to
+    # spell out a subcommand for a one-line capability check.
+    if argv[0] in ("--version", "-V"):
+        return _cmd_version(None)
     if argv[0] not in SUBCOMMANDS and not argv[0].startswith("-"):
         argv = ["outline", *argv]
 
@@ -124,6 +130,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "prompt":
         return _cmd_prompt(args)
     return _cmd_outline(args)
+
+
+def _cmd_version(_args) -> int:
+    """Print version + authorship in the standard `tool x.y.z` form
+    plus a one-line author / project-URL block. Matches the convention
+    used by `git --version`, `python --version`, `rg --version`, etc.,
+    so an LLM (or human) can grep `ast-outline version` for the same
+    fields without parsing prose."""
+    from . import __version__
+    print(f"ast-outline {__version__}")
+    print("author: Dmitrii Zaitsev <zayceffdev@gmail.com>")
+    print("homepage: https://github.com/dim-s/ast-outline")
+    print("license: MIT")
+    return 0
 
 
 def _cmd_prompt(_args) -> int:
@@ -355,6 +375,7 @@ COMMANDS
     ast-outline show <file> <symbols...>    Print source of one or more symbols
     ast-outline digest <paths...>           Compact public-API map of a dir
     ast-outline prompt                      Print the canonical agent prompt snippet
+    ast-outline --version                   Print version + author
     ast-outline help [topic]                Show this guide (or topic-specific)
 
 QUICK EXAMPLES
@@ -523,7 +544,6 @@ EXAMPLES
     ast-outline prompt | pbcopy          # macOS
     ast-outline prompt | xclip -sel c    # Linux
 """
-
 
 def _print_guide(topic: str | None = None) -> None:
     if topic == "outline":
