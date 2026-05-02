@@ -91,7 +91,7 @@ embeddings и vector search. Подход надёжный, но дорогой:
 Нужен [`uv`](https://docs.astral.sh/uv/) (быстрый Python package manager):
 
 ```bash
-uv tool install git+https://github.com/dim-s/ast-outline.git
+uv tool install ast-outline
 ```
 
 Это поставит CLI `ast-outline` глобально в `~/.local/bin` (Mac / Linux)
@@ -120,13 +120,23 @@ iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/insta
 ### Альтернатива: `pipx`
 
 ```bash
-pipx install git+https://github.com/dim-s/ast-outline.git
+pipx install ast-outline
 ```
 
 ### Альтернатива: `pip` (в активный venv)
 
 ```bash
-pip install git+https://github.com/dim-s/ast-outline.git
+pip install ast-outline
+```
+
+### Из исходников (свежий `main`)
+
+Если хочется bleeding edge, а не последний PyPI-релиз:
+
+```bash
+uv tool install   git+https://github.com/dim-s/ast-outline.git   # uv
+pipx install      git+https://github.com/dim-s/ast-outline.git   # pipx
+pip  install      git+https://github.com/dim-s/ast-outline.git   # pip
 ```
 
 ### Обновить / удалить

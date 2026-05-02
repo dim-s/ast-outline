@@ -107,7 +107,7 @@ replacing it.
 Requires [`uv`](https://docs.astral.sh/uv/) (a fast Python package manager):
 
 ```bash
-uv tool install git+https://github.com/dim-s/ast-outline.git
+uv tool install ast-outline
 ```
 
 This installs the `ast-outline` CLI globally into `~/.local/bin` (Mac / Linux)
@@ -136,13 +136,23 @@ iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/insta
 ### Alternative: `pipx`
 
 ```bash
-pipx install git+https://github.com/dim-s/ast-outline.git
+pipx install ast-outline
 ```
 
 ### Alternative: `pip` (into an active venv)
 
 ```bash
-pip install git+https://github.com/dim-s/ast-outline.git
+pip install ast-outline
+```
+
+### From source (latest `main`)
+
+If you want the cutting edge instead of the latest PyPI release:
+
+```bash
+uv tool install   git+https://github.com/dim-s/ast-outline.git   # uv
+pipx install      git+https://github.com/dim-s/ast-outline.git   # pipx
+pip  install      git+https://github.com/dim-s/ast-outline.git   # pip
 ```
 
 ### Update / uninstall

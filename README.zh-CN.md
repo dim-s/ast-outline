@@ -87,7 +87,7 @@ Agent: ast-outline show Player.cs TakeDamage # 只取需要的方法体
 需要 [`uv`](https://docs.astral.sh/uv/)（一个快速的 Python 包管理器）：
 
 ```bash
-uv tool install git+https://github.com/dim-s/ast-outline.git
+uv tool install ast-outline
 ```
 
 这会把 `ast-outline` CLI 全局安装到 `~/.local/bin`（Mac / Linux）或
@@ -116,13 +116,23 @@ iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/insta
 ### 备选：`pipx`
 
 ```bash
-pipx install git+https://github.com/dim-s/ast-outline.git
+pipx install ast-outline
 ```
 
 ### 备选：`pip`（在已激活的 venv 中）
 
 ```bash
-pip install git+https://github.com/dim-s/ast-outline.git
+pip install ast-outline
+```
+
+### 从源码安装（最新 `main`）
+
+如果你想要 main 分支的最新代码，而不是 PyPI 上的最新发布版：
+
+```bash
+uv tool install   git+https://github.com/dim-s/ast-outline.git   # uv
+pipx install      git+https://github.com/dim-s/ast-outline.git   # pipx
+pip  install      git+https://github.com/dim-s/ast-outline.git   # pip
 ```
 
 ### 升级 / 卸载
