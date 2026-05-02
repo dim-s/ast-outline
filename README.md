@@ -64,19 +64,32 @@ the round-trips.**
 
 ## Supported languages
 
-| Language | Extensions |
-| --- | --- |
+| Language   | Extensions |
+| ---        | --- |
 | C#         | `.cs` |
 | Python     | `.py`, `.pyi` |
 | TypeScript | `.ts`, `.tsx` |
-| JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` (parsed by the TypeScript grammar) |
-| Java       | `.java` — classes, interfaces, `@interface`, enums, records, sealed hierarchies, generics, throws, Javadoc |
-| Kotlin     | `.kt`, `.kts` — classes, interfaces, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation` classes, extension functions, `suspend` / `inline` / `const` / `lateinit`, generics with `where` constraints, `typealias`, KDoc |
-| Scala      | `.scala`, `.sc` — Scala 2 + Scala 3: classes, traits, `object` / `case object`, `case class`, `sealed` hierarchies, Scala 3 `enum` / `given` / `using` / `extension`, indentation-based bodies, higher-kinded types, context bounds, `opaque type`, `type` aliases, Scaladoc |
-| Go         | `.go` — packages, structs (with method-grouping under receiver), interfaces, struct/interface embedding as inheritance, generics (Go 1.18+), `type` aliases + defined types, `iota` enum-blocks, doc-comment chains |
-| Rust       | `.rs` — modules (recursive), structs (regular / tuple / unit), unions, enums with all variant shapes, traits with supertraits as bases, **`impl` block regrouping under the target type** (inherent + `impl Trait for Foo` adds Trait to bases), `extern "C"` blocks, `macro_rules!`, type aliases, generics + lifetimes + `where` clauses, `pub` / `pub(crate)` visibility, outer doc comments (`///`, `/** */`) and `#[...]` attributes |
-| Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — heading TOC + fenced code blocks |
-| YAML       | `.yaml`, `.yml` — key hierarchy with line ranges, `[i]` sequence paths, multi-document separators, format-detect for Kubernetes / OpenAPI / GitHub Actions in the header |
+| JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` *(parsed by the TypeScript grammar)* |
+| Java       | `.java` |
+| Kotlin     | `.kt`, `.kts` |
+| Scala      | `.scala`, `.sc` |
+| Go         | `.go` |
+| Rust       | `.rs` |
+| Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` |
+| YAML       | `.yaml`, `.yml` |
+
+<details>
+<summary>What each adapter recognises</summary>
+
+- **Java** — classes, interfaces, `@interface`, enums, records, sealed hierarchies, generics, throws, Javadoc.
+- **Kotlin** — classes, interfaces, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation` classes, extension functions, `suspend` / `inline` / `const` / `lateinit`, generics with `where` constraints, `typealias`, KDoc.
+- **Scala** — Scala 2 + Scala 3: classes, traits, `object` / `case object`, `case class`, `sealed` hierarchies, Scala 3 `enum` / `given` / `using` / `extension`, indentation-based bodies, higher-kinded types, context bounds, `opaque type`, `type` aliases, Scaladoc.
+- **Go** — packages, structs (with method-grouping under receiver), interfaces, struct/interface embedding as inheritance, generics (Go 1.18+), `type` aliases + defined types, `iota` enum-blocks, doc-comment chains.
+- **Rust** — modules (recursive), structs (regular / tuple / unit), unions, enums with all variant shapes, traits with supertraits as bases, **`impl` block regrouping under the target type** (inherent + `impl Trait for Foo` adds Trait to bases), `extern "C"` blocks, `macro_rules!`, type aliases, generics + lifetimes + `where` clauses, `pub` / `pub(crate)` visibility, outer doc comments (`///`, `/** */`) and `#[...]` attributes.
+- **Markdown** — heading TOC + fenced code blocks.
+- **YAML** — key hierarchy with line ranges, `[i]` sequence paths, multi-document separators, format-detect for Kubernetes / OpenAPI / GitHub Actions in the header.
+
+</details>
 
 Adding another language is a single new adapter file. See
 [`src/ast_outline/adapters/`](src/ast_outline/adapters/).

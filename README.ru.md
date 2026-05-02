@@ -65,19 +65,32 @@ embeddings и vector search. Подход надёжный, но дорогой:
 
 ## Поддерживаемые языки
 
-| Язык | Расширения |
-| --- | --- |
+| Язык       | Расширения |
+| ---        | --- |
 | C#         | `.cs` |
 | Python     | `.py`, `.pyi` |
 | TypeScript | `.ts`, `.tsx` |
-| JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` (парсятся через TS-грамматику) |
-| Java       | `.java` — классы, интерфейсы, `@interface`, enum'ы, records, sealed-иерархии, generics, throws, Javadoc |
-| Kotlin     | `.kt`, `.kts` — классы, интерфейсы, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation`-классы, extension-функции, `suspend` / `inline` / `const` / `lateinit`, generics с `where`-ограничениями, `typealias`, KDoc |
-| Scala      | `.scala`, `.sc` — Scala 2 + Scala 3: классы, trait'ы, `object` / `case object`, `case class`, `sealed`-иерархии, Scala 3 `enum` / `given` / `using` / `extension`, indentation-синтаксис, higher-kinded types, context bounds, `opaque type`, type-алиасы, Scaladoc |
-| Go         | `.go` — пакеты, struct'ы (методы группируются под receiver), интерфейсы, embedding (struct и interface) как механизм «наследования», generics (Go 1.18+), type-алиасы + defined types, `iota`-enum'ы, цепочки doc-комментариев |
-| Rust       | `.rs` — модули (рекурсивно), struct'ы (regular / tuple / unit), unions, enum'ы со всеми формами variant'ов, trait'ы (supertraits → bases), **группировка `impl`-блоков под целевой тип** (inherent + `impl Trait for Foo` добавляет Trait в bases), `extern "C"`, `macro_rules!`, type-алиасы, generics + lifetimes + `where`-clauses, классификация видимости (`pub` / `pub(crate)` / `pub(super)` / `pub(in path)`), внешние doc-комментарии (`///`, `/** */`) и `#[...]`-атрибуты |
-| Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` — оглавление по заголовкам + код-блоки |
-| YAML       | `.yaml`, `.yml` — иерархия ключей с диапазонами строк, `[i]` пути для sequence-элементов, multi-document сепараторы, format-detect для Kubernetes / OpenAPI / GitHub Actions в шапке |
+| JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` *(парсятся через TS-грамматику)* |
+| Java       | `.java` |
+| Kotlin     | `.kt`, `.kts` |
+| Scala      | `.scala`, `.sc` |
+| Go         | `.go` |
+| Rust       | `.rs` |
+| Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` |
+| YAML       | `.yaml`, `.yml` |
+
+<details>
+<summary>Что распознаёт каждый адаптер</summary>
+
+- **Java** — классы, интерфейсы, `@interface`, enum'ы, records, sealed-иерархии, generics, throws, Javadoc.
+- **Kotlin** — классы, интерфейсы, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation`-классы, extension-функции, `suspend` / `inline` / `const` / `lateinit`, generics с `where`-ограничениями, `typealias`, KDoc.
+- **Scala** — Scala 2 + Scala 3: классы, trait'ы, `object` / `case object`, `case class`, `sealed`-иерархии, Scala 3 `enum` / `given` / `using` / `extension`, indentation-синтаксис, higher-kinded types, context bounds, `opaque type`, type-алиасы, Scaladoc.
+- **Go** — пакеты, struct'ы (методы группируются под receiver), интерфейсы, embedding (struct и interface) как механизм «наследования», generics (Go 1.18+), type-алиасы + defined types, `iota`-enum'ы, цепочки doc-комментариев.
+- **Rust** — модули (рекурсивно), struct'ы (regular / tuple / unit), unions, enum'ы со всеми формами variant'ов, trait'ы (supertraits → bases), **группировка `impl`-блоков под целевой тип** (inherent + `impl Trait for Foo` добавляет Trait в bases), `extern "C"`, `macro_rules!`, type-алиасы, generics + lifetimes + `where`-clauses, классификация видимости (`pub` / `pub(crate)` / `pub(super)` / `pub(in path)`), внешние doc-комментарии (`///`, `/** */`) и `#[...]`-атрибуты.
+- **Markdown** — оглавление по заголовкам + код-блоки.
+- **YAML** — иерархия ключей с диапазонами строк, `[i]` пути для sequence-элементов, multi-document сепараторы, format-detect для Kubernetes / OpenAPI / GitHub Actions в шапке.
+
+</details>
 
 Добавление нового языка — это один новый файл-адаптер. См.
 [`src/ast_outline/adapters/`](src/ast_outline/adapters/).

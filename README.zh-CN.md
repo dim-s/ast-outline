@@ -61,19 +61,32 @@ Agent: ast-outline show Player.cs TakeDamage # 只取需要的方法体
 
 ## 支持的语言
 
-| 语言 | 扩展名 |
-| --- | --- |
+| 语言       | 扩展名 |
+| ---        | --- |
 | C#         | `.cs` |
 | Python     | `.py`、`.pyi` |
 | TypeScript | `.ts`、`.tsx` |
-| JavaScript | `.js`、`.jsx`、`.mjs`、`.cjs`（由 TypeScript 语法解析） |
-| Java       | `.java` —— 类、接口、`@interface`、枚举、记录（record）、sealed 继承层级、泛型、throws、Javadoc |
-| Kotlin     | `.kt`、`.kts` —— 类、接口、`fun interface`、`object` / `companion object`、`data` / `sealed` / `enum` / `annotation` 类、扩展函数、`suspend` / `inline` / `const` / `lateinit`、带 `where` 约束的泛型、`typealias`、KDoc |
-| Scala      | `.scala`、`.sc` —— Scala 2 + Scala 3：类、trait、`object` / `case object`、`case class`、`sealed` 继承层级、Scala 3 `enum` / `given` / `using` / `extension`、缩进式语法体、higher-kinded 类型、context bound、`opaque type`、类型别名、Scaladoc |
-| Go         | `.go` —— 包、结构体（方法按 receiver 分组）、接口、struct/interface 嵌入作为「继承」、泛型（Go 1.18+）、类型别名 + defined type、`iota` 枚举块、文档注释链 |
-| Rust       | `.rs` —— 模块（递归）、结构体（普通 / 元组 / 单元）、unions、覆盖所有 variant 形式的 enum、trait（supertraits → bases）、**`impl` 块按目标类型重新分组**（inherent + `impl Trait for Foo` 将 Trait 加入 bases）、`extern "C"` 块、`macro_rules!`、类型别名、泛型 + 生命周期 + `where` 子句、可见性分类（`pub` / `pub(crate)` / `pub(super)` / `pub(in path)`）、外部文档注释 + `#[...]` 属性 |
-| Markdown   | `.md`、`.markdown`、`.mdx`、`.mdown` —— 标题目录 + 代码块 |
-| YAML       | `.yaml`、`.yml` —— 键层级（含行范围）、`[i]` 序列索引路径、多文档分隔符、Kubernetes / OpenAPI / GitHub Actions 头部格式自动识别 |
+| JavaScript | `.js`、`.jsx`、`.mjs`、`.cjs` *（由 TypeScript 语法解析）* |
+| Java       | `.java` |
+| Kotlin     | `.kt`、`.kts` |
+| Scala      | `.scala`、`.sc` |
+| Go         | `.go` |
+| Rust       | `.rs` |
+| Markdown   | `.md`、`.markdown`、`.mdx`、`.mdown` |
+| YAML       | `.yaml`、`.yml` |
+
+<details>
+<summary>各适配器识别的语法</summary>
+
+- **Java** —— 类、接口、`@interface`、枚举、记录（record）、sealed 继承层级、泛型、throws、Javadoc。
+- **Kotlin** —— 类、接口、`fun interface`、`object` / `companion object`、`data` / `sealed` / `enum` / `annotation` 类、扩展函数、`suspend` / `inline` / `const` / `lateinit`、带 `where` 约束的泛型、`typealias`、KDoc。
+- **Scala** —— Scala 2 + Scala 3：类、trait、`object` / `case object`、`case class`、`sealed` 继承层级、Scala 3 `enum` / `given` / `using` / `extension`、缩进式语法体、higher-kinded 类型、context bound、`opaque type`、类型别名、Scaladoc。
+- **Go** —— 包、结构体（方法按 receiver 分组）、接口、struct/interface 嵌入作为「继承」、泛型（Go 1.18+）、类型别名 + defined type、`iota` 枚举块、文档注释链。
+- **Rust** —— 模块（递归）、结构体（普通 / 元组 / 单元）、unions、覆盖所有 variant 形式的 enum、trait（supertraits → bases）、**`impl` 块按目标类型重新分组**（inherent + `impl Trait for Foo` 将 Trait 加入 bases）、`extern "C"` 块、`macro_rules!`、类型别名、泛型 + 生命周期 + `where` 子句、可见性分类（`pub` / `pub(crate)` / `pub(super)` / `pub(in path)`）、外部文档注释 + `#[...]` 属性。
+- **Markdown** —— 标题目录 + 代码块。
+- **YAML** —— 键层级（含行范围）、`[i]` 序列索引路径、多文档分隔符、Kubernetes / OpenAPI / GitHub Actions 头部格式自动识别。
+
+</details>
 
 新增语言只需要加一个适配器文件。见
 [`src/ast_outline/adapters/`](src/ast_outline/adapters/)。
