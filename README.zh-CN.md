@@ -82,65 +82,36 @@ Agent: ast-outline show Player.cs TakeDamage # 只取需要的方法体
 
 ## 安装
 
-### 一行命令（推荐 —— macOS / Linux / Windows）
-
-需要 [`uv`](https://docs.astral.sh/uv/)（一个快速的 Python 包管理器）：
-
 ```bash
 uv tool install ast-outline
 ```
 
-这会把 `ast-outline` CLI 全局安装到 `~/.local/bin`（Mac / Linux）或
-`%USERPROFILE%\.local\bin`（Windows）—— 确保该目录在你的 `PATH` 中。
-
-还没装 `uv`？
+将 `ast-outline` CLI 全局安装到 `~/.local/bin`（macOS / Linux）或
+`%USERPROFILE%\.local\bin`（Windows）。还没装 [`uv`](https://docs.astral.sh/uv/)？
 
 ```bash
-# macOS / Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Windows (PowerShell)
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+curl -LsSf https://astral.sh/uv/install.sh | sh                                          # macOS / Linux
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"       # Windows
 ```
 
-### 使用仓库里的安装脚本
+升级 / 卸载：`uv tool upgrade ast-outline` / `uv tool uninstall ast-outline`。
 
-```bash
-# macOS / Linux
-curl -LsSf https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.sh | bash
-
-# Windows (PowerShell)
-iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.ps1 | iex
-```
-
-### 备选：`pipx`
+<details>
+<summary>其他安装方式（pipx、pip、源码安装、一键脚本）</summary>
 
 ```bash
 pipx install ast-outline
+pip  install ast-outline                                          # 在已激活的 venv 中
+
+# 安装 main 分支最新代码，而不是 PyPI 发布版：
+uv tool install git+https://github.com/dim-s/ast-outline.git
+
+# 一键安装脚本（如未安装 uv 会顺带安装）：
+curl -LsSf https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.sh | bash    # macOS / Linux
+iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.ps1 | iex     # Windows
 ```
 
-### 备选：`pip`（在已激活的 venv 中）
-
-```bash
-pip install ast-outline
-```
-
-### 从源码安装（最新 `main`）
-
-如果你想要 main 分支的最新代码，而不是 PyPI 上的最新发布版：
-
-```bash
-uv tool install   git+https://github.com/dim-s/ast-outline.git   # uv
-pipx install      git+https://github.com/dim-s/ast-outline.git   # pipx
-pip  install      git+https://github.com/dim-s/ast-outline.git   # pip
-```
-
-### 升级 / 卸载
-
-```bash
-uv tool upgrade ast-outline
-uv tool uninstall ast-outline
-```
+</details>
 
 ---
 

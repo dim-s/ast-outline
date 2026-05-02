@@ -102,65 +102,36 @@ replacing it.
 
 ## Install
 
-### One-liner (recommended — macOS / Linux / Windows)
-
-Requires [`uv`](https://docs.astral.sh/uv/) (a fast Python package manager):
-
 ```bash
 uv tool install ast-outline
 ```
 
-This installs the `ast-outline` CLI globally into `~/.local/bin` (Mac / Linux)
-or `%USERPROFILE%\.local\bin` (Windows) — make sure that's on your `PATH`.
-
-Don't have `uv` yet?
+Installs the `ast-outline` CLI globally into `~/.local/bin` (macOS / Linux)
+or `%USERPROFILE%\.local\bin` (Windows). Don't have [`uv`](https://docs.astral.sh/uv/)?
 
 ```bash
-# macOS / Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Windows (PowerShell)
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+curl -LsSf https://astral.sh/uv/install.sh | sh                                          # macOS / Linux
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"       # Windows
 ```
 
-### Using the install scripts in this repo
+Update / uninstall: `uv tool upgrade ast-outline` / `uv tool uninstall ast-outline`.
 
-```bash
-# macOS / Linux
-curl -LsSf https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.sh | bash
-
-# Windows (PowerShell)
-iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.ps1 | iex
-```
-
-### Alternative: `pipx`
+<details>
+<summary>Other install options (pipx, pip, from source, bundled script)</summary>
 
 ```bash
 pipx install ast-outline
+pip  install ast-outline                                          # into an active venv
+
+# Latest main instead of the PyPI release:
+uv tool install git+https://github.com/dim-s/ast-outline.git
+
+# Bundled one-shot installer (also installs uv if missing):
+curl -LsSf https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.sh | bash    # macOS / Linux
+iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.ps1 | iex     # Windows
 ```
 
-### Alternative: `pip` (into an active venv)
-
-```bash
-pip install ast-outline
-```
-
-### From source (latest `main`)
-
-If you want the cutting edge instead of the latest PyPI release:
-
-```bash
-uv tool install   git+https://github.com/dim-s/ast-outline.git   # uv
-pipx install      git+https://github.com/dim-s/ast-outline.git   # pipx
-pip  install      git+https://github.com/dim-s/ast-outline.git   # pip
-```
-
-### Update / uninstall
-
-```bash
-uv tool upgrade ast-outline
-uv tool uninstall ast-outline
-```
+</details>
 
 ---
 

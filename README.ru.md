@@ -86,65 +86,36 @@ embeddings и vector search. Подход надёжный, но дорогой:
 
 ## Установка
 
-### Одной командой (рекомендуется — macOS / Linux / Windows)
-
-Нужен [`uv`](https://docs.astral.sh/uv/) (быстрый Python package manager):
-
 ```bash
 uv tool install ast-outline
 ```
 
-Это поставит CLI `ast-outline` глобально в `~/.local/bin` (Mac / Linux)
-или `%USERPROFILE%\.local\bin` (Windows) — убедись что эта папка в `PATH`.
-
-Нет `uv`?
+Поставит CLI `ast-outline` глобально в `~/.local/bin` (macOS / Linux)
+или `%USERPROFILE%\.local\bin` (Windows). Нет [`uv`](https://docs.astral.sh/uv/)?
 
 ```bash
-# macOS / Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Windows (PowerShell)
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+curl -LsSf https://astral.sh/uv/install.sh | sh                                          # macOS / Linux
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"       # Windows
 ```
 
-### Через install-скрипты из репозитория
+Обновить / удалить: `uv tool upgrade ast-outline` / `uv tool uninstall ast-outline`.
 
-```bash
-# macOS / Linux
-curl -LsSf https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.sh | bash
-
-# Windows (PowerShell)
-iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.ps1 | iex
-```
-
-### Альтернатива: `pipx`
+<details>
+<summary>Другие способы установки (pipx, pip, из исходников, скрипт-обёртка)</summary>
 
 ```bash
 pipx install ast-outline
+pip  install ast-outline                                          # в активный venv
+
+# Свежий main вместо последнего PyPI-релиза:
+uv tool install git+https://github.com/dim-s/ast-outline.git
+
+# Скрипт-обёртка (поставит и uv, если его нет):
+curl -LsSf https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.sh | bash    # macOS / Linux
+iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.ps1 | iex     # Windows
 ```
 
-### Альтернатива: `pip` (в активный venv)
-
-```bash
-pip install ast-outline
-```
-
-### Из исходников (свежий `main`)
-
-Если хочется bleeding edge, а не последний PyPI-релиз:
-
-```bash
-uv tool install   git+https://github.com/dim-s/ast-outline.git   # uv
-pipx install      git+https://github.com/dim-s/ast-outline.git   # pipx
-pip  install      git+https://github.com/dim-s/ast-outline.git   # pip
-```
-
-### Обновить / удалить
-
-```bash
-uv tool upgrade ast-outline
-uv tool uninstall ast-outline
-```
+</details>
 
 ---
 
