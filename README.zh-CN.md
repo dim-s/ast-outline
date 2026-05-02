@@ -59,6 +59,19 @@ Agent: ast-outline show Player.cs TakeDamage # 只取需要的方法体
 
 ---
 
+## 设计哲学
+
+> **Stateless（无状态）。无索引、无缓存、无 embeddings、无网络。**
+> 按需解析、打印、退出。
+
+与 RAG 风格的代码库索引器（Cursor、Bloop、Continue、那一片基于
+embeddings 的 MCP 服务器）相反。现代 LLM Agent 足够聪明，能将
+`ast-outline` 与 `grep`、`find`、`ast-grep` 等 unix 工具串联起来，在
+真实代码中快速导航 —— 无需完整读取文件，也无需让本地索引为自己的复杂性
+付费。
+
+---
+
 ## 支持的语言
 
 | 语言       | 扩展名 |

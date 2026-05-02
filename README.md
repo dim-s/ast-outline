@@ -62,6 +62,19 @@ the round-trips.**
 
 ---
 
+## Design philosophy
+
+> **Stateless. No index, no cache, no embeddings, no network.**
+> Parse on demand, print, exit.
+
+Opposite of RAG-style codebase indexers (Cursor, Bloop, Continue, the
+embedding-MCP crowd). Modern LLM agents are sharp enough to chain
+`ast-outline` with `grep`, `find`, `ast-grep` and other unix tools and
+navigate real code fast — without reading whole files, and without a
+local index earning its complexity.
+
+---
+
 ## Supported languages
 
 | Language   | Extensions |
