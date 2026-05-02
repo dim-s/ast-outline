@@ -46,12 +46,10 @@ Stop at the step that answers the question:
    dotted key path (`spec.containers[0].image`) — `show` matches keys,
    not values, so for free-text search inside values use `grep`.
 
-4. **Who implements/extends a type** — `ast-outline implements <Type>
-   <paths…>`: AST-accurate (skip `grep`), transitive by default with
-   `[via Parent]` tags on indirect matches. Add `--direct` for level-1 only.
-
-`outline`, `digest`, `implements` accept multiple paths in one call
-(files and directories, mixed languages OK) — batch instead of looping.
+`outline` and `digest` accept multiple paths in one call (files and
+directories, mixed languages OK) — batch instead of looping. Type
+headers in both renderers carry inheritance as `: Base, Trait`, so the
+shape of class hierarchies is visible without a separate query.
 
 Fall back to a full read only when you need context beyond the body
 `show` returned. `ast-outline help` for flags.

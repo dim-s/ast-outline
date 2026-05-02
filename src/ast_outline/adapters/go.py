@@ -41,10 +41,10 @@ embedding for the same effect:
 - Pointer embedding `*Animal` is also supported; the base name is the
   underlying type identifier.
 
-This makes `ast-outline implements <Type>` work for the dominant Go
-inheritance idiom (struct embedding). It does NOT detect implicit
-interface-method-set satisfaction — that requires full type-checking,
-which is out of scope.
+This makes type headers like `Foo : Animal` render correctly for the
+dominant Go inheritance idiom (struct embedding). It does NOT detect
+implicit interface-method-set satisfaction — that requires full
+type-checking, which is out of scope.
 
 **Generics (Go 1.18+):** `type_parameter_list` `[T any]` survives in the
 rendered signature; no special handling beyond inclusion.
@@ -294,8 +294,8 @@ def _type_spec_to_decl(
         )
 
     # `type X int64` — defined type / newtype. Treat as KIND_DELEGATE
-    # (named type synonym shape). Bases = the underlying type, useful for
-    # `implements` queries on `type X Animal` patterns.
+    # (named type synonym shape). Bases = the underlying type, surfaced
+    # in the type header so `type X Animal` reads as `X : Animal`.
     bases: list[str] = []
     base_text = _collapse_ws(_text(type_node, src))
     if base_text:
@@ -435,9 +435,8 @@ def _interface_members_and_bases(
 def _embedded_base_name(fd: Node, src: bytes) -> Optional[str]:
     """For an embedded `field_declaration` (no field_identifier), pull
     the underlying type name. Handles plain `Foo`, pointer `*Foo`,
-    qualified `pkg.Foo`, and generic `Foo[T]` / `*Foo[T]` — the BFS
-    in `find_implementations` normalises the suffix, so any of these
-    surface as `Foo`.
+    qualified `pkg.Foo`, and generic `Foo[T]` / `*Foo[T]` — all surface
+    in the rendered type header as `: Foo`.
     """
     for c in fd.named_children:
         # Prefer the bare leading type-identifier (works for plain,

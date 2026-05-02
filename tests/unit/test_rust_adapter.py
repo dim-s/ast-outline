@@ -13,7 +13,7 @@ Covers Rust-specific ground (the things other adapters don't exercise):
 - **Two-pass impl-block grouping** — the headline Rust feature: methods
   in `impl Foo { ... }` blocks regroup under the local `Foo` declaration;
   trait impls (`impl Trait for Foo`) ALSO add `Trait` to Foo's bases so
-  `ast-outline implements Trait` finds Foo
+  the rendered type header reads `Foo : Trait`
 - Methods on cross-file types (`impl ExternalType { ... }` where
   `ExternalType` is declared elsewhere) spill at file top level rather
   than vanishing
@@ -715,55 +715,25 @@ def test_extern_fn_with_body_is_top_level(rust_dir):
     assert "extern" in export.signature
 
 
-# --- Implements query (transitive) --------------------------------------
+# --- Trait-impl bases recorded on the receiver type ---------------------
 
 
-def test_implements_finds_direct_trait_impl(rust_dir):
-    """`implements HasId` should find User."""
-    from ast_outline.adapters import collect_files
-    from ast_outline.core import find_implementations
-
-    files = [rust_dir / "user_service.rs"]
-    parsed = [RustAdapter().parse(f) for f in files]
-    matches = find_implementations(parsed, "HasId")
-    names = {m.name for m in matches}
-    assert "User" in names
+def test_trait_impl_records_base_on_receiver(rust_dir):
+    """`impl HasId for User` must add `HasId` to User's bases so the
+    rendered type header reads `User : HasId`."""
+    parsed = RustAdapter().parse(rust_dir / "user_service.rs")
+    user = _find(parsed.declarations, kind=KIND_STRUCT, name="User")
+    assert user is not None
+    assert "HasId" in user.bases
 
 
-def test_implements_finds_transitive_trait(rust_dir):
-    """`implements Animal` should find Dog/Wolf/Cat (direct via `impl Animal for X`)
-    and Quadruped/PackAnimal (transitive via supertrait chain).
-    """
-    from ast_outline.core import find_implementations
-
-    parsed = [RustAdapter().parse(rust_dir / "hierarchy.rs")]
-    matches = find_implementations(parsed, "Animal")
-    names = {m.name for m in matches}
-    assert {"Dog", "Wolf", "Cat", "Quadruped"}.issubset(names)
-
-
-def test_implements_via_chain_recorded(rust_dir):
-    """PackAnimal → Quadruped → Animal — query Animal should report the chain."""
-    from ast_outline.core import find_implementations
-
-    parsed = [RustAdapter().parse(rust_dir / "hierarchy.rs")]
-    matches = find_implementations(parsed, "Animal")
-    pack = next((m for m in matches if m.name == "PackAnimal"), None)
-    assert pack is not None
-    assert "Quadruped" in pack.via
-
-
-def test_implements_direct_only_filter(rust_dir):
-    """`transitive=False` should exclude transitive matches."""
-    from ast_outline.core import find_implementations
-
-    parsed = [RustAdapter().parse(rust_dir / "hierarchy.rs")]
-    direct = find_implementations(parsed, "Animal", transitive=False)
-    names = {m.name for m in direct}
-    # Quadruped is direct (`pub trait Quadruped: Animal`), Dog/Wolf/Cat
-    # are direct (via `impl Animal for X`), but PackAnimal goes through
-    # Quadruped — must NOT appear.
-    assert "PackAnimal" not in names
+def test_supertraits_recorded_on_trait(rust_dir):
+    """`pub trait Quadruped: Animal` must put `Animal` in Quadruped's
+    bases so digest renders `Quadruped : Animal`."""
+    parsed = RustAdapter().parse(rust_dir / "hierarchy.rs")
+    quadruped = _find(parsed.declarations, kind=KIND_INTERFACE, name="Quadruped")
+    assert quadruped is not None
+    assert "Animal" in quadruped.bases
 
 
 # --- Symbol search (find_symbols / show) --------------------------------

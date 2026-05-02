@@ -33,8 +33,8 @@ answer *"what methods exist here?"*.
 2. **Faster exploration.** A whole module's public API fits on one screen.
 3. **Precise navigation.** Every declaration has a line range (`L42-58`).
    The agent goes straight to the method body it needs.
-4. **AST accuracy, not fuzzy match.** `implements` and `show` understand
-   real syntax — no false positives from comments or strings.
+4. **AST accuracy, not fuzzy match.** `show` and inheritance rendering
+   understand real syntax — no false positives from comments or strings.
 5. **Zero infrastructure.** No index, no cache, no embeddings, no network.
    Live, always fresh, invisible to your repo.
 
@@ -46,7 +46,6 @@ answer *"what methods exist here?"*.
 Agent: Read Player.cs            # 1200 lines of tokens
 Agent: Read Enemy.cs             # 800 lines of tokens
 Agent: Read DamageSystem.cs      # 400 lines of tokens
-Agent: grep "IDamageable" src/   # noisy, lots of false matches
 ...
 ```
 
@@ -54,7 +53,7 @@ Agent: grep "IDamageable" src/   # noisy, lots of false matches
 
 ```
 Agent: ast-outline digest src/Combat         # ~100 lines, whole module
-Agent: ast-outline implements IDamageable    # precise list, no grep noise
+Agent: ast-outline Player.cs                 # signatures only, 5–10× smaller
 Agent: ast-outline show Player.cs TakeDamage # just the method body
 ```
 
@@ -168,9 +167,6 @@ ast-outline show Player.cs TakeDamage Heal Die
 # Compact public-API map of a whole module
 ast-outline digest src/Services
 
-# Every class that inherits/implements a given type
-ast-outline implements IDamageable src/
-
 # Built-in guide
 ast-outline help
 ast-outline help show
@@ -227,12 +223,10 @@ Stop at the step that answers the question:
    dotted key path (`spec.containers[0].image`) — `show` matches keys,
    not values, so for free-text search inside values use `grep`.
 
-4. **Who implements/extends a type** — `ast-outline implements <Type>
-   <paths…>`: AST-accurate (skip `grep`), transitive by default with
-   `[via Parent]` tags on indirect matches. Add `--direct` for level-1 only.
-
-`outline`, `digest`, `implements` accept multiple paths in one call
-(files and directories, mixed languages OK) — batch instead of looping.
+`outline` and `digest` accept multiple paths in one call (files and
+directories, mixed languages OK) — batch instead of looping. Type
+headers in both renderers carry inheritance as `: Base, Trait`, so the
+shape of class hierarchies is visible without a separate query.
 
 Fall back to a full read only when you need context beyond the body
 `show` returned. `ast-outline help` for flags.
@@ -254,11 +248,13 @@ Cursor, Aider, and direct API clients have no isolated subagents —
 - **Fresh subagents with shallow context** (like Claude Code's `Explore`
   agent) can scan a whole module in one call instead of 10–20 `Read`/`grep`
   rounds.
-- **"Where is X defined?"** becomes one `implements` or `show` call.
+- **"Where is X defined?"** becomes one `show` call once the agent has
+  spotted the symbol in `digest` or `outline`.
 - **Line ranges** (`L42-58`) turn the outline into a precise navigator —
   the agent reads only the lines it needs.
-- **AST-based** `implements` has no false positives from string literals,
-  comments, or unrelated name mentions — unlike `grep`.
+- **AST-based** type headers carry real `: Base, Trait` inheritance with
+  no false positives from string literals, comments, or unrelated name
+  mentions — unlike `grep`.
 
 ### Works with
 
@@ -376,34 +372,6 @@ so they're paid for once per session, not on every digest call. Size class is
 calibrated against an approximate token count (`len(chars)/4`, ±15-20% vs
 real BPE tokenizers — fine for the heuristic). The same `~N tokens` count
 appears in every `outline` header too.
-
-### `implements` — find subclasses / implementations
-
-```bash
-ast-outline implements IDamageable src/
-```
-
-AST-based — no false positives from comments or unrelated mentions.
-**Transitive by default**: if `Puppy extends Dog extends Animal`, then
-`implements Animal` returns all three, with an annotation on indirect
-matches:
-
-```
-# 3 match(es) for 'Animal' (incl. transitive):
-src/Animals.cs:5   class Dog : Animal
-src/Cats.cs:3      class Cat : Animal
-src/Puppies.cs:12  class Puppy : Dog          [via Dog]
-```
-
-Add `--direct` / `-d` to restrict to level-1 subclasses only:
-
-```bash
-ast-outline implements --direct IDamageable src/
-```
-
-The search works across any number of files and nested directories —
-no reliance on filename↔classname convention. Matching is by the last
-segment of the type name (stripping generics and namespace prefixes).
 
 ### `prompt` — print the agent prompt snippet
 

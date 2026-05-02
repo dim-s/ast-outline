@@ -238,8 +238,8 @@ def _object_to_decl(
     node: Node, src: bytes, *, parent_kind: Optional[str]
 ) -> Declaration:
     """Singleton `object Foo : Bar() { ... }`. Modelled as KIND_CLASS with
-    an `object` signature and normal delegation/base extraction — so it
-    participates in `implements` queries when it inherits a type.
+    an `object` signature and normal delegation/base extraction — so its
+    type header carries `: Bar` like any other class.
     """
     name = _field_text(node, "name", src) or "?"
     bases = _delegation_bases(node, src)

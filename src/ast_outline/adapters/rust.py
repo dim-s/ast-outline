@@ -25,10 +25,10 @@ Design notes (how Rust concepts map to the IR):
                                      signature (`Running(u32)`,
                                      `Done { code: i32 }`).
 - `trait_item`                     → KIND_INTERFACE. Supertraits land in
-                                     `bases` so `ast-outline implements
-                                     Super` discovers sub-traits. Methods
-                                     defined in the trait body (both
-                                     forward `function_signature_item` and
+                                     `bases` so the type header reads
+                                     `Sub : Super`. Methods defined in
+                                     the trait body (both forward
+                                     `function_signature_item` and
                                      default-impl `function_item`)
                                      surface as KIND_METHOD children.
 - `function_item` (top level)      → KIND_FUNCTION
@@ -47,8 +47,8 @@ Design notes (how Rust concepts map to the IR):
                                      no trait recorded.
 - `impl_item` (`impl Trait for X`) → adds `Trait` to X's `bases` AND
                                      contributes the impl body's items
-                                     to X's children. So `implements
-                                     Trait` returns X.
+                                     to X's children. So X's type header
+                                     reads `X : Trait`.
 - `const_item` / `static_item`     → KIND_FIELD (top-level constants and
                                      statics have the same structural
                                      role in the outline).
@@ -93,13 +93,12 @@ collects them and renders them in the `attrs` slot, so the agent sees
 attributes (`#![...]`, with `inner_attribute_item` type) at the file or
 module level are not item-attached and are ignored.
 
-**Trait impl bases — implements semantics:** Rust's trait system is the
-canonical case for `ast-outline implements`. For every
-`impl Trait for Type { ... }` block in a file, the adapter records
-`Trait` in `Type`'s `bases`. Combined with the existing transitive
-`implements` walk, querying `implements MyTrait <dir>` returns every
-type in the directory that implements the trait (directly or via a
-super-trait chain).
+**Trait impl bases:** for every `impl Trait for Type { ... }` block in a
+file, the adapter records `Trait` in `Type`'s `bases`. The renderer then
+surfaces every implemented trait in the type header as
+`Type : Trait1, Trait2`, exactly the way an inherent base list reads
+elsewhere — agents see all of a type's trait bounds at a glance,
+without a separate query.
 
 **Cross-file impl caveat:** if `impl Foo` (or `impl T for Foo`) lives in
 a different file from where `struct Foo` is declared (legal Rust — and
@@ -649,7 +648,7 @@ def _trait_bound_names(bounds: Node, src: bytes) -> list[str]:
     """Extract bare names from a `trait_bounds` node (`: A + B + 'static`).
 
     Lifetimes (`'static`, `'a`) are NOT real super-traits and would
-    pollute the `implements` index, so we skip them. Generic bounds
+    pollute the rendered `bases` list, so we skip them. Generic bounds
     (`Iterator<Item = T>`) drill to their leading `type_identifier`.
     """
     names: list[str] = []

@@ -310,10 +310,10 @@ def _type_to_decl(
     """
     kind = _type_decl_kind(node)
     # Carry the source-true keyword separately from the canonical kind:
-    # Scala `trait` maps to KIND_INTERFACE (so `implements` queries find
-    # mixins uniformly with Java/Rust traits) but digest should print
-    # `trait` rather than `interface` when the source actually says
-    # `trait`. Same for `object` (singleton) which lives under
+    # Scala `trait` maps to KIND_INTERFACE (so cross-language search
+    # treats mixins uniformly with Java/Rust traits) but digest should
+    # print `trait` rather than `interface` when the source actually
+    # says `trait`. Same for `object` (singleton) which lives under
     # KIND_CLASS but wants its own keyword in the digest.
     native = _native_keyword_for_type(node)
     name = _field_text(node, "name", src) or "?"
@@ -359,10 +359,9 @@ def _native_keyword_for_type(node: Node) -> str:
     `case class` / `case object` definition.
 
     Mirrors Kotlin's `data class` treatment: the canonical kind
-    (KIND_RECORD for case classes) keeps `implements`/search
-    consistent across languages, while the digest restores the
-    actual source keyword so a Scala reader sees `case class`, not
-    `record`.
+    (KIND_RECORD for case classes) keeps cross-language search
+    consistent, while the digest restores the actual source keyword
+    so a Scala reader sees `case class`, not `record`.
     """
     if node.type == "trait_definition":
         return "trait"
@@ -503,7 +502,7 @@ def _given_to_decl(
     signature = _type_signature(node, src)
     bases: list[str] = []
     # given X: SomeType[Y] with { ... } — the declared type looks a lot
-    # like a parent, so surface it as a base for `implements` queries.
+    # like a parent, so surface it as a base in the type header.
     for c in node.named_children:
         if c.type in ("type_identifier", "generic_type"):
             bases.append(_collapse_ws(_text(c, src)))

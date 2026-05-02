@@ -21,14 +21,13 @@ from .core import (
     DigestOptions,
     OutlineOptions,
     ParseResult,
-    find_implementations,
     find_symbols,
     render_digest,
     render_outline,
 )
 
 
-SUBCOMMANDS = {"outline", "show", "help", "digest", "implements", "prompt"}
+SUBCOMMANDS = {"outline", "show", "help", "digest", "prompt"}
 
 
 class _LLMArgumentParser(argparse.ArgumentParser):
@@ -89,21 +88,11 @@ def main(argv: list[str] | None = None) -> int:
     p_digest.add_argument("--include-fields", action="store_true")
     p_digest.add_argument("--max-members", type=int, default=50)
 
-    p_impl = sub.add_parser("implements", help="Find types inheriting/implementing a given type")
-    p_impl.add_argument("type", help="Target type name, e.g. `IDamageable`")
-    p_impl.add_argument("paths", nargs="+", help="Directories or files to search")
-    p_impl.add_argument(
-        "--direct",
-        "-d",
-        action="store_true",
-        help="Show only direct subclasses / implementations (skip transitive)",
-    )
-
     p_help = sub.add_parser("help", help="Show usage guide with examples")
     p_help.add_argument(
         "topic",
         nargs="?",
-        choices=["outline", "show", "digest", "implements", "prompt"],
+        choices=["outline", "show", "digest", "prompt"],
         help="Topic-specific help",
     )
 
@@ -127,8 +116,6 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_show(args)
     if args.cmd == "digest":
         return _cmd_digest(args)
-    if args.cmd == "implements":
-        return _cmd_implements(args)
     if args.cmd == "prompt":
         return _cmd_prompt(args)
     return _cmd_outline(args)
@@ -287,43 +274,6 @@ def _cmd_digest(args) -> int:
     return 0
 
 
-def _cmd_implements(args) -> int:
-    paths = [Path(p) for p in args.paths]
-    missing = [p for p in paths if not p.exists()]
-    if missing:
-        for p in missing:
-            print(f"# note: path not found: {p}")
-        return 0
-    results, errors = _parse_paths(paths)
-    # Per-file parse warnings stay on stderr regardless of whether the
-    # search ends up finding matches — they describe what was skipped.
-    for f, e in errors:
-        print(f"# WARN parsing {f}: {e}", file=sys.stderr)
-    transitive = not args.direct
-    matches = find_implementations(results, args.type, transitive=transitive)
-    if not matches:
-        scope = "direct " if args.direct else ""
-        # "No implementations" IS the answer to the agent's question, so
-        # it goes on stdout and we return 0. The agent should be able to
-        # interpret an empty match set without the chain breaking.
-        print(
-            f"# note: no {scope}implementations/subclasses of '{args.type}' found"
-        )
-        return 0
-    scope_label = "direct match(es)" if args.direct else "match(es)"
-    suffix = "" if args.direct else " (incl. transitive)"
-    print(f"# {len(matches)} {scope_label} for '{args.type}'{suffix}:")
-    for m in matches:
-        bases = ", ".join(m.bases)
-        line = f"{m.path}:{m.start_line}  {m.kind} {m.name} : {bases}"
-        # Annotate transitive matches with the chain from the target's
-        # first direct subclass down to this match's immediate parent.
-        if m.via:
-            line += f"          [via {' → '.join(m.via)}]"
-        print(line)
-    return 0
-
-
 def _strip_leading_doc(src: str) -> str:
     """Strip the doc block from a `show` source slice.
 
@@ -392,7 +342,6 @@ COMMANDS
     ast-outline outline <paths...>          Print outline of files or dirs
     ast-outline show <file> <symbols...>    Print source of one or more symbols
     ast-outline digest <paths...>           Compact public-API map of a dir
-    ast-outline implements <type> <paths>   Find subclasses/implementations
     ast-outline prompt                      Print the canonical agent prompt snippet
     ast-outline help [topic]                Show this guide (or topic-specific)
 
@@ -404,8 +353,6 @@ QUICK EXAMPLES
     ast-outline show user_service.py UserService.get_by_id
     ast-outline digest Assets/Scripts
     ast-outline digest scripts/
-    ast-outline implements IDamageable Assets/Scripts
-    ast-outline implements BaseValidator scripts/
 
 OUTPUT FORMAT
     # path/to/File.cs (N lines)
@@ -429,9 +376,8 @@ TIPS FOR LLM AGENTS
          ast-outline digest <dir>        # architecture map of the module
          ast-outline <file>              # one file in detail
          ast-outline show <file> <Name>  # body of a specific symbol
-    2. Looking for "who implements/extends X?" — use `implements`, not grep.
-    3. Symbol matching is suffix-based: `Foo.Bar` matches `*.Foo.Bar`.
-    4. Use `--no-private --no-fields` for a pure public-API view.
+    2. Symbol matching is suffix-based: `Foo.Bar` matches `*.Foo.Bar`.
+    3. Use `--no-private --no-fields` for a pure public-API view.
 """
 
 GUIDE_OUTLINE = """\
@@ -536,35 +482,6 @@ EXAMPLES
     ast-outline digest src/Services src/Domain
 """
 
-GUIDE_IMPLEMENTS = """\
-ast-outline implements — find subclasses / implementations of a type
-
-USAGE
-    ast-outline implements <TypeName> <paths...> [--direct]
-
-WHAT IT DOES
-    AST-based search across every parsed file for classes / structs /
-    records / interfaces that inherit or implement <TypeName>. Matching
-    is done by the last segment with generics stripped — so `IDamageable`
-    matches `Game.Combat.IDamageable<T>`.
-
-    Python: works for `class Foo(Bar):` — the argument list is treated
-    as the base list.
-
-    Transitive by default: `Puppy extends Dog extends Animal` — searching
-    `Animal` returns Dog AND Puppy (the latter tagged `[via Dog]`).
-    Add --direct / -d to restrict to first-level subclasses only.
-
-    Search walks across any number of files and nested directories —
-    no reliance on filename↔classname convention.
-
-EXAMPLES
-    ast-outline implements IDamageable Assets/Scripts
-    ast-outline implements MonoBehaviour Assets/Scripts/App/Audio
-    ast-outline implements --direct BaseService src/
-"""
-
-
 GUIDE_PROMPT = """\
 ast-outline prompt — print the canonical agent prompt snippet
 
@@ -599,8 +516,6 @@ def _print_guide(topic: str | None = None) -> None:
         print(GUIDE_SHOW)
     elif topic == "digest":
         print(GUIDE_DIGEST)
-    elif topic == "implements":
-        print(GUIDE_IMPLEMENTS)
     elif topic == "prompt":
         print(GUIDE_PROMPT)
     else:

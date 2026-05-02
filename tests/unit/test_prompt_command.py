@@ -99,11 +99,11 @@ def test_snippet_mentions_every_supported_file_extension():
         assert f"`{ext}`" in AGENT_PROMPT, f"snippet missing extension {ext!r}"
 
 
-def test_snippet_covers_all_four_subcommands():
+def test_snippet_covers_all_subcommands():
     """Stop-at-the-step-that-answers workflow must reference every user-
     facing exploration subcommand. Dropping one would regress the
     snippet's completeness."""
-    for cmd in ("digest", "show", "implements"):
+    for cmd in ("digest", "show"):
         assert f"ast-outline {cmd}" in AGENT_PROMPT, f"snippet missing {cmd!r}"
     # And the default outline invocation (bare `ast-outline <paths…>`)
     assert "`ast-outline <paths…>`" in AGENT_PROMPT
@@ -115,14 +115,6 @@ def test_snippet_contains_parse_error_safety_clause():
     assert "# WARNING:" in AGENT_PROMPT
     assert "parse error" in AGENT_PROMPT
     assert "partial" in AGENT_PROMPT
-
-
-def test_snippet_covers_transitive_implements_contract():
-    """Transitive-by-default was a deliberate default-flip — agents
-    need to know about it and about the `--direct` escape."""
-    assert "transitive" in AGENT_PROMPT.lower()
-    assert "[via Parent]" in AGENT_PROMPT
-    assert "--direct" in AGENT_PROMPT
 
 
 def test_snippet_has_scope_guardrail_against_over_execution():
