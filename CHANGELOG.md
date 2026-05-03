@@ -7,6 +7,24 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.6.5] — 2026-05-03
+
+### Changed
+
+- Agent-prompt snippet (`ast-outline prompt`, README copy, localized
+  READMEs) is now explicitly cross-vendor — Claude Opus 4.7 / Sonnet
+  4.6 / Haiku 4.5 **and** OpenAI GPT-5.x (5.3-codex / 5.4 / 5.5).
+  Reworded the lead-in of the broad-to-narrow command list from
+  "Stop at the step that answers the question" to "Pick the smallest
+  of these that answers your question — they're a menu, not a
+  sequence; skip straight to `show` when you already know the
+  symbol." OpenAI's GPT-5.5 prompt-guide flags numbered step lists
+  as interference; the new wording keeps the same meaning while
+  reading as a decision tree on both vendors. Module docstring of
+  `_prompt.py` now lists the cross-vendor invariants future edits
+  must keep intact (no aggressive emphasis, no persona, no "think
+  step by step", explicit fallbacks, no model-name pinning).
+
 ## [0.6.4] — 2026-05-03
 
 ### Fixed

@@ -224,7 +224,9 @@ For `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`,
 `.scala`, `.sc`, `.go`, `.rs`, `.php`, `.phtml`, `.md`, and `.yaml`/`.yml`
 files, read structure with `ast-outline` before opening full contents.
 
-Stop at the step that answers the question:
+Pick the smallest of these that answers your question — they're a
+broad-to-narrow menu, not a sequence; skip straight to `show` when
+you already know the symbol:
 
 1. **Unfamiliar directory** — `ast-outline digest <paths…>`: one-page map
    of every file's types and public methods. Each file is tagged with a

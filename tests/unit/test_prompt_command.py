@@ -118,10 +118,14 @@ def test_snippet_contains_parse_error_safety_clause():
 
 
 def test_snippet_has_scope_guardrail_against_over_execution():
-    """`Stop at the step that answers the question` is the scope
-    guardrail that stops Opus 4.7 from mechanically running all four
-    workflow steps. Without it, literal models over-execute."""
-    assert "Stop at the step" in AGENT_PROMPT
+    """The "menu, not a sequence" framing is the scope guardrail that
+    stops literal models (Opus 4.7) and step-prescription-averse
+    models (GPT-5.5) from mechanically running every workflow step.
+    Without it, Opus over-executes; without it, GPT-5.5 reads the
+    1/2/3 list as process prescription and degrades. Phrasing may
+    evolve — what matters is that *some* explicit guard is present."""
+    assert "menu, not a sequence" in AGENT_PROMPT
+    assert "skip straight to" in AGENT_PROMPT
 
 
 def test_snippet_avoids_emphasis_overuse():
