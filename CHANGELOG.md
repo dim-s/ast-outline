@@ -7,6 +7,67 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.6.2] — 2026-05-03
+
+### Added
+
+- **PHP language adapter** (`tree-sitter-php`). Targets modern PHP 8.x
+  and the still-widely-deployed 7.4 line. Recognised constructs:
+  - `namespace Foo;` (file-scoped) and `namespace Foo { ... }`
+    (bracketed, including the unnamed global block);
+  - `class` / `abstract class` / `final class` / `readonly class` /
+    `final readonly class` / `abstract readonly class`;
+  - `interface` (with multi-`extends`), `trait` (mapped to
+    `KIND_INTERFACE` with `native_kind="trait"` for cross-language
+    search uniformity, mirroring Scala / Rust);
+  - PHP 8.1 `enum` — both pure (`enum Color`) and backed
+    (`enum Status: string`);
+  - methods, abstract methods, `__construct` → `KIND_CTOR`,
+    `__destruct` → `KIND_DTOR`;
+  - PHP 8.0 constructor property promotion — promoted parameters are
+    surfaced as implicit `KIND_FIELD` entries on the enclosing type
+    (mirrors Kotlin's primary-ctor `val`/`var` promotion);
+  - properties (single + multi-variable: `public $a, $b;`);
+  - PHP 7.1+ class constants with explicit visibility, PHP 8.3 typed
+    class constants (`public const string FOO = "bar"`);
+  - top-level `function` and `const` declarations;
+  - PHP 8.0 attributes (`#[Attr]` / `#[Attr(args)]`) collected into
+    `attrs` and stripped from rendered signatures.
+- File extensions handled: `.php`, `.phtml`, `.phps`, `.php8`.
+- Imports: `use App\Foo`, `use App\Foo as Bar`, `use function f`,
+  `use const C`, and grouped imports `use App\{A, B as Bb}` —
+  group form is expanded so each `imports` entry is a single
+  source-true `use ...` statement. `use` declarations inside
+  bracketed namespaces are also collected.
+- Pre-Composer / WordPress / Drupal-7-style legacy code uses
+  `require[_once]` / `include[_once]` as the only dependency
+  mechanism, so top-level `include` / `include_once` / `require` /
+  `require_once` statements are also emitted as imports — preserving
+  source-true expression text including computed paths
+  (`require_once ABSPATH . 'wp-config.php'`). Collection is
+  deliberately limited to **direct top-level statements** (children
+  of `program` plus the body of bracketed namespaces). Conditional
+  includes inside `if` / `try` / `switch` / `match` / loop bodies are
+  out of scope, matching how every other adapter handles conditional
+  imports (Python `try/except` fallbacks, `if TYPE_CHECKING`, etc.).
+  `use` and `require` entries appear in source order.
+
+### Added — common IR
+
+- `ParseResult.conditional_imports_count: int` (default `0`) — count
+  of imports the adapter intentionally skipped because they live
+  outside the file's static top level. Renderers append
+  `[+ 1 conditional include]` (singular) or
+  `[+ N conditional includes]` (plural) to the `imports:` line when
+  this is non-zero, so an agent reading a WordPress `wp-load.php`
+  (whose every `require` lives in an `if`/`else` chain) sees
+  `imports: [+ 6 conditional includes]` instead of an empty imports
+  list — clear signal that more dependencies exist but require
+  reading the file directly. Currently populated only by the PHP
+  adapter; other adapters leave it at `0` (their imports are
+  top-level by spec — Java, Go, C#, Kotlin, Scala — or already
+  collect conditional cases like Python's `try/except` fallback).
+
 ## [0.6.1] — 2026-05-03
 
 ### Changed

@@ -14,6 +14,7 @@ from .go import GoAdapter
 from .java import JavaAdapter
 from .kotlin import KotlinAdapter
 from .markdown import MarkdownAdapter
+from .php import PhpAdapter
 from .python import PythonAdapter
 from .rust import RustAdapter
 from .scala import ScalaAdapter
@@ -30,6 +31,7 @@ ADAPTERS: list[LanguageAdapter] = [
     ScalaAdapter(),
     GoAdapter(),
     RustAdapter(),
+    PhpAdapter(),
     MarkdownAdapter(),
     YamlAdapter(),
 ]

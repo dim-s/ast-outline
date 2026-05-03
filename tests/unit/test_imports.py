@@ -1,7 +1,7 @@
 """Per-language tests for `ParseResult.imports`.
 
-Covers all 8 code adapters (csharp/python/typescript/java/kotlin/scala/
-go/rust). Markdown and YAML adapters have no imports concept so are
+Covers all 9 code adapters (csharp/python/typescript/java/kotlin/scala/
+go/rust/php). Markdown and YAML adapters have no imports concept so are
 not exercised here.
 
 Each test writes a minimal source file to a tmp_path, runs the adapter,
@@ -18,6 +18,7 @@ from ast_outline.adapters.csharp import CSharpAdapter
 from ast_outline.adapters.go import GoAdapter
 from ast_outline.adapters.java import JavaAdapter
 from ast_outline.adapters.kotlin import KotlinAdapter
+from ast_outline.adapters.php import PhpAdapter
 from ast_outline.adapters.python import PythonAdapter
 from ast_outline.adapters.rust import RustAdapter
 from ast_outline.adapters.scala import ScalaAdapter
@@ -288,6 +289,72 @@ def test_rust_excludes_mod_declarations(tmp_path: Path) -> None:
     assert r.imports == ["use foo::Bar"]
 
 
+# --- PHP ------------------------------------------------------------------
+
+
+def test_php_basic_imports(tmp_path: Path) -> None:
+    p = _write(tmp_path, "m.php", (
+        "<?php\n"
+        "namespace App;\n"
+        "use App\\Foo;\n"
+        "use App\\Bar as B;\n"
+        "use function strlen;\n"
+        "use const PHP_INT_MAX;\n"
+        "class M {}\n"
+    ))
+    r = PhpAdapter().parse(p)
+    assert r.imports == [
+        "use App\\Foo",
+        "use App\\Bar as B",
+        "use function strlen",
+        "use const PHP_INT_MAX",
+    ]
+
+
+def test_php_grouped_imports_expanded(tmp_path: Path) -> None:
+    """`use Foo\\{A, B as Bb};` → one entry per leaf, each a complete
+    source-true `use ...` statement. The prefix is reattached so each
+    entry stands alone — no implicit "all share `Foo\\`" knowledge
+    required of the reader."""
+    p = _write(tmp_path, "m.php", (
+        "<?php\n"
+        "use App\\{Foo, Bar as Bb};\n"
+        "use function App\\Helpers\\{render, escape as e};\n"
+        "use const App\\Config\\{LIMIT, MAX};\n"
+        "class M {}\n"
+    ))
+    r = PhpAdapter().parse(p)
+    assert r.imports == [
+        "use App\\Foo",
+        "use App\\Bar as Bb",
+        "use function App\\Helpers\\render",
+        "use function App\\Helpers\\escape as e",
+        "use const App\\Config\\LIMIT",
+        "use const App\\Config\\MAX",
+    ]
+
+
+def test_php_imports_inside_bracketed_namespace(tmp_path: Path) -> None:
+    """`namespace Foo { use Bar; }` — `use` inside the namespace block
+    must still surface in `imports`, since adapters report the file's
+    full dependency surface regardless of which namespace block declared
+    each `use`."""
+    p = _write(tmp_path, "m.php", (
+        "<?php\n"
+        "namespace App\\First {\n"
+        "    use App\\Foo;\n"
+        "    class A {}\n"
+        "}\n"
+        "namespace App\\Second {\n"
+        "    use App\\Bar;\n"
+        "    class B {}\n"
+        "}\n"
+    ))
+    r = PhpAdapter().parse(p)
+    assert "use App\\Foo" in r.imports
+    assert "use App\\Bar" in r.imports
+
+
 # --- C# -------------------------------------------------------------------
 
 
@@ -333,11 +400,19 @@ def test_empty_imports_for_file_with_none(tmp_path: Path) -> None:
         (GoAdapter(), "m.go", "package main\nfunc main(){}\n"),
         (RustAdapter(), "m.rs", "fn main() {}\n"),
         (CSharpAdapter(), "M.cs", "namespace X { class M {} }\n"),
+        (PhpAdapter(), "m.php", "<?php\nnamespace X;\nclass M {}\n"),
     ]
     for adapter, name, content in cases:
         p = _write(tmp_path, name, content)
         r = adapter.parse(p)
         assert r.imports == [], f"{adapter.language_name} expected empty imports"
+        # Default for the conditional-imports counter is 0; only PHP
+        # currently populates it. A non-zero value here would mean the
+        # adapter spuriously flagged a conditional dependency on a file
+        # that has none.
+        assert r.conditional_imports_count == 0, (
+            f"{adapter.language_name} expected conditional_imports_count=0"
+        )
 
 
 def test_each_adapter_wires_collect_imports_into_parse_result(tmp_path: Path) -> None:
@@ -356,6 +431,7 @@ def test_each_adapter_wires_collect_imports_into_parse_result(tmp_path: Path) ->
         (GoAdapter(), "m.go", 'package main\nimport "fmt"\nfunc main(){}\n', 'import "fmt"'),
         (RustAdapter(), "m.rs", "use foo::Bar;\nfn main() {}\n", "use foo::Bar"),
         (CSharpAdapter(), "M.cs", "using System;\nnamespace X { class M {} }\n", "using System"),
+        (PhpAdapter(), "m.php", "<?php\nuse App\\Foo;\nclass M {}\n", "use App\\Foo"),
     ]
     for adapter, name, content, expected_first in cases:
         p = _write(tmp_path, name, content)

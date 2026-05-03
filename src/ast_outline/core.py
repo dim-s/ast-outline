@@ -108,6 +108,17 @@ class ParseResult:
     # the file has none. Renderers ignore this unless the caller opts in
     # via `OutlineOptions.show_imports` / `DigestOptions.show_imports`.
     imports: list[str] = field(default_factory=list)
+    # Count of imports the adapter intentionally skipped because they're
+    # not at the file's static top level — e.g. PHP `require_once` inside
+    # an `if`/`try`/`switch`/loop body, or inside a function/method/
+    # closure. We don't list them (it'd mislead the agent into thinking
+    # they always load), but a counter lets the agent see "this file has
+    # additional dynamic dependencies — read it directly if you care."
+    # Renderers append `[+ N conditional includes]` to the imports line
+    # when this is > 0. Currently populated only by the PHP adapter; for
+    # most languages imports are top-level by spec (Java, Go, C#, …) and
+    # the field stays at 0.
+    conditional_imports_count: int = 0
 
 
 # --- Options --------------------------------------------------------------
@@ -170,15 +181,29 @@ def render_outline(result: ParseResult, opts: OutlineOptions) -> str:
     warn = _format_error_warning(result)
     if warn:
         lines.append(warn)
-    if opts.show_imports and result.imports:
-        lines.append("# " + _format_imports_line(result.imports))
+    if opts.show_imports and (
+        result.imports or result.conditional_imports_count > 0
+    ):
+        lines.append(
+            "# " + _format_imports_line(
+                result.imports, result.conditional_imports_count
+            )
+        )
     for decl in result.declarations:
         _render_decl(decl, opts, indent=0, out=lines)
     return "\n".join(lines)
 
 
-def _format_imports_line(imports: list[str]) -> str:
-    """Render the imports annotation as `imports: <stmt>; <stmt>; ...`.
+def _format_imports_line(imports: list[str], conditional_count: int = 0) -> str:
+    """Render the imports annotation as `imports: <stmt>; <stmt>; ...`,
+    optionally followed by `[+ N conditional includes]` when the
+    adapter skipped some dynamic ones.
+
+    Callers must ensure at least one of (`imports` non-empty,
+    `conditional_count > 0`) is true — calling with both empty
+    produces a degenerate `"imports:"` line. The two renderers
+    (`render_outline`, `render_digest`) both gate the call on this
+    condition, so the degenerate output is unreachable in normal use.
 
     Each entry is already a complete, source-true import statement in
     the file's native language (`from .core import X`,
@@ -190,6 +215,17 @@ def _format_imports_line(imports: list[str]) -> str:
     learn; any agent that recognises the source language recognises
     the output.
 
+    The `[+ N conditional includes]` suffix is a deliberate signal
+    that more imports exist in the file but are not statically
+    enumerable — they live inside `if`/`try`/loop branches or
+    function bodies. We keep the marker bracketed and short so an
+    LLM doesn't conflate it with a real import. When the static
+    list is empty but `conditional_count > 0` (e.g. WordPress
+    `wp-load.php` whose every `require` lives in an `if`/`else`
+    chain), the line reads `imports: [+ 6 conditional includes]` —
+    still signalling "this file has dependencies" rather than
+    looking dependency-less.
+
     Caveat: a TypeScript / JS module specifier could theoretically
     contain a literal `; ` inside a string (`import x from "./a;b"`).
     That would make the joined line ambiguous to a strict
@@ -198,7 +234,16 @@ def _format_imports_line(imports: list[str]) -> str:
     parse statements semantically, not by `split("; ")`. We accept the
     edge case rather than escape or switch separators.
     """
-    return "imports: " + "; ".join(imports)
+    suffix = ""
+    if conditional_count > 0:
+        plural = "s" if conditional_count != 1 else ""
+        suffix = f" [+ {conditional_count} conditional include{plural}]"
+    if not imports:
+        # No static imports but the adapter saw conditional ones —
+        # emit the bracketed counter on its own so the line still
+        # signals "this file has dependencies".
+        return "imports:" + suffix
+    return "imports: " + "; ".join(imports) + suffix
 
 
 # --- Header helpers (shared between outline + digest) --------------------
@@ -727,10 +772,16 @@ def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
     if warn:
         # Indent under the file line so the warning lives with its file.
         lines.append("  " + warn)
-    if opts.show_imports and result.imports:
+    if opts.show_imports and (
+        result.imports or result.conditional_imports_count > 0
+    ):
         # 4-space indent matches type-header indent so the imports line
         # sits visually inside the file's block.
-        lines.append("    " + _format_imports_line(result.imports))
+        lines.append(
+            "    " + _format_imports_line(
+                result.imports, result.conditional_imports_count
+            )
+        )
 
     # Markdown files digest as a hierarchical TOC, not a type/member list.
     if result.language == "markdown":
