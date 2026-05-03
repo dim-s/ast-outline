@@ -80,6 +80,9 @@ embeddings 的 MCP 服务器）相反。现代 LLM Agent 足够聪明，能将
 真实代码中快速导航 —— 无需完整读取文件，也无需让本地索引为自己的复杂性
 付费。
 
+`ast-outline` 自身也不做 MCP 服务器 —— 对一个 stateless CLI，Agent 在
+`bash` 里串管道、并行调用，比通过 MCP 包装层调用同一组命令更有杠杆。
+
 ---
 
 ## 支持的语言

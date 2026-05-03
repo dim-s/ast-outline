@@ -83,6 +83,10 @@ embedding-MCP crowd). Modern LLM agents are sharp enough to chain
 navigate real code fast — without reading whole files, and without a
 local index earning its complexity.
 
+And no MCP server for `ast-outline` itself — for a stateless CLI, agents
+get more leverage piping and parallelising it in `bash` than through an
+MCP shim wrapping the same calls.
+
 ---
 
 ## Supported languages
