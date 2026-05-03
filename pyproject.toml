@@ -1,11 +1,12 @@
 [project]
 name = "ast-outline"
-version = "0.5.3"
+version = "0.6.0"
 description = "AST-based structural outline for source files (C#, Python, TypeScript/JavaScript, Java, Kotlin, Scala, Go, Rust, Markdown, YAML) — tree-sitter-powered, LLM-agent-first. Complement to ast-grep: ast-grep searches, ast-outline overviews."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 authors = [
+    { name = "Dmitrii Zaitsev", email = "d.zayceff@gmail.com" },
     { name = "ast-outline contributors" },
 ]
 keywords = [
@@ -34,7 +35,7 @@ keywords = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -83,6 +84,10 @@ include = [
     "/tests",
     "/README.md",
     "/LICENSE",
+    "/LICENSE-MIT",
+    "/LICENSE-DOCS",
+    "/NOTICE",
+    "/CHANGELOG.md",
     "/pyproject.toml",
 ]
 

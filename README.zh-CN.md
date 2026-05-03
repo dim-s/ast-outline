@@ -9,9 +9,16 @@
 > 与 [ast-grep](https://github.com/ast-grep/ast-grep) 同属 `ast-*` 家族：
 > **`ast-grep` 用于结构化*搜索*** 代码，**`ast-outline` 用于结构化*概览*** 代码。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Code: Apache 2.0](https://img.shields.io/badge/code-Apache%202.0-blue.svg)](./LICENSE)
+[![Docs: CC BY 4.0](https://img.shields.io/badge/docs-CC%20BY%204.0-lightgrey.svg)](./LICENSE-DOCS)
 ![Python: 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![Status: beta](https://img.shields.io/badge/status-beta-orange.svg)
+
+> **ast-outline™** —— Dmitrii Zaitsev（dim-s）。原始项目：
+> <https://github.com/dim-s/ast-outline>（创建于 2026-04-22）。代码采用
+> **Apache 2.0** 许可（v0.6.0 起；v0.5.x 及更早版本仍可在 MIT 下使用），
+> 文档采用 **CC BY 4.0** —— 复用本 README 的文字内容须显式署名。
+> 详见下方 [许可与署名](#许可与署名) 一节。
 
 ---
 
@@ -544,6 +551,56 @@ Kotlin、Scala、Go、Rust、Markdown、YAML）、与语言无关的渲染器、
 
 ---
 
-## 许可证
+## 项目历史
 
-[MIT](./LICENSE)
+- **2026-04-22** —— 仓库以 `dim-s/code-outline` 名称在 GitHub 创建。首个公开提交，v0.2.0b0。
+- **2026-04-22** —— 添加俄文与中文 README；同日新增 TypeScript / JavaScript 适配器。
+- **2026-04-23** —— Kotlin 适配器；`prompt` 子命令。
+- **2026-04-24** —— Scala 适配器。**项目从 `code-outline` 改名为 `ast-outline`（v0.3.0）。** GitHub 仓库改名为 `dim-s/ast-outline`。
+- **2026-04-25** —— Go 适配器。
+- **2026-04-28** —— 面向 LLM 的错误约定：`# note: …` 输出到 stdout 且 `rc=0`；Markdown 标题支持子串匹配。
+- **2026-04-30** —— YAML 适配器；digest 表头加入按文件 size 标签与 token 估算；Rust 适配器。
+- **2026-05-01** —— v0.4.0：digest 方法标记（`[async]` / `[unsafe]` / `[const]` / `[suspend]` / `[static]` / `[abstract]` / `[override]` / `[classmethod]` / `[property]`）；类型修饰符、属性和 `[deprecated]` 标签。v0.4.1。
+- **2026-05-02** —— 发布到 PyPI：[`ast-outline`](https://pypi.org/project/ast-outline/)。v0.4.2 / v0.4.3 / v0.5.0（删除 `code-outline` CLI 别名）/ v0.5.1（删除 `implements` 命令 —— outline/digest 已能渲染 `: Base`）/ v0.5.2（`--imports` 选项）/ v0.5.3（`--version` 选项）。
+- **2026-05-03** —— **v0.6.0：从 MIT 切换为 Apache License 2.0**，文档另行采用 CC BY 4.0。原 MIT 文本保留在 `LICENSE-MIT` 中，便于 0.5.x 分支的下游 fork 继续使用。
+
+完整历史请见 `git log` 与 [GitHub Releases](https://github.com/dim-s/ast-outline/releases)。
+
+---
+
+## 许可与署名
+
+Copyright © 2026 **Dmitrii Zaitsev**（GitHub: [dim-s](https://github.com/dim-s)）与 ast-outline 贡献者。
+
+本项目采用 **三种不同的许可证** 覆盖不同类型的内容：
+
+| 内容 | 许可证 | 文件 |
+| --- | --- | --- |
+| **源代码**（`src/`、测试、构建配置）—— v0.6.0 及之后版本 | [Apache 2.0](./LICENSE) | `LICENSE` |
+| **源代码** —— v0.5.3 及更早版本 | [MIT](./LICENSE-MIT) | `LICENSE-MIT` |
+| **文档与文字内容**（本 README、各语言版本 README、CLI 帮助文本、prompt 文件、digest 图例、设计文档） | [CC BY 4.0](./LICENSE-DOCS) | `LICENSE-DOCS` |
+
+三种许可证都是宽松许可 —— 你可以 fork、商用、移植到其他语言、集成到自己的产品中。之所以拆分，是为了 **让每类内容的署名要求都变得明确**。0.5.x 分支的 fork 可继续使用 MIT；新功能开发在 Apache 2.0 下进行。
+
+### 如果你复用代码（v0.6.0+）
+
+请在分发包中保留 `LICENSE`（Apache 2.0）和 `NOTICE` 文件。Apache 2.0 §4 要求你：
+
+- 在分发包中包含 `LICENSE` 文件
+- 将 `NOTICE` 内容包含到任何随附的 "NOTICE" 文本文件中
+- 保留署名声明（不得删除版权头）
+- 在被你修改过的文件中加入说明，表明你做了修改
+
+### 如果你复用文字内容
+
+如果你的项目复制了文档中较实质的部分 —— 段落、workflow 示例片段、digest 图例、标记词汇表、CLI 中 `# note:` 约定的措辞 —— CC BY 4.0 要求 **显式署名**。格式（请逐字使用或采用等效表述）：
+
+> Based on [ast-outline](https://github.com/dim-s/ast-outline) by Dmitrii Zaitsev (dim-s), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+请放在用户能看到的位置（通常是衍生项目的 README）。
+
+### 商标
+
+**ast-outline™** 是 Dmitrii Zaitsev（dim-s）的未注册商标，用于指代位于 <https://github.com/dim-s/ast-outline> 的原始项目。Apache License 2.0 §6 明确不授予任何商标权利。**Fork、语言移植和重新命名的发行版必须使用不同的项目名称**，以避免对用户造成混淆。在 README 中使用「inspired by ast-outline」或「based on ast-outline」之类的措辞是允许且鼓励的；但将 `ast-outline` 本身用作你自己的项目名／包名／二进制名是不允许的。
+
+如果你在任何包注册表（crates.io、npm、PyPI、Homebrew 等）维护着名为 `ast-outline` 但 **并非** 上述链接所指项目的发布包，请考虑改名。

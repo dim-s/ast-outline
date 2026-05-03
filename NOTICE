@@ -1,0 +1,24 @@
+ast-outline
+Copyright 2026 Dmitrii Zaitsev (dim-s) and ast-outline contributors
+
+This product includes original design, output format, command
+conventions, and documentation by Dmitrii Zaitsev (GitHub: dim-s).
+
+Originally created at https://github.com/dim-s/ast-outline
+First public commit: 2026-04-22 (as `code-outline`, renamed to
+`ast-outline` on 2026-04-24, v0.3.0).
+
+"ast-outline" is an unregistered trademark (™) of Dmitrii Zaitsev.
+The Apache License does not grant rights to use this trademark —
+see Section 6 of the License. Forks, ports to other languages, and
+rebranded derivative works must use a different project name to
+avoid user confusion.
+
+Versions through 0.5.3 were released under the MIT License. From
+v0.6.0 onward this project is licensed under the Apache License,
+Version 2.0 (see LICENSE). The MIT text is retained in LICENSE-MIT
+for compatibility with downstream forks of the 0.5.x tree.
+
+Documentation in this repository is separately licensed under
+CC BY 4.0 (see LICENSE-DOCS). Reuse of documentation prose
+requires visible attribution per CC BY 4.0 terms.

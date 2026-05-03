@@ -9,9 +9,17 @@
 > Сосед [ast-grep](https://github.com/ast-grep/ast-grep) в семействе `ast-*`:
 > **`ast-grep` ищет** по структуре кода, **`ast-outline` показывает обзор**.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Code: Apache 2.0](https://img.shields.io/badge/code-Apache%202.0-blue.svg)](./LICENSE)
+[![Docs: CC BY 4.0](https://img.shields.io/badge/docs-CC%20BY%204.0-lightgrey.svg)](./LICENSE-DOCS)
 ![Python: 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![Status: beta](https://img.shields.io/badge/status-beta-orange.svg)
+
+> **ast-outline™** — Dmitrii Zaitsev (dim-s). Оригинальный проект:
+> <https://github.com/dim-s/ast-outline> (создан 2026-04-22). Код под
+> **Apache 2.0** (с v0.6.0; v0.5.x и более ранние остаются под MIT),
+> документация под **CC BY 4.0** — переиспользование текста этого README
+> требует видимой атрибуции. Подробнее — раздел
+> [«Лицензии и атрибуция»](#лицензии-и-атрибуция) ниже.
 
 ---
 
@@ -576,6 +584,56 @@ PR приветствуются.
 
 ---
 
-## Лицензия
+## История проекта
 
-[MIT](./LICENSE)
+- **2026-04-22** — Репозиторий создан на GitHub как `dim-s/code-outline`. Первый публичный коммит, v0.2.0b0.
+- **2026-04-22** — Добавлены русский и китайский README; в тот же день — адаптер TypeScript / JavaScript.
+- **2026-04-23** — Адаптер Kotlin; подкоманда `prompt`.
+- **2026-04-24** — Адаптер Scala. **Переименование `code-outline` → `ast-outline` (v0.3.0).** GitHub-репозиторий переименован в `dim-s/ast-outline`.
+- **2026-04-25** — Адаптер Go.
+- **2026-04-28** — LLM-friendly контракт ошибок: `# note: …` на stdout с `rc=0`; substring-матчинг для заголовков Markdown.
+- **2026-04-30** — Адаптер YAML; per-file size-метки и оценка токенов в заголовках digest; адаптер Rust.
+- **2026-05-01** — v0.4.0: маркеры методов в digest (`[async]` / `[unsafe]` / `[const]` / `[suspend]` / `[static]` / `[abstract]` / `[override]` / `[classmethod]` / `[property]`); модификаторы типов, атрибуты и тег `[deprecated]`. v0.4.1.
+- **2026-05-02** — Публикация на PyPI как [`ast-outline`](https://pypi.org/project/ast-outline/). v0.4.2 / v0.4.3 / v0.5.0 (CLI-алиас `code-outline` удалён) / v0.5.1 (команда `implements` удалена — outline/digest и так показывают `: Base`) / v0.5.2 (флаг `--imports`) / v0.5.3 (флаг `--version`).
+- **2026-05-03** — **v0.6.0: смена лицензии MIT → Apache License 2.0**, документация — отдельно под CC BY 4.0. Прежний текст MIT сохранён в `LICENSE-MIT` для совместимости с форками 0.5.x-ветки.
+
+Полная история — `git log` и [GitHub Releases](https://github.com/dim-s/ast-outline/releases).
+
+---
+
+## Лицензии и атрибуция
+
+Copyright © 2026 **Dmitrii Zaitsev** (GitHub: [dim-s](https://github.com/dim-s)) и контрибьюторы ast-outline.
+
+В проекте **три разных лицензии** для разных типов работы:
+
+| Что | Лицензия | Файл |
+| --- | --- | --- |
+| **Исходный код** (`src/`, тесты, build-конфиг) — v0.6.0 и новее | [Apache 2.0](./LICENSE) | `LICENSE` |
+| **Исходный код** — v0.5.3 и более ранние | [MIT](./LICENSE-MIT) | `LICENSE-MIT` |
+| **Документация и проза** (этот README, переведённые README, тексты CLI-помощи, prompt-файлы, легенда digest, дизайн-доки) | [CC BY 4.0](./LICENSE-DOCS) | `LICENSE-DOCS` |
+
+Все три лицензии — пермиссивные. Можно форкать, использовать коммерчески, портировать на другие языки, поставлять в продукте. Разделение нужно лишь для того, чтобы **требования атрибуции были явными** для каждого типа контента. Форки 0.5.x-ветки могут продолжать жить под MIT; новая разработка идёт под Apache 2.0.
+
+### Если переиспользуете код (v0.6.0+)
+
+Сохраняйте файлы `LICENSE` (Apache 2.0) и `NOTICE` в дистрибутиве. Apache 2.0 §4 требует:
+
+- включить `LICENSE` в дистрибутив
+- включить `NOTICE` в любой "NOTICE" текстовый файл, поставляемый с вашей работой
+- сохранять attribution-уведомления (нельзя удалять copyright-заголовок)
+- в изменённых файлах добавлять уведомление, что вы внесли изменения
+
+### Если переиспользуете прозу
+
+Если ваш проект копирует нетривиальные фрагменты документации — абзацы, workflow-сниппеты, легенду digest, словарь маркеров, формулировки конвенции `# note:` для CLI — CC BY 4.0 требует **видимой атрибуции**. Формат (используйте дословно или эквивалентно):
+
+> Based on [ast-outline](https://github.com/dim-s/ast-outline) by Dmitrii Zaitsev (dim-s), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+Размещайте там, где это увидят пользователи (обычно — README производного проекта).
+
+### Торговая марка
+
+**ast-outline™** — незарегистрированная торговая марка Dmitrii Zaitsev (dim-s), используется для идентификации оригинального проекта по адресу <https://github.com/dim-s/ast-outline>. Apache License 2.0 §6 явно исключает любой грант на торговые марки. **Форки, языковые порты и ребрендинговые дистрибутивы должны использовать другое имя** во избежание путаницы у пользователей. Формулировки «inspired by ast-outline» или «based on ast-outline» в README — допустимы и приветствуются; использование самого имени `ast-outline` для своего проекта / пакета / бинарника — нет.
+
+Если вы поддерживаете публичный пакет с именем `ast-outline` на любом реестре (crates.io, npm, PyPI, Homebrew и т.д.), который **не является** проектом по ссылке выше — пожалуйста, переименуйте его.
