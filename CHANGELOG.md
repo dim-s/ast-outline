@@ -7,6 +7,21 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.6.4] — 2026-05-03
+
+### Fixed
+
+- `outline` and `digest` no longer produce empty stdout when **every**
+  file in a batch fails to parse. Previously per-file `# WARN`
+  diagnostics went only to stderr, so an LLM agent (which reads
+  stdout) saw `(no output)` and had no idea what happened. The CLI
+  now prints one `# note: parse error in <path>: <err>` line per
+  failed file on stdout — matching the existing convention for
+  user-facing failures (path-not-found, no-adapter, etc.) — while
+  the detailed `# WARN` lines still go to stderr for humans.
+  Partial-failure batches (some files succeed) keep the existing
+  behavior: clean outline on stdout, warnings on stderr.
+
 ## [0.6.3] — 2026-05-03
 
 ### Added

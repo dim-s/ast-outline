@@ -214,7 +214,15 @@ def _cmd_outline(args) -> int:
     )
 
     results, errors = _parse_paths(paths, glob=args.glob)
-    if not results and not errors:
+    if not results:
+        # All-failure path: surface parse errors on stdout as `# note:`
+        # lines so the LLM agent (which only reads stdout) sees what
+        # happened. Without this, an all-failed batch would print
+        # nothing on stdout and the agent shows "(no output)".
+        if errors:
+            for f, e in errors:
+                print(f"# note: parse error in {f}: {e}")
+            return 0
         exts = sorted(supported_extensions())
         print(
             f"# note: no files found matching supported extensions: {exts}"
@@ -296,7 +304,16 @@ def _cmd_digest(args) -> int:
         show_imports=args.imports,
     )
     results, errors = _parse_paths(paths)
-    if not results and not errors:
+    if not results:
+        # See `_cmd_outline` for rationale — an all-failure batch needs
+        # the parse errors visible on stdout (the LLM's channel), not
+        # only on stderr, otherwise the agent sees `# no files` (from
+        # `render_digest([])`) and is misled into thinking the paths
+        # had no source files.
+        if errors:
+            for f, e in errors:
+                print(f"# note: parse error in {f}: {e}")
+            return 0
         print("# note: no supported files found")
         return 0
     print(render_digest(results, opts), end="")

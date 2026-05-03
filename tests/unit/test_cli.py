@@ -270,3 +270,54 @@ def test_show_unsupported_extension_returns_zero_with_note(tmp_path, capsys):
     assert "no adapter" in captured.out.lower()
 
 
+# --- All-files-fail visibility -------------------------------------------
+#
+# Regression: if every file in a batch raised during `adapter.parse`,
+# stdout used to be empty (warnings went only to stderr) and an LLM
+# harness reading stdout saw `(no output)`. The CLI promises
+# rc=0 + a `# note:` line on stdout for any user-facing failure, so an
+# all-failure batch must surface the parse errors there too.
+
+
+class _BoomAdapter:
+    """Adapter stub that claims `.yml` and always raises on parse."""
+    language_name = "yaml"
+    extensions = {".yml", ".yaml"}
+
+    def parse(self, path):
+        raise RuntimeError(f"boom on {path}")
+
+
+def test_outline_all_files_fail_emits_notes_on_stdout(tmp_path, monkeypatch, capsys):
+    a = tmp_path / "a.yml"
+    b = tmp_path / "b.yml"
+    a.write_text("k: 1\n")
+    b.write_text("k: 2\n")
+    monkeypatch.setattr("ast_outline.adapters.ADAPTERS", [_BoomAdapter()])
+
+    rc = main(["outline", str(a), str(b)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    # Both files surface as `# note:` lines on stdout — the channel the
+    # LLM agent reads. No silent empty stdout.
+    assert captured.out.count("# note: parse error in") == 2
+    assert str(a) in captured.out
+    assert str(b) in captured.out
+
+
+def test_digest_all_files_fail_emits_notes_on_stdout(tmp_path, monkeypatch, capsys):
+    a = tmp_path / "a.yml"
+    b = tmp_path / "b.yml"
+    a.write_text("k: 1\n")
+    b.write_text("k: 2\n")
+    monkeypatch.setattr("ast_outline.adapters.ADAPTERS", [_BoomAdapter()])
+
+    rc = main(["digest", str(a), str(b)])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert captured.out.count("# note: parse error in") == 2
+    # Should NOT print the misleading `# no files` line from
+    # `render_digest([])` when files were present but all failed.
+    assert "# no files" not in captured.out
+
+
