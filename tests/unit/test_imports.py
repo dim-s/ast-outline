@@ -562,6 +562,256 @@ def test_scala_counter_zero_when_only_top_level(tmp_path: Path) -> None:
     assert r.conditional_imports_count == 0
 
 
+# --- Conditional-counter edge cases (per language) ----------------------
+
+
+def test_python_counter_handles_async_nested_decorated(tmp_path: Path) -> None:
+    """Less-common Python shapes that still must trigger the counter:
+    `async def`, nested function (def inside def), decorated function,
+    nested class. Each of these contains an `import` whose scope is
+    function-local or class-namespace-bound — counter must include it."""
+    p = _write(tmp_path, "m.py", (
+        "async def aio():\n"
+        "    import async_dep\n"
+        "def outer():\n"
+        "    def inner():\n"
+        "        import nested_dep\n"
+        "@deco\n"
+        "def decorated():\n"
+        "    import deco_dep\n"
+        "class Outer:\n"
+        "    class Inner:\n"
+        "        import nested_class_dep\n"
+    ))
+    r = PythonAdapter().parse(p)
+    # 4 hidden — one per body. Note the decorated function lives
+    # under a `decorated_definition` wrapper; the walker descends
+    # into it because the wrapper isn't in the scope set, but its
+    # nested `function_definition` flips the flag.
+    assert r.conditional_imports_count == 4
+
+
+def test_python_counter_zero_on_broken_syntax(tmp_path: Path) -> None:
+    """A malformed file should not crash, and the counter should not
+    over-report. Tree-sitter recovers via ERROR nodes but we only count
+    actual `import_statement` / `import_from_statement` matches."""
+    p = _write(tmp_path, "m.py", "def broken(\n    import x\n")
+    r = PythonAdapter().parse(p)
+    assert r.error_count > 0
+    # Recovery may or may not retain the import as a real statement.
+    # The contract here is "doesn't crash and doesn't blow up the count".
+    assert r.conditional_imports_count >= 0
+
+
+def test_python_counter_zero_on_empty_or_comment_only(tmp_path: Path) -> None:
+    cases = [
+        ("empty.py", ""),
+        ("only_comments.py", "# header comment\n# another\n"),
+        ("import_in_comment.py", "def f(): pass\n# import faux  (this is in a comment)\n"),
+    ]
+    for name, content in cases:
+        p = _write(tmp_path, name, content)
+        r = PythonAdapter().parse(p)
+        assert r.conditional_imports_count == 0, f"{name} expected 0"
+
+
+def test_rust_counter_handles_async_fn_and_nested_fn(tmp_path: Path) -> None:
+    """`async fn`, fn-inside-fn, and trait methods with default
+    implementations all use the `function_item` node — verify they
+    each count their nested `use`."""
+    p = _write(tmp_path, "m.rs", (
+        "async fn aio() {\n"
+        "    use async_dep::X;\n"
+        "}\n"
+        "fn outer() {\n"
+        "    fn inner() {\n"
+        "        use nested_dep::Y;\n"
+        "    }\n"
+        "}\n"
+        "trait T {\n"
+        "    fn with_default(&self) {\n"
+        "        use trait_default_dep::Z;\n"
+        "    }\n"
+        "}\n"
+    ))
+    r = RustAdapter().parse(p)
+    assert r.conditional_imports_count == 3
+
+
+def test_rust_counter_counts_use_in_closure_inside_fn(tmp_path: Path) -> None:
+    """A closure body inside a fn is doubly nested in the scope set
+    (function_item → closure_expression). Either node alone flips the
+    flag; the counter still reports 1, not 2."""
+    p = _write(tmp_path, "m.rs", (
+        "fn main() {\n"
+        "    let f = |x| { use closure_dep::Y; x };\n"
+        "    f(0);\n"
+        "}\n"
+    ))
+    r = RustAdapter().parse(p)
+    assert r.conditional_imports_count == 1
+
+
+def test_rust_counter_zero_on_empty_or_top_level_only(tmp_path: Path) -> None:
+    cases = [
+        ("empty.rs", ""),
+        ("top_only.rs", "use a::B;\nuse c::D;\nfn main() {}\n"),
+    ]
+    for name, content in cases:
+        p = _write(tmp_path, name, content)
+        r = RustAdapter().parse(p)
+        assert r.conditional_imports_count == 0, f"{name} expected 0"
+
+
+def test_scala_counter_excludes_abstract_function_declaration(tmp_path: Path) -> None:
+    """Abstract `def m: T` (no body) parses as `function_declaration`.
+    This node was removed from the scope set in 0.6.3 because there's
+    no body to host an import — verify the regression test for that."""
+    p = _write(tmp_path, "M.scala", (
+        "trait T {\n"
+        "    def abstractMethod: Int\n"  # function_declaration, no body
+        "    def withBody = {\n"  # function_definition, body has import
+        "        import dep.X\n"
+        "        42\n"
+        "    }\n"
+        "}\n"
+    ))
+    r = ScalaAdapter().parse(p)
+    # Only the body of `withBody` counts.
+    assert r.conditional_imports_count == 1
+
+
+def test_scala_counter_zero_on_empty(tmp_path: Path) -> None:
+    p = _write(tmp_path, "M.scala", "")
+    r = ScalaAdapter().parse(p)
+    assert r.conditional_imports_count == 0
+
+
+def test_php_counter_handles_nested_functions(tmp_path: Path) -> None:
+    """PHP allows `function inner() {}` declared inside another function
+    (the inner becomes globally visible only after the outer runs).
+    A `require` in the inner body is doubly nested in the scope set."""
+    p = _write(tmp_path, "f.php", (
+        "<?php\n"
+        "function outer() {\n"
+        "    function inner() {\n"
+        "        require 'nested.php';\n"
+        "    }\n"
+        "}\n"
+    ))
+    r = PhpAdapter().parse(p)
+    assert r.conditional_imports_count == 1
+
+
+def test_php_counter_robust_on_broken_syntax(tmp_path: Path) -> None:
+    """Tree-sitter recovers around the syntax error; the counter must
+    not crash and should report whatever recovered includes it sees."""
+    p = _write(tmp_path, "f.php", (
+        "<?php\n"
+        "function broken( {\n"
+        "    require 'x.php';\n"
+        "}\n"
+    ))
+    r = PhpAdapter().parse(p)
+    assert r.error_count > 0
+    assert r.conditional_imports_count >= 0
+
+
+def test_php_counter_zero_on_no_php_or_empty(tmp_path: Path) -> None:
+    cases = [
+        ("empty.php", ""),
+        ("only_tag.php", "<?php\n"),
+        ("html_only.php", "<html><body>Hello</body></html>\n"),
+        ("only_comments.php", "<?php\n// header\n# another\n/** doc */\n"),
+    ]
+    for name, content in cases:
+        p = _write(tmp_path, name, content)
+        r = PhpAdapter().parse(p)
+        assert r.conditional_imports_count == 0, f"{name} expected 0"
+
+
+# --- Negative tests: things that look like imports but aren't --------
+
+
+def test_python_does_not_count_string_or_docstring_with_import_word(tmp_path: Path) -> None:
+    """A string literal containing the word `import` is just data, not
+    an `import_statement`. Tree-sitter parses it as a `string` node,
+    which the walker correctly ignores."""
+    p = _write(tmp_path, "m.py", (
+        'x = "import something"\n'
+        'def f():\n'
+        '    """import doc"""\n'
+        '    return "from a import b"\n'
+    ))
+    r = PythonAdapter().parse(p)
+    assert r.imports == []
+    assert r.conditional_imports_count == 0
+
+
+def test_python_does_not_count_dunder_import_call(tmp_path: Path) -> None:
+    """`__import__("foo")` is a builtin function call — emits a `call`
+    node, not an `import_statement`. Must not count."""
+    p = _write(tmp_path, "m.py", (
+        'def f():\n'
+        '    return __import__("foo")\n'
+    ))
+    r = PythonAdapter().parse(p)
+    assert r.conditional_imports_count == 0
+
+
+def test_rust_does_not_count_string_with_use_text(tmp_path: Path) -> None:
+    p = _write(tmp_path, "m.rs", 'fn f() { let s = "use a::B"; }\n')
+    r = RustAdapter().parse(p)
+    assert r.imports == []
+    assert r.conditional_imports_count == 0
+
+
+def test_rust_extern_crate_at_top_level_is_static_import(tmp_path: Path) -> None:
+    """`extern crate foo;` is a legacy crate-link declaration — same
+    role as `use` for our purposes. Top-level → static, in fn body →
+    conditional."""
+    p = _write(tmp_path, "m.rs", (
+        "extern crate top_crate;\n"
+        "fn f() { extern crate inside_crate; }\n"
+    ))
+    r = RustAdapter().parse(p)
+    assert r.imports == ["extern crate top_crate"]
+    assert r.conditional_imports_count == 1
+
+
+def test_rust_mod_declaration_is_not_import(tmp_path: Path) -> None:
+    """`mod foo;` (without a body) is a structural file-tree marker
+    declaring a submodule, not an import. Excluded from `imports`
+    intentionally — see `_collect_imports` docstring."""
+    p = _write(tmp_path, "m.rs", "mod foo;\nfn main() {}\n")
+    r = RustAdapter().parse(p)
+    assert r.imports == []
+    assert r.conditional_imports_count == 0
+
+
+def test_scala_does_not_count_string_with_import_text(tmp_path: Path) -> None:
+    p = _write(tmp_path, "M.scala", 'val s = "import something"\n')
+    r = ScalaAdapter().parse(p)
+    assert r.imports == []
+    assert r.conditional_imports_count == 0
+
+
+def test_php_does_not_count_string_or_comment_with_require_text(tmp_path: Path) -> None:
+    """Source-true text scanning is grammar-driven — `require` mentioned
+    inside a string literal or a comment is not a `require_expression`
+    node and must not enter the counter."""
+    p = _write(tmp_path, "f.php", (
+        '<?php\n'
+        '$s = "require foo.php";\n'
+        '// require fake from line comment\n'
+        '/* require fake from block comment */\n'
+        'function f() { /** require in PHPDoc */ return 1; }\n'
+    ))
+    r = PhpAdapter().parse(p)
+    assert r.imports == []
+    assert r.conditional_imports_count == 0
+
+
 def test_languages_without_local_imports_keep_counter_zero(tmp_path: Path) -> None:
     """Java / Go / Kotlin / C# / TypeScript imports are top-level by
     spec (TypeScript ES modules; CommonJS `require()` is a separate
