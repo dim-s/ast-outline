@@ -11,8 +11,11 @@
 
 [![Code: Apache 2.0](https://img.shields.io/badge/code-Apache%202.0-blue.svg)](./LICENSE)
 [![Docs: CC BY 4.0](https://img.shields.io/badge/docs-CC%20BY%204.0-lightgrey.svg)](./LICENSE-DOCS)
+[![PyPI](https://img.shields.io/pypi/v/ast-outline.svg)](https://pypi.org/project/ast-outline/)
 ![Python: 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![Status: beta](https://img.shields.io/badge/status-beta-orange.svg)
+
+📖 **Документация:** <https://ast-outline.github.io/> · **Исходник сайта:** [ast-outline/ast-outline.github.io](https://github.com/ast-outline/ast-outline.github.io)
 
 > **ast-outline™** — Dmitrii Zaitsev (dim-s). Оригинальный проект:
 > <https://github.com/ast-outline/ast-outline> (создан 2026-04-22). Код под
