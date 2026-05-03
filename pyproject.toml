@@ -62,6 +62,9 @@ dependencies = [
 dev = [
     "pytest>=8",
 ]
+docs = [
+    "mkdocs-material>=9.5",
+]
 
 [project.urls]
 Homepage = "https://github.com/ast-outline/ast-outline"

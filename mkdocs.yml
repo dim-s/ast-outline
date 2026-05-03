@@ -1,0 +1,101 @@
+site_name: ast-outline
+site_description: >-
+  Fast, AST-based structural outline for source files (C#, Python, TypeScript,
+  Java, Kotlin, Scala, Go, Rust, Markdown, YAML). Built for LLM coding agents
+  that should read the shape of a file before reading the whole thing.
+site_url: https://ast-outline.github.io/ast-outline/
+site_author: Dmitrii Zaitsev (dim-s)
+copyright: >-
+  &copy; 2026 Dmitrii Zaitsev (dim-s) and ast-outline contributors.
+  Code: <a href="https://github.com/ast-outline/ast-outline/blob/main/LICENSE">Apache&nbsp;2.0</a>.
+  This site (documentation): <a href="https://creativecommons.org/licenses/by/4.0/">CC&nbsp;BY&nbsp;4.0</a>
+  &mdash; visible attribution required for reuse.
+  <strong>ast-outline&trade;</strong> is an unregistered trademark of Dmitrii Zaitsev.
+
+repo_url: https://github.com/ast-outline/ast-outline
+repo_name: ast-outline/ast-outline
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+
+theme:
+  name: material
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.action.edit
+    - content.action.view
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/file-edit-outline
+    view: material/file-eye-outline
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      permalink_title: Anchor link to this section
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+  - pymdownx.keys
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ast-outline/ast-outline
+      name: ast-outline on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/ast-outline/
+      name: ast-outline on PyPI
+  generator: false
+
+nav:
+  - Home: index.md
+  - Commands: commands.md
+  - LLM agents: agents.md
+  - Output format: output-format.md
+  - About:
+      - License & attribution: about.md
+      - Project history: history.md
