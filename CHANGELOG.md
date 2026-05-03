@@ -7,6 +7,28 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.6.1] — 2026-05-03
+
+### Changed
+
+- **Repository transferred** from `dim-s/ast-outline` to the
+  [`ast-outline`](https://github.com/ast-outline) GitHub Organization.
+  Old `dim-s/ast-outline` URLs continue to redirect.
+- All canonical project URLs in `pyproject.toml`, CLI `--version`
+  output, install scripts, README × 3 attribution templates, NOTICE,
+  and LICENSE-DOCS updated to the new home.
+- No code or behavior changes. This release exists solely to refresh
+  PyPI metadata (which is frozen per-version on upload).
+
+### Unchanged
+
+- **Copyright** remains with Dmitrii Zaitsev (dim-s) and ast-outline
+  contributors. The GitHub Organization is hosting infrastructure,
+  not a new copyright holder.
+- **Trademark** `ast-outline™` continues to be held by Dmitrii Zaitsev.
+- Priority date for the project (2026-04-22, first public commit at
+  `dim-s/ast-outline`) is unaffected and recorded in `NOTICE`.
+
 ## [0.6.0] — 2026-05-03
 
 ### License change
@@ -64,3 +86,4 @@ on patent litigation against the project.
   attribution" section with the three-license matrix, trademark notice.
 
 [0.6.0]: https://github.com/ast-outline/ast-outline/releases/tag/v0.6.0
+[0.6.1]: https://github.com/ast-outline/ast-outline/releases/tag/v0.6.1
