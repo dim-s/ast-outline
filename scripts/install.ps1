@@ -1,7 +1,7 @@
 # ast-outline one-command installer for Windows (PowerShell).
 #
 # Usage:
-#   iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.ps1 | iex
+#   iwr -useb https://raw.githubusercontent.com/ast-outline/ast-outline/main/scripts/install.ps1 | iex
 #
 # This installs:
 #   1. `uv` (if missing) - the Python package manager we use.
@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 
 $RepoUrl =
     if ($env:AST_OUTLINE_REPO) { $env:AST_OUTLINE_REPO }
-    else { 'https://github.com/dim-s/ast-outline.git' }
+    else { 'https://github.com/ast-outline/ast-outline.git' }
 $Ref =
     if ($env:AST_OUTLINE_REF) { $env:AST_OUTLINE_REF }
     else { 'main' }

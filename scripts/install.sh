@@ -2,7 +2,7 @@
 # ast-outline one-command installer for macOS / Linux.
 #
 # Usage:
-#   curl -LsSf https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.sh | bash
+#   curl -LsSf https://raw.githubusercontent.com/ast-outline/ast-outline/main/scripts/install.sh | bash
 #
 # This installs:
 #   1. `uv` (if missing) — the Python package manager we use.
@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-REPO_URL="${AST_OUTLINE_REPO:-https://github.com/dim-s/ast-outline.git}"
+REPO_URL="${AST_OUTLINE_REPO:-https://github.com/ast-outline/ast-outline.git}"
 REF="${AST_OUTLINE_REF:-main}"
 
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
