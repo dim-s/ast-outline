@@ -30,3 +30,8 @@ htmlcov/
 # Distribution
 *.whl
 *.tar.gz
+
+# Local agent guidance — kept on disk, not tracked
+AGENTS.md
+CLAUDE.md
+.claude/
