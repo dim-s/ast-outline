@@ -19,8 +19,8 @@ from __future__ import annotations
 AGENT_PROMPT = """## Code exploration — prefer `ast-outline` over full reads
 
 For `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`,
-`.scala`, `.sc`, `.go`, `.rs`, `.md`, and `.yaml`/`.yml` files, read structure
-with `ast-outline` before opening full contents.
+`.scala`, `.sc`, `.go`, `.rs`, `.php`, `.phtml`, `.md`, and `.yaml`/`.yml`
+files, read structure with `ast-outline` before opening full contents.
 
 Stop at the step that answers the question:
 
@@ -56,9 +56,14 @@ type / function comes from**, add `--imports` to `outline` or `digest`.
 The file header gets an `imports:` line listing every
 `import` / `use` / `using` statement verbatim in the language's native
 syntax — `from .core import X`, `use foo::Bar`,
-`import { X } from './foo'`. Read the imports, then call `outline` /
-`show` on the source file instead of grepping for the definition. Skip
-the flag for routine structure reads — it adds one line per file.
+`import { X } from './foo'`, `use App\\Foo`, `require_once 'config.php'`.
+Read the imports, then call `outline` / `show` on the source file
+instead of grepping for the definition. Skip the flag for routine
+structure reads — it adds one line per file.
+
+A trailing `[+ N conditional includes]` on the imports line means
+N more dependencies live inside `if` / `try` / loop / function bodies
+— read the file directly when you need the full dependency picture.
 
 Fall back to a full read only when you need context beyond the body
 `show` returned. `ast-outline help` for flags.
