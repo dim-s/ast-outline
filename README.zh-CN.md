@@ -15,7 +15,7 @@
 ![Status: beta](https://img.shields.io/badge/status-beta-orange.svg)
 
 > **ast-outline™** —— Dmitrii Zaitsev（dim-s）。原始项目：
-> <https://github.com/dim-s/ast-outline>（创建于 2026-04-22）。代码采用
+> <https://github.com/ast-outline/ast-outline>（创建于 2026-04-22）。代码采用
 > **Apache 2.0** 许可（v0.6.0 起；v0.5.x 及更早版本仍可在 MIT 下使用），
 > 文档采用 **CC BY 4.0** —— 复用本 README 的文字内容须显式署名。
 > 详见下方 [许可与署名](#许可与署名) 一节。
@@ -137,11 +137,11 @@ pipx install ast-outline
 pip  install ast-outline                                          # 在已激活的 venv 中
 
 # 安装 main 分支最新代码，而不是 PyPI 发布版：
-uv tool install git+https://github.com/dim-s/ast-outline.git
+uv tool install git+https://github.com/ast-outline/ast-outline.git
 
 # 一键安装脚本（如未安装 uv 会顺带安装）：
-curl -LsSf https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.sh | bash    # macOS / Linux
-iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.ps1 | iex     # Windows
+curl -LsSf https://raw.githubusercontent.com/ast-outline/ast-outline/main/scripts/install.sh | bash    # macOS / Linux
+iwr -useb https://raw.githubusercontent.com/ast-outline/ast-outline/main/scripts/install.ps1 | iex     # Windows
 ```
 
 </details>
@@ -487,7 +487,7 @@ Code 这类 Agent 编码工具的真实工作方式保持一致。
 ## 本地开发
 
 ```bash
-git clone https://github.com/dim-s/ast-outline.git
+git clone https://github.com/ast-outline/ast-outline.git
 cd ast-outline
 
 # 创建 venv 并以 editable 模式安装
@@ -563,8 +563,9 @@ Kotlin、Scala、Go、Rust、Markdown、YAML）、与语言无关的渲染器、
 - **2026-05-01** —— v0.4.0：digest 方法标记（`[async]` / `[unsafe]` / `[const]` / `[suspend]` / `[static]` / `[abstract]` / `[override]` / `[classmethod]` / `[property]`）；类型修饰符、属性和 `[deprecated]` 标签。v0.4.1。
 - **2026-05-02** —— 发布到 PyPI：[`ast-outline`](https://pypi.org/project/ast-outline/)。v0.4.2 / v0.4.3 / v0.5.0（删除 `code-outline` CLI 别名）/ v0.5.1（删除 `implements` 命令 —— outline/digest 已能渲染 `: Base`）/ v0.5.2（`--imports` 选项）/ v0.5.3（`--version` 选项）。
 - **2026-05-03** —— **v0.6.0：从 MIT 切换为 Apache License 2.0**，文档另行采用 CC BY 4.0。原 MIT 文本保留在 `LICENSE-MIT` 中，便于 0.5.x 分支的下游 fork 继续使用。
+- **2026-05-03** —— 仓库由 `dim-s/ast-outline` 迁移至 GitHub 组织 [`ast-outline`](https://github.com/ast-outline)。旧的 `dim-s/ast-outline` URL 仍然会自动重定向。著作权仍归 Dmitrii Zaitsev（dim-s）所有；GitHub 组织只是托管基础设施，并非新的著作权持有者。
 
-完整历史请见 `git log` 与 [GitHub Releases](https://github.com/dim-s/ast-outline/releases)。
+完整历史请见 `git log` 与 [GitHub Releases](https://github.com/ast-outline/ast-outline/releases)。
 
 ---
 
@@ -595,12 +596,12 @@ Copyright © 2026 **Dmitrii Zaitsev**（GitHub: [dim-s](https://github.com/dim-s
 
 如果你的项目复制了文档中较实质的部分 —— 段落、workflow 示例片段、digest 图例、标记词汇表、CLI 中 `# note:` 约定的措辞 —— CC BY 4.0 要求 **显式署名**。格式（请逐字使用或采用等效表述）：
 
-> Based on [ast-outline](https://github.com/dim-s/ast-outline) by Dmitrii Zaitsev (dim-s), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+> Based on [ast-outline](https://github.com/ast-outline/ast-outline) by Dmitrii Zaitsev (dim-s), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 请放在用户能看到的位置（通常是衍生项目的 README）。
 
 ### 商标
 
-**ast-outline™** 是 Dmitrii Zaitsev（dim-s）的未注册商标，用于指代位于 <https://github.com/dim-s/ast-outline> 的原始项目。Apache License 2.0 §6 明确不授予任何商标权利。**Fork、语言移植和重新命名的发行版必须使用不同的项目名称**，以避免对用户造成混淆。在 README 中使用「inspired by ast-outline」或「based on ast-outline」之类的措辞是允许且鼓励的；但将 `ast-outline` 本身用作你自己的项目名／包名／二进制名是不允许的。
+**ast-outline™** 是 Dmitrii Zaitsev（dim-s）的未注册商标，用于指代位于 <https://github.com/ast-outline/ast-outline> 的原始项目。Apache License 2.0 §6 明确不授予任何商标权利。**Fork、语言移植和重新命名的发行版必须使用不同的项目名称**，以避免对用户造成混淆。在 README 中使用「inspired by ast-outline」或「based on ast-outline」之类的措辞是允许且鼓励的；但将 `ast-outline` 本身用作你自己的项目名／包名／二进制名是不允许的。
 
 如果你在任何包注册表（crates.io、npm、PyPI、Homebrew 等）维护着名为 `ast-outline` 但 **并非** 上述链接所指项目的发布包，请考虑改名。

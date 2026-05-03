@@ -45,7 +45,7 @@ def test_version_flag_long(capsys):
     assert rc == 0
     assert f"ast-outline {__version__}" in out
     assert "Dmitrii Zaitsev" in out
-    assert "github.com/dim-s/ast-outline" in out
+    assert "github.com/ast-outline/ast-outline" in out
 
 
 def test_version_flag_short(capsys):

@@ -15,7 +15,7 @@
 ![Status: beta](https://img.shields.io/badge/status-beta-orange.svg)
 
 > **ast-outline™** by Dmitrii Zaitsev (dim-s) — original project at
-> <https://github.com/dim-s/ast-outline> (created 2026-04-22). Code under
+> <https://github.com/ast-outline/ast-outline> (created 2026-04-22). Code under
 > **Apache 2.0** (v0.6.0+; v0.5.x and earlier remain available under MIT),
 > documentation under **CC BY 4.0** — reuse of this README's prose requires
 > visible attribution. See [Licensing & attribution](#licensing--attribution) below.
@@ -157,11 +157,11 @@ pipx install ast-outline
 pip  install ast-outline                                          # into an active venv
 
 # Latest main instead of the PyPI release:
-uv tool install git+https://github.com/dim-s/ast-outline.git
+uv tool install git+https://github.com/ast-outline/ast-outline.git
 
 # Bundled one-shot installer (also installs uv if missing):
-curl -LsSf https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.sh | bash    # macOS / Linux
-iwr -useb https://raw.githubusercontent.com/dim-s/ast-outline/main/scripts/install.ps1 | iex     # Windows
+curl -LsSf https://raw.githubusercontent.com/ast-outline/ast-outline/main/scripts/install.sh | bash    # macOS / Linux
+iwr -useb https://raw.githubusercontent.com/ast-outline/ast-outline/main/scripts/install.ps1 | iex     # Windows
 ```
 
 </details>
@@ -532,7 +532,7 @@ matches how agentic coding tools like Claude Code actually work.
 ## Development
 
 ```bash
-git clone https://github.com/dim-s/ast-outline.git
+git clone https://github.com/ast-outline/ast-outline.git
 cd ast-outline
 
 # Create a venv and install in editable mode
@@ -609,8 +609,9 @@ Contributions welcome.
 - **2026-05-01** — v0.4.0: digest method markers (`[async]` / `[unsafe]` / `[const]` / `[suspend]` / `[static]` / `[abstract]` / `[override]` / `[classmethod]` / `[property]`); type modifiers, attrs, and `[deprecated]` tag. v0.4.1.
 - **2026-05-02** — Published to PyPI as [`ast-outline`](https://pypi.org/project/ast-outline/). v0.4.2 / v0.4.3 / v0.5.0 (`code-outline` CLI alias dropped) / v0.5.1 (`implements` command dropped — outline/digest already render `: Base`) / v0.5.2 (`--imports` flag) / v0.5.3 (`--version` flag).
 - **2026-05-03** — **v0.6.0: relicense from MIT to Apache License 2.0**, with documentation separately licensed under CC BY 4.0. The previous MIT text is retained in `LICENSE-MIT` for compatibility with downstream forks of the 0.5.x tree.
+- **2026-05-03** — Repository transferred from `dim-s/ast-outline` to the [`ast-outline`](https://github.com/ast-outline) GitHub Organization. Old `dim-s/ast-outline` URLs continue to redirect. Copyright remains with Dmitrii Zaitsev (dim-s); the GitHub org is hosting infrastructure, not a new copyright holder.
 
-For the full record, see `git log` and the [GitHub release page](https://github.com/dim-s/ast-outline/releases).
+For the full record, see `git log` and the [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
 ---
 
@@ -641,12 +642,12 @@ Keep the `LICENSE` (Apache 2.0) and `NOTICE` files in your distribution. Apache 
 
 If your project copies non-trivial portions of this documentation — paragraphs, the workflow snippets, the digest legend, the marker vocabulary, the `# note:` CLI convention's wording — CC BY 4.0 requires **visible attribution**. Use this format (verbatim or equivalent):
 
-> Based on [ast-outline](https://github.com/dim-s/ast-outline) by Dmitrii Zaitsev (dim-s), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+> Based on [ast-outline](https://github.com/ast-outline/ast-outline) by Dmitrii Zaitsev (dim-s), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 Place it where users will see it (typically the README of your derivative work).
 
 ### Trademark
 
-**ast-outline™** is an unregistered trademark of Dmitrii Zaitsev (dim-s), used to identify the original project at <https://github.com/dim-s/ast-outline>. Apache License 2.0 §6 explicitly excludes any grant of trademark rights. **Forks, language ports, and rebranded distributions must use a different name** to avoid user confusion. "Inspired by ast-outline" or "based on ast-outline" wording in your README is fine and encouraged; using `ast-outline` itself as your project / package / binary name is not.
+**ast-outline™** is an unregistered trademark of Dmitrii Zaitsev (dim-s), used to identify the original project at <https://github.com/ast-outline/ast-outline>. Apache License 2.0 §6 explicitly excludes any grant of trademark rights. **Forks, language ports, and rebranded distributions must use a different name** to avoid user confusion. "Inspired by ast-outline" or "based on ast-outline" wording in your README is fine and encouraged; using `ast-outline` itself as your project / package / binary name is not.
 
 If you maintain a published package called `ast-outline` on any registry (crates.io, npm, PyPI, Homebrew, etc.) that is not the project at the URL above, please rename it.

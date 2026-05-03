@@ -5,7 +5,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 For the complete history before v0.6.0, see `git log` and the
-[GitHub release page](https://github.com/dim-s/ast-outline/releases).
+[GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
 ## [0.6.0] — 2026-05-03
 
@@ -63,4 +63,4 @@ on patent litigation against the project.
 - README (en/ru/zh-CN): added "Project history" section, "Licensing &
   attribution" section with the three-license matrix, trademark notice.
 
-[0.6.0]: https://github.com/dim-s/ast-outline/releases/tag/v0.6.0
+[0.6.0]: https://github.com/ast-outline/ast-outline/releases/tag/v0.6.0

@@ -141,7 +141,7 @@ def _cmd_version(_args) -> int:
     from . import __version__
     print(f"ast-outline {__version__}")
     print("author: Dmitrii Zaitsev <zayceffdev@gmail.com>")
-    print("homepage: https://github.com/dim-s/ast-outline")
+    print("homepage: https://github.com/ast-outline/ast-outline")
     print("license: MIT")
     return 0
 

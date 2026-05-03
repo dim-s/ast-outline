@@ -64,9 +64,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dim-s/ast-outline"
-Issues = "https://github.com/dim-s/ast-outline/issues"
-Repository = "https://github.com/dim-s/ast-outline"
+Homepage = "https://github.com/ast-outline/ast-outline"
+Issues = "https://github.com/ast-outline/ast-outline/issues"
+Repository = "https://github.com/ast-outline/ast-outline"
 
 [project.scripts]
 ast-outline = "ast_outline.cli:main"
