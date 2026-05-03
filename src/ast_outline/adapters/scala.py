@@ -108,6 +108,14 @@ class ScalaAdapter:
         _walk_top(tree.root_node, src, declarations)
         imports: list[str] = []
         _collect_imports(tree.root_node, src, imports)
+        # Scala `import` can appear at any depth. Imports inside a
+        # function / method body are scoped to that callable —
+        # they're effectively local-scope and not part of the file's
+        # public dependency surface. Object / class / trait bodies
+        # are not counted: their imports execute at definition time
+        # (load-time, not runtime), so they're closer to "scoped but
+        # eager" than to "conditional / runtime".
+        conditional_count = _count_conditional_imports(tree.root_node)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -116,6 +124,7 @@ class ScalaAdapter:
             declarations=declarations,
             error_count=count_parse_errors(tree.root_node),
             imports=imports,
+            conditional_imports_count=conditional_count,
         )
 
 
@@ -139,6 +148,37 @@ def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
             text = _collapse_ws(_text(child, src)).strip()
             if text:
                 out.append(text)
+
+
+# AST node types that put a Scala `import` into runtime / function-
+# local scope. Only `function_definition` (concrete `def m = ...`)
+# qualifies — `function_declaration` is the abstract `def m: T`
+# variant which has no body and therefore can't host an `import`.
+# Object / class / trait bodies are deliberately excluded: their
+# imports execute eagerly at load time, just within a definition's
+# namespace — closer to "scoped but eager" than to "conditional /
+# runtime".
+_SCALA_RUNTIME_OR_SCOPED = frozenset({
+    "function_definition",
+})
+
+
+def _count_conditional_imports(root: Node) -> int:
+    """Count `import` declarations that live inside a function or
+    method body — locally-scoped, runtime-only.
+    """
+    count = 0
+    stack: list[tuple[Node, bool]] = [(root, False)]
+    while stack:
+        node, in_scope = stack.pop()
+        if node.type == "import_declaration":
+            if in_scope:
+                count += 1
+            continue
+        new_in_scope = in_scope or node.type in _SCALA_RUNTIME_OR_SCOPED
+        for c in node.children:
+            stack.append((c, new_in_scope))
+    return count
 
 
 # --- Top-level walk -------------------------------------------------------

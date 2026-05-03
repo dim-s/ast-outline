@@ -7,6 +7,34 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.6.3] — 2026-05-03
+
+### Added
+
+- `conditional_imports_count` is now populated by the **Python**,
+  **Rust**, and **Scala** adapters in addition to PHP. The counter
+  surfaces imports the adapter intentionally skipped because they
+  live outside the file's static top level:
+  - **Python**: `import` / `from ... import` inside a
+    `function_definition` / `async_function_definition` /
+    `class_definition` body. Lazy imports for circular-deps
+    avoidance and class-namespace-scoped imports both count.
+    Top-level `if TYPE_CHECKING:` and `try/except` import-fallbacks
+    are still surfaced as static (unchanged).
+  - **Rust**: `use` and `extern crate` inside `fn` bodies and
+    closures. Nested `mod foo { use ... }` is NOT counted — that
+    `use` belongs to the inner module's surface, not the parent
+    file's.
+  - **Scala**: `import` inside `function_definition` bodies (the
+    concrete `def m = ...` variant; abstract `def m: T` has no body
+    and can't host an `import`). Imports inside `object` / `class`
+    / `trait` bodies are NOT counted — they're scoped but eager
+    (load-time), not runtime.
+- Java, Go, Kotlin, C#, and TypeScript leave the counter at `0` —
+  their import grammars allow only top-level imports (or, for
+  TypeScript ES modules, top-level only by spec; CommonJS
+  `require()` is a separate concern not yet handled).
+
 ## [0.6.2] — 2026-05-03
 
 ### Added

@@ -153,6 +153,15 @@ class RustAdapter:
         _walk_items(tree.root_node, src, declarations)
         imports: list[str] = []
         _collect_imports(tree.root_node, src, imports)
+        # `use` inside a `fn` / `impl` body is function-local — the
+        # symbol it brings in is only visible inside that function.
+        # Counting these (without listing them) tells the agent
+        # "this file has additional locally-scoped uses" while keeping
+        # the static imports list a clean module-level dependency map.
+        # Nested `mod foo { use ... }` is NOT counted: it's a separate
+        # scope but still load-time, and its `use` belongs to that
+        # nested module's surface, not the parent file's.
+        conditional_count = _count_conditional_imports(tree.root_node)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -161,6 +170,7 @@ class RustAdapter:
             declarations=declarations,
             error_count=count_parse_errors(tree.root_node),
             imports=imports,
+            conditional_imports_count=conditional_count,
         )
 
 
@@ -182,6 +192,43 @@ def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
             text = _collapse_ws(_text(child, src)).rstrip(";").strip()
             if text:
                 out.append(text)
+
+
+# AST node types that put a `use` declaration into runtime / function-
+# local scope. We deliberately do NOT include `mod_item` — a `use`
+# inside `mod foo { ... }` belongs to that submodule's surface, not
+# the parent file's, and is structurally distinct from a fn-local
+# import (it's still loaded eagerly at compile time, just within a
+# different namespace).
+_RUST_RUNTIME_OR_SCOPED = frozenset({
+    "function_item",
+    "closure_expression",
+})
+
+
+def _count_conditional_imports(root: Node) -> int:
+    """Count `use` and `extern crate` declarations that live inside a
+    function body or closure — i.e. locally-scoped imports the agent
+    would not see in the module-level imports list.
+
+    `if` / `match` / `loop` blocks at the file's top level are rare in
+    real Rust — and a top-level `use` cannot legally appear inside one
+    anyway (the grammar parses `use` only at item position). The walk
+    tracks scope through function/closure boundaries only.
+    """
+    count = 0
+    stack: list[tuple[Node, bool]] = [(root, False)]
+    while stack:
+        node, in_scope = stack.pop()
+        t = node.type
+        if t in ("use_declaration", "extern_crate_declaration"):
+            if in_scope:
+                count += 1
+            continue
+        new_in_scope = in_scope or t in _RUST_RUNTIME_OR_SCOPED
+        for c in node.children:
+            stack.append((c, new_in_scope))
+    return count
 
 
 # --- Item walk -----------------------------------------------------------

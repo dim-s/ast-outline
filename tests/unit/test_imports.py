@@ -406,10 +406,12 @@ def test_empty_imports_for_file_with_none(tmp_path: Path) -> None:
         p = _write(tmp_path, name, content)
         r = adapter.parse(p)
         assert r.imports == [], f"{adapter.language_name} expected empty imports"
-        # Default for the conditional-imports counter is 0; only PHP
-        # currently populates it. A non-zero value here would mean the
-        # adapter spuriously flagged a conditional dependency on a file
-        # that has none.
+        # Default for the conditional-imports counter is 0. PHP, Python,
+        # Rust and Scala populate it for non-top-level imports; Java,
+        # Go, Kotlin, C# and TypeScript leave it at 0 (their imports
+        # are top-level by spec). On a no-imports source, every adapter
+        # must report 0 — a non-zero value would indicate a spurious
+        # conditional dependency flag on a file that has none.
         assert r.conditional_imports_count == 0, (
             f"{adapter.language_name} expected conditional_imports_count=0"
         )
@@ -439,6 +441,144 @@ def test_each_adapter_wires_collect_imports_into_parse_result(tmp_path: Path) ->
         assert r.imports, f"{adapter.language_name} returned empty imports for non-empty source"
         assert r.imports[0] == expected_first, (
             f"{adapter.language_name}: expected first import {expected_first!r}, got {r.imports[0]!r}"
+        )
+
+
+# --- Conditional / runtime-scoped imports counter -----------------------
+#
+# Adapters that surface only top-level imports also count the ones they
+# deliberately skip (lazy `import` inside function bodies, `use` inside
+# Rust `fn`, etc.) and report them via `conditional_imports_count`. This
+# lets the renderer emit `[+ N conditional includes]` so an agent isn't
+# misled into thinking the file has no further dependencies.
+#
+# Languages that DO support locally-scoped imports populate the counter
+# (Python, Rust, Scala, PHP). Languages whose imports are top-level by
+# spec (Java, Go, Kotlin, TypeScript ES, C#) leave it at 0 — covered by
+# `test_empty_imports_for_file_with_none` above.
+
+
+def test_python_counts_imports_inside_function_class_method(tmp_path: Path) -> None:
+    p = _write(tmp_path, "m.py", (
+        "import top\n"
+        "def f():\n"
+        "    import inside_fn\n"
+        "    if True:\n"
+        "        import inside_fn_if\n"
+        "class C:\n"
+        "    import inside_class\n"
+        "    def m(self):\n"
+        "        import inside_method\n"
+        "if cond:\n"
+        "    import inside_top_if\n"  # collected as static (top-level if)
+    ))
+    r = PythonAdapter().parse(p)
+    assert "import top" in r.imports
+    assert "import inside_top_if" in r.imports
+    # 4 hidden: inside_fn, inside_fn_if, inside_class, inside_method
+    assert r.conditional_imports_count == 4
+
+
+def test_python_counter_zero_when_only_top_level(tmp_path: Path) -> None:
+    """No nested imports → counter stays at 0 even with lots of
+    top-level conditional / try-fallback imports (those are already
+    surfaced as static)."""
+    p = _write(tmp_path, "m.py", (
+        "import top\n"
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        "    from heavy import HeavyType\n"
+        "try:\n"
+        "    from fast import X\n"
+        "except ImportError:\n"
+        "    from slow import X\n"
+    ))
+    r = PythonAdapter().parse(p)
+    assert r.conditional_imports_count == 0
+
+
+def test_rust_counts_use_inside_fn_and_impl(tmp_path: Path) -> None:
+    p = _write(tmp_path, "m.rs", (
+        "use top_mod::Bar;\n"
+        "fn f() {\n"
+        "    use inside_fn::Foo;\n"
+        "    if cond {\n"
+        "        use inside_fn_if::X;\n"
+        "    }\n"
+        "}\n"
+        "struct S;\n"
+        "impl S {\n"
+        "    fn method(&self) {\n"
+        "        use inside_method::Y;\n"
+        "    }\n"
+        "}\n"
+        "mod inner {\n"
+        "    use inside_mod::Z;\n"  # NOT counted: belongs to inner mod surface
+        "}\n"
+    ))
+    r = RustAdapter().parse(p)
+    assert r.imports == ["use top_mod::Bar"]
+    # 3 conditional: inside_fn, inside_fn_if, inside_method.
+    # Not counted: inside_mod (separate module's surface, eager scope).
+    assert r.conditional_imports_count == 3
+
+
+def test_rust_counter_zero_when_only_top_level(tmp_path: Path) -> None:
+    p = _write(tmp_path, "m.rs", (
+        "use foo::Bar;\n"
+        "use baz::{X, Y};\n"
+        "mod inner { use other::Z; }\n"  # mod-scoped, not counted
+        "fn main() {}\n"
+    ))
+    r = RustAdapter().parse(p)
+    assert r.conditional_imports_count == 0
+
+
+def test_scala_counts_imports_inside_method(tmp_path: Path) -> None:
+    p = _write(tmp_path, "M.scala", (
+        "import top.Bar\n"
+        "object Obj {\n"
+        "    import inside_obj.X\n"  # NOT counted: object body is eager scope
+        "    def m() = {\n"
+        "        import inside_method.Y\n"
+        "    }\n"
+        "}\n"
+    ))
+    r = ScalaAdapter().parse(p)
+    assert r.imports == ["import top.Bar"]
+    # 1 conditional: inside_method. inside_obj is in object body (eager
+    # scope, not runtime).
+    assert r.conditional_imports_count == 1
+
+
+def test_scala_counter_zero_when_only_top_level(tmp_path: Path) -> None:
+    p = _write(tmp_path, "M.scala", (
+        "import foo.Bar\n"
+        "import baz.{A, B}\n"
+        "object O { import inside.X }\n"  # eager scope, not counted
+        "class C\n"
+    ))
+    r = ScalaAdapter().parse(p)
+    assert r.conditional_imports_count == 0
+
+
+def test_languages_without_local_imports_keep_counter_zero(tmp_path: Path) -> None:
+    """Java / Go / Kotlin / C# / TypeScript imports are top-level by
+    spec (TypeScript ES modules; CommonJS `require()` is a separate
+    concern not yet handled). There's no place for a "conditional"
+    import to hide. Counter must stay at 0 even with rich files."""
+    cases = [
+        (JavaAdapter(), "M.java", "import a.B;\nclass M { void f() { } }\n"),
+        (GoAdapter(), "m.go", 'package main\nimport "fmt"\nfunc f() {}\n'),
+        (KotlinAdapter(), "M.kt", "package x\nimport a.B\nfun f() { }\n"),
+        (CSharpAdapter(), "M.cs", "using A;\nnamespace X { class C { void m() {} } }\n"),
+        (TypeScriptAdapter(), "m.ts", 'import x from "y";\nfunction f() { return x; }\n'),
+    ]
+    for adapter, name, content in cases:
+        p = _write(tmp_path, name, content)
+        r = adapter.parse(p)
+        assert r.conditional_imports_count == 0, (
+            f"{adapter.language_name}: expected 0, got {r.conditional_imports_count}"
         )
 
 

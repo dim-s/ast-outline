@@ -49,6 +49,15 @@ class PythonAdapter:
         _walk_module(tree.root_node, src, decls)
         imports: list[str] = []
         _collect_imports(tree.root_node, src, imports)
+        # Imports inside function / method / class bodies are runtime-
+        # scoped (lazy `import` for circular-deps avoidance, etc.) or
+        # class-namespaced (eager but bound to the class, not the
+        # module). Either way they're not the file's module-level
+        # public dependencies. We don't list them — but we count them
+        # so the renderer can emit `[+ N conditional includes]` and
+        # the agent isn't misled into thinking the file is dependency-
+        # closed by its top-level imports alone.
+        conditional_count = _count_conditional_imports(tree.root_node)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -57,6 +66,7 @@ class PythonAdapter:
             declarations=decls,
             error_count=count_parse_errors(tree.root_node),
             imports=imports,
+            conditional_imports_count=conditional_count,
         )
 
 
@@ -96,6 +106,44 @@ def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
         # function_definition / class_definition / decorated_definition →
         # not descended; their imports are local-scope and intentionally
         # excluded from the file-level overview.
+
+
+# AST node types that take an import out of "module-level public
+# dependency" status: function bodies (lazy imports for circular-deps
+# avoidance) and class bodies (imports get bound to the class
+# namespace, not the module).
+_PY_RUNTIME_OR_SCOPED = frozenset({
+    "function_definition",
+    "async_function_definition",
+    "class_definition",
+})
+
+
+def _count_conditional_imports(root: Node) -> int:
+    """Count `import` / `from ... import` statements that live inside
+    a function / method / class body — i.e. NOT module-level.
+
+    Iterative `(node, in_scope)` walk: once `in_scope` flips to True
+    on a function/class boundary, every nested import (no matter how
+    deep) counts. Top-level imports — including those inside an
+    `if TYPE_CHECKING:` block or a `try/except` import-fallback,
+    which `_collect_imports` already surfaces as static — are not
+    counted.
+    """
+    count = 0
+    stack: list[tuple[Node, bool]] = [(root, False)]
+    while stack:
+        node, in_scope = stack.pop()
+        t = node.type
+        if t in ("import_statement", "import_from_statement"):
+            if in_scope:
+                count += 1
+            # No nested imports to find inside an import statement.
+            continue
+        new_in_scope = in_scope or t in _PY_RUNTIME_OR_SCOPED
+        for c in node.children:
+            stack.append((c, new_in_scope))
+    return count
 
 
 def _emit_import_statement(node: Node, src: bytes, out: list[str]) -> None:
