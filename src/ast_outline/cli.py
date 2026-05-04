@@ -24,6 +24,7 @@ from .core import (
     find_symbols,
     render_digest,
     render_outline,
+    render_signature_view,
 )
 
 
@@ -87,6 +88,33 @@ def main(argv: list[str] | None = None) -> int:
     p_show.add_argument("file", help="Source file")
     p_show.add_argument("symbols", nargs="+", help="Symbol name(s), e.g. `TakeDamage Heal`")
     p_show.add_argument("--no-doc", action="store_true", help="Strip leading doc comments from output")
+    # --view dials output depth: `full` is the existing body-extraction
+    # behavior; `signature` returns just docs + attrs + signature (no body),
+    # for "what's the contract of this method" queries that don't need the
+    # implementation. The mutex group exposes `--signature` / `--full` as
+    # short aliases — agents reach for boolean-style flags first, so we
+    # accept both forms but route to a single `args.view` value.
+    view_group = p_show.add_mutually_exclusive_group()
+    view_group.add_argument(
+        "--view",
+        choices=["signature", "full"],
+        default="full",
+        help="Output depth: `signature` (header only) or `full` (default)",
+    )
+    view_group.add_argument(
+        "--signature",
+        dest="view",
+        action="store_const",
+        const="signature",
+        help="Alias for `--view signature` — print docs+attrs+signature, no body",
+    )
+    view_group.add_argument(
+        "--full",
+        dest="view",
+        action="store_const",
+        const="full",
+        help="Alias for `--view full` — print full source body (default)",
+    )
 
     p_digest = sub.add_parser("digest", help="Compact public-API map of a directory")
     p_digest.add_argument("paths", nargs="+", help="Directories or files")
@@ -276,9 +304,6 @@ def _cmd_show(args) -> int:
             if not first:
                 print()
             first = False
-            src = m.source
-            if args.no_doc:
-                src = _strip_leading_doc(src)
             print(f"# {path}:{m.start_line}-{m.end_line}  {m.qualified_name}  ({m.kind})")
             # Breadcrumb: show the enclosing namespace/class chain so the agent
             # knows what the extracted body is nested inside — without having
@@ -286,7 +311,27 @@ def _cmd_show(args) -> int:
             if m.ancestor_signatures:
                 chain = " → ".join(m.ancestor_signatures)
                 print(f"# in: {chain}")
-            print(src)
+            if args.view == "signature":
+                # Header-only view: docs + attrs + signature, no body. The
+                # agent uses this when it knows the symbol name (post-digest)
+                # and wants the contract — not the implementation. Falls back
+                # to full source if the back-reference isn't populated, so
+                # the caller never sees an empty body.
+                sig = render_signature_view(m)
+                if sig:
+                    if args.no_doc:
+                        sig = _strip_leading_doc(sig)
+                    print(sig)
+                else:
+                    src = m.source
+                    if args.no_doc:
+                        src = _strip_leading_doc(src)
+                    print(src)
+            else:
+                src = m.source
+                if args.no_doc:
+                    src = _strip_leading_doc(src)
+                print(src)
     return 0
 
 
@@ -463,7 +508,7 @@ GUIDE_SHOW = """\
 ast-outline show — extract source of one or more symbols
 
 USAGE
-    ast-outline show <file> <symbols...> [--no-doc]
+    ast-outline show <file> <symbols...> [--no-doc] [--signature | --full]
 
 SYMBOL SYNTAX
     Short name:      TakeDamage        get_by_id
@@ -493,7 +538,16 @@ BEHAVIOR
       so the LLM agent's parallel batch isn't aborted by an exit code.
 
 FLAGS
-    --no-doc    Strip leading /// or docstring block from output
+    --no-doc        Strip leading /// or docstring block from output
+    --signature     Header only: docs + attrs + signature line, no body.
+                    Use after `digest` when you have the symbol name and
+                    need the contract, not the implementation. Composes
+                    with --no-doc to leave the bare signature.
+    --full          Full source body (the default). Mutually exclusive
+                    with --signature.
+    --view {signature,full}
+                    Long form of the depth selector. Equivalent to the
+                    --signature / --full short flags.
 """
 
 GUIDE_DIGEST = """\

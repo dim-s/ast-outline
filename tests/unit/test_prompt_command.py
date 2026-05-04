@@ -140,10 +140,13 @@ def test_snippet_avoids_emphasis_overuse():
 
 
 def test_snippet_fits_rough_length_budget():
-    """Snippet is intentionally short. If it balloons past ~3000 chars
+    """Snippet is intentionally short. If it balloons past ~3100 chars
     the rewrite probably regressed the tighter ~180-word target the
-    prompt-tuner review settled on."""
-    assert len(AGENT_PROMPT) < 3000, (
+    prompt-tuner review settled on. The budget grew from 3000 to 3100
+    in v0.6.6 to accommodate the `--signature` step — a single new
+    capability earns a small allowance, but the bar for further growth
+    stays tight: shave existing wording first, then bump."""
+    assert len(AGENT_PROMPT) < 3100, (
         f"AGENT_PROMPT is {len(AGENT_PROMPT)} chars — snippet may have bloated; "
         f"re-run prompt-tuner review."
     )

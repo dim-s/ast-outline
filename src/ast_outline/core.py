@@ -171,6 +171,13 @@ class SymbolMatch:
     # symbols. Attributes/annotations are already stripped from each signature
     # (adapters store the bare signature in Declaration.signature).
     ancestor_signatures: list[str] = field(default_factory=list)
+    # The matched Declaration itself — exposed so signature-view rendering
+    # (`show --view signature`) can reuse the adapter-populated `docs`,
+    # `attrs`, `signature`, and `docs_inside` fields without re-parsing the
+    # source slice. Optional because legacy callers that constructed
+    # `SymbolMatch` by hand (tests, downstream tools) shouldn't break; the
+    # built-in search walker always populates it.
+    decl: "Declaration | None" = None
 
 
 # --- Renderers ------------------------------------------------------------
@@ -476,6 +483,48 @@ def _clip_docs(docs: list[str], limit: int) -> list[str]:
     if len(docs) <= limit:
         return docs
     return docs[:limit] + ["..."]
+
+
+def render_signature_view(match: SymbolMatch, *, max_doc_lines: int = 6) -> str:
+    """Render JUST the header of a matched symbol — docs + attrs + signature,
+    without the body. Used by `show --view signature`.
+
+    The output is intentionally a strict subset of what `outline` would emit
+    for the same declaration: same doc placement (before sig for C#/JSDoc/Rust
+    style, after sig with +1 indent for Python docstring style), same
+    attribute inlining, same signature line. The only differences vs outline
+    are (1) no line-range suffix on the signature itself — the caller (`show`)
+    already prints `# path:start-end` as a header line, so duplicating the
+    range here would be noise — and (2) no recursion into children, since the
+    consumer asked for THIS symbol's contract, not the file map.
+
+    Returns an empty string if `match.decl` is None (legacy `SymbolMatch`
+    constructed without the back-reference). The caller should fall back to
+    `match.source` in that case so the output is never silently empty.
+    """
+    decl = match.decl
+    if decl is None:
+        return ""
+    lines: list[str] = []
+    # Docs BEFORE signature (C# /// style, JSDoc, Rust ///, etc.)
+    if decl.docs and not decl.docs_inside:
+        for d in _clip_docs(decl.docs, max_doc_lines):
+            lines.append(d)
+    # Attributes inlined onto the signature line, matching outline's render.
+    attrs_prefix = ""
+    if decl.attrs:
+        attrs_prefix = " ".join(decl.attrs) + " "
+    # Namespace gets the same special-case rendering as outline.
+    if decl.kind == KIND_NAMESPACE:
+        lines.append(f"namespace {decl.name}")
+    else:
+        lines.append(attrs_prefix + decl.signature)
+    # Docs AFTER signature (Python docstring style — they live INSIDE the body
+    # in the source, so render them at +1 indent the way outline does).
+    if decl.docs and decl.docs_inside:
+        for d in _clip_docs(decl.docs, max_doc_lines):
+            lines.append("    " + d)
+    return "\n".join(lines)
 
 
 # --- Digest ---------------------------------------------------------------
@@ -1190,6 +1239,7 @@ def _search_walk(
                     end_line=d.end_line,
                     source=src[start:end].decode("utf8", errors="replace"),
                     ancestor_signatures=[a.signature for a in ancestors if a.signature],
+                    decl=d,
                 )
             )
         if d.children:

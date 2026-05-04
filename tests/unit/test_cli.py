@@ -210,6 +210,146 @@ def test_show_python_strips_docstring_with_no_doc(python_dir, capsys):
     assert "def get" in out
 
 
+# --- show --view signature -----------------------------------------------
+
+
+def test_show_signature_view_csharp_omits_body(csharp_dir, capsys):
+    """`--view signature` returns docs + attrs + signature, no method body.
+
+    The agent's "I want the contract, not the implementation" view: useful
+    after `digest` when the symbol name is known but the body would burn
+    context. Body lines like the `{` / `}` and statements inside MUST NOT
+    appear; the signature line and its leading XML doc MUST."""
+    rc = main(
+        [
+            "show",
+            str(csharp_dir / "unity_behaviour.cs"),
+            "HeroController.TakeDamage",
+            "--view",
+            "signature",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert rc == 0
+    # XML doc + signature are present
+    assert "/// <summary>Apply damage" in out
+    assert "public void TakeDamage(int amount)" in out
+    # Body content is NOT
+    assert "CurrentHealth -=" not in out
+    assert "OnHealthChanged" not in out
+
+
+def test_show_signature_alias_equals_view_signature(csharp_dir, capsys):
+    """`--signature` is a flag alias for `--view signature` — both should
+    produce byte-identical output. If they ever diverge the agent gets a
+    confusing UX where two equivalent forms behave differently."""
+    rc1 = main(
+        [
+            "show",
+            str(csharp_dir / "unity_behaviour.cs"),
+            "HeroController.TakeDamage",
+            "--signature",
+        ]
+    )
+    out1 = capsys.readouterr().out
+    rc2 = main(
+        [
+            "show",
+            str(csharp_dir / "unity_behaviour.cs"),
+            "HeroController.TakeDamage",
+            "--view",
+            "signature",
+        ]
+    )
+    out2 = capsys.readouterr().out
+    assert rc1 == 0 and rc2 == 0
+    assert out1 == out2
+
+
+def test_show_full_alias_equals_default(csharp_dir, capsys):
+    """`--full` is a flag alias for `--view full` (the default). Output must
+    match a no-flag invocation byte-for-byte — guard against accidental
+    divergence in the depth-routing branch."""
+    rc1 = main(
+        ["show", str(csharp_dir / "unity_behaviour.cs"), "HeroController.TakeDamage"]
+    )
+    out1 = capsys.readouterr().out
+    rc2 = main(
+        [
+            "show",
+            str(csharp_dir / "unity_behaviour.cs"),
+            "HeroController.TakeDamage",
+            "--full",
+        ]
+    )
+    out2 = capsys.readouterr().out
+    assert rc1 == 0 and rc2 == 0
+    assert out1 == out2
+
+
+def test_show_view_aliases_are_mutually_exclusive(csharp_dir, capsys):
+    """argparse's mutex group rejects `--signature --full` so the agent can
+    never accidentally pass both. The CLI's LLM-friendly error path turns
+    the parse failure into a `# note:` on stdout with rc=0."""
+    rc = main(
+        [
+            "show",
+            str(csharp_dir / "unity_behaviour.cs"),
+            "HeroController.TakeDamage",
+            "--signature",
+            "--full",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "# note:" in captured.out
+    assert "not allowed" in captured.out.lower()
+
+
+def test_show_signature_view_python_keeps_docstring_after_sig(python_dir, capsys):
+    """Python docstrings live INSIDE the body in source, but `outline` and
+    signature-view both render them AFTER the signature with +1 indent —
+    same `docs_inside` placement as the outline render. Verifies signature
+    view tracks outline's doc placement, not C#'s."""
+    rc = main(
+        [
+            "show",
+            str(python_dir / "domain_model.py"),
+            "UserService.get",
+            "--signature",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert rc == 0
+    # Signature comes first
+    sig_idx = out.find("def get")
+    doc_idx = out.find("Look up a user by id")
+    assert sig_idx >= 0 and doc_idx >= 0
+    assert sig_idx < doc_idx
+    # No method body content
+    assert "return self" not in out
+    assert "raise " not in out
+
+
+def test_show_signature_view_strips_docs_with_no_doc(csharp_dir, capsys):
+    """`--no-doc` composes with `--signature`: the XML doc lines disappear,
+    only attrs+signature remain. Useful when the agent already has the doc
+    elsewhere and just wants the bare contract line."""
+    rc = main(
+        [
+            "show",
+            str(csharp_dir / "unity_behaviour.cs"),
+            "HeroController.TakeDamage",
+            "--signature",
+            "--no-doc",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "/// <summary>" not in out
+    assert "public void TakeDamage(int amount)" in out
+
+
 # --- digest --------------------------------------------------------------
 
 

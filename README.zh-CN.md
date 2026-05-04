@@ -227,6 +227,9 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
    能命中 `"2.1 Installation (macOS / Linux)"`。yaml 的符号是点分键路径
    (`spec.containers[0].image`) —— `show` 匹配**键**,不匹配值;要在值的
    文本里做自由搜索请用 `grep`。
+   给以上任一形式加 `--signature` 只返回头部(docs + 属性 + 签名,
+   不带方法体)—— 在 `digest` 之后,当你已经有符号名、只需契约而非实现时
+   使用。
 
 `outline` 和 `digest` 都支持一次传入多个路径(文件和目录,混合语言均可)
 —— 一次性批量调用,不要循环。两个渲染器的类型头都会带上 `: Base, Trait`

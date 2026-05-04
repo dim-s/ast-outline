@@ -7,6 +7,48 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.6.6] — 2026-05-04
+
+### Added
+
+- `ast-outline show <file> <Symbol> --view signature` (and shorthand
+  `--signature`) — header-only output: docs + attributes + the
+  signature line, no method body. The mutex-grouped `--full` /
+  `--view full` aliases continue to produce the existing body-extraction
+  behavior; default is unchanged. Closes the gap between `digest` (just
+  symbol names) and `show` (full body) for the common "after digest I
+  know the name and want the contract, not the implementation" case,
+  and removes the temptation for agents to pipe `show` through
+  `head -80` to peek at signatures of large methods. Doc placement
+  matches `outline`: `///` / JSDoc / Rust doc-comment lines render
+  before the signature; Python docstrings render after the signature
+  with +1 indent (`docs_inside`). Composes with the existing `--no-doc`
+  flag — `--signature --no-doc` returns the bare contract line.
+- `core.render_signature_view(match)` — public helper that produces the
+  same header output for a `SymbolMatch`. Available for downstream
+  integrations that build their own `show`-like surfaces.
+- `SymbolMatch.decl: Declaration | None` — back-reference to the matched
+  `Declaration`, populated by `find_symbols`. Lets callers reuse the
+  adapter-extracted `docs` / `attrs` / `signature` fields without
+  re-parsing the source slice. Optional with `None` default so existing
+  call sites that build `SymbolMatch` by hand keep working.
+
+### Agent-prompt snippet
+
+- `ast-outline prompt` (and the README snippet copies — English,
+  Russian, simplified Chinese, plus the docs-site `agents.md`
+  `??? quote` block) get a closing line on step 3 documenting
+  `--signature` as a modifier across every `show` form: "Add
+  `--signature` to any of the above to return header only — useful
+  after `digest`, when you have the name and want the contract, not
+  the implementation." Cross-vendor invariants (no aggressive
+  emphasis, no persona, outcome-first phrasing, no model-name
+  pinning) all preserved per the file docstring.
+- `tests/unit/test_prompt_command.py::test_snippet_fits_rough_length_budget`
+  raises the soft length cap from 3000 → 3100 chars to accommodate
+  the new clause; the test docstring now documents the bump and the
+  bar for further growth (compress existing wording first).
+
 ## [0.6.5] — 2026-05-03
 
 ### Changed

@@ -58,6 +58,9 @@ you already know the symbol:
    `"2.1 Installation (macOS / Linux)"`. For yaml, the symbol is a
    dotted key path (`spec.containers[0].image`) — `show` matches keys,
    not values, so for free-text search inside values use `grep`.
+   Add `--signature` to any of the above to return header only
+   (docs + attrs + signature, no body) — useful after `digest`, when
+   you have the name and want the contract, not the implementation.
 
 `outline` and `digest` accept multiple paths in one call (files and
 directories, mixed languages OK) — batch instead of looping. Type
