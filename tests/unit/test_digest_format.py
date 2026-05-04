@@ -37,25 +37,30 @@ from ast_outline.core import (
 
 
 def test_digest_starts_with_legend_line(csharp_dir):
-    """A self-describing legend is the first line of every digest so the
-    format is parseable cold by an LLM that hasn't loaded
-    `ast-outline prompt`."""
+    """A self-describing legend is the first line of a code digest so
+    the format is parseable cold by an LLM that hasn't loaded
+    `ast-outline prompt`. Code fixtures always emit at least the
+    `name()=callable` entry, so the legend is always present here."""
     r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
     out = render_digest([r], DigestOptions())
     first = out.splitlines()[0]
     assert first.startswith("# legend:")
 
 
-def test_legend_documents_each_non_obvious_token(csharp_dir):
-    """Legend must mention every non-English token shape so an LLM
-    reading cold can decode the body. Plain-English labels (`[tiny]` /
-    `[broken]`) deliberately stay out of the legend to keep it compact."""
-    r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
+def test_legend_documents_each_non_obvious_token_when_present(csharp_dir):
+    """Legend must mention every non-English token shape that ACTUALLY
+    appears in the body, so an LLM reading cold can decode it. Plain-
+    English labels (`[tiny]` / `[broken]`) deliberately stay out of the
+    legend.
+
+    `nested_and_overloads.cs` is picked because it exercises every
+    optional token shape — overloaded methods, properties, fields,
+    inheritance — so the legend should be fully populated."""
+    r = CSharpAdapter().parse(csharp_dir / "nested_and_overloads.cs")
     legend = render_digest([r], DigestOptions()).splitlines()[0]
     assert "name()" in legend
     assert "[kind]" in legend
     assert "overloads" in legend
-    assert "[deprecated]" in legend
     assert "L<a>-<b>" in legend
 
 
@@ -1206,3 +1211,555 @@ def test_truncation_marker_uses_parenthesised_count(csharp_dir):
     assert "(more)" in out or "more)" in out
     import re
     assert re.search(r"\.\.\.\s+\(\d+\s+more\)", out), out
+
+
+# --- Dynamic legend ------------------------------------------------------
+#
+# The legend is built from `_LegendFlags` populated during the render
+# pass — only tokens that actually appear in the body get documented.
+# These tests cover:
+# (a) omission rules — pure yaml / pure markdown / mixed yaml+md drop
+#     the legend entirely (line_range alone doesn't justify it);
+# (b) per-flag triggers — each legend entry shows up if and only if
+#     the corresponding token shape is actually emitted somewhere;
+# (c) cross-language sweep — one trigger per language to catch
+#     adapter-level regressions where flag-setting paths are bypassed.
+
+def _legend_line(out: str) -> str | None:
+    """Extract the legend line from a digest output, or None if absent."""
+    first = out.splitlines()[0] if out.splitlines() else ""
+    return first if first.startswith("# legend:") else None
+
+
+# --- Omission rules ------------------------------------------------------
+
+
+def test_legend_omitted_for_pure_yaml_digest(yaml_dir):
+    """A YAML-only digest has no callables, no kinds, no markers, no
+    inheritance. The only legend-worthy token would be `L<a>-<b>`, and
+    line ranges are intrinsically obvious from the trailing form — so
+    the legend is dropped entirely."""
+    files = sorted(p for p in yaml_dir.iterdir() if p.suffix in {".yaml", ".yml"})
+    results = [YamlAdapter().parse(p) for p in files]
+    out = render_digest(results, DigestOptions())
+    assert _legend_line(out) is None, (
+        "YAML-only digest must not emit a legend line — none of the "
+        "legend tokens apply to YAML output:\n" + out.splitlines()[0]
+    )
+
+
+def test_legend_omitted_for_pure_markdown_digest(md_dir):
+    """Same omission rule for markdown: heading TOC entries carry only
+    line-range suffixes, so the legend collapses to nothing."""
+    files = sorted(p for p in md_dir.iterdir() if p.suffix == ".md")
+    results = [MarkdownAdapter().parse(p) for p in files]
+    out = render_digest(results, DigestOptions())
+    assert _legend_line(out) is None
+
+
+def test_legend_omitted_for_yaml_and_markdown_mixed(yaml_dir, md_dir):
+    """A batch combining only YAML and markdown contributes no
+    legend-worthy tokens between them — legend stays absent."""
+    yaml_files = sorted(p for p in yaml_dir.iterdir() if p.suffix in {".yaml", ".yml"})
+    md_files = sorted(p for p in md_dir.iterdir() if p.suffix == ".md")
+    results = [YamlAdapter().parse(p) for p in yaml_files] + [
+        MarkdownAdapter().parse(p) for p in md_files
+    ]
+    out = render_digest(results, DigestOptions())
+    assert _legend_line(out) is None
+
+
+def test_legend_emerges_when_yaml_mixed_with_python(yaml_dir, python_dir):
+    """As soon as a code language joins the batch, the legend re-emerges
+    — code files contribute callables, kinds, and so on. The legend
+    documents the union of tokens across the batch."""
+    py = PythonAdapter().parse(python_dir / "domain_model.py")
+    yamls = [YamlAdapter().parse(p) for p in sorted(yaml_dir.iterdir()) if p.suffix in {".yaml", ".yml"}]
+    out = render_digest([py] + yamls, DigestOptions())
+    legend = _legend_line(out)
+    assert legend is not None, "code language in batch must restore legend"
+    # `domain_model.py` has classes with bases, methods, properties.
+    assert "name()" in legend
+    assert "[kind]" in legend
+    assert ": Base" in legend
+
+
+# --- Per-flag triggers ---------------------------------------------------
+
+
+def test_legend_drops_marker_when_no_modifiers_present(tmp_path):
+    """A code file with plain functions and no async/static/override
+    yields `name()=callable` but no `marker name()=...` entry."""
+    src = tmp_path / "plain.py"
+    src.write_text(
+        "def foo() -> int:\n"
+        "    return 1\n"
+        "\n"
+        "def bar(x):\n"
+        "    return x\n"
+    )
+    r = PythonAdapter().parse(src)
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert "name()" in legend
+    assert "marker name()" not in legend
+
+
+def test_legend_includes_marker_when_async_present(python_dir):
+    """An async function (or any signature with a method marker)
+    triggers the modifier entry."""
+    r = PythonAdapter().parse(python_dir / "async_service.py")
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert "marker name()" in legend
+
+
+def test_legend_drops_overloads_when_no_overloaded_callables(tmp_path):
+    """Each callable name is unique → no `[N overloads]` annotation
+    will fire → entry dropped."""
+    src = tmp_path / "uniq.py"
+    src.write_text("def a(): pass\n\ndef b(): pass\n\ndef c(): pass\n")
+    r = PythonAdapter().parse(src)
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert "overloads" not in legend
+
+
+def test_legend_includes_overloads_when_csharp_overload_present(csharp_dir):
+    """`nested_and_overloads.cs` has Money.Equals overloaded; legend
+    must surface the `[N overloads]` entry to explain the body tag."""
+    r = CSharpAdapter().parse(csharp_dir / "nested_and_overloads.cs")
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert "overloads" in legend
+
+
+def test_legend_drops_deprecated_when_none_present(tmp_path):
+    """No `@deprecated` / `[Obsolete]` / `@Deprecated` anywhere → no
+    `[deprecated]=obsolete` entry."""
+    src = tmp_path / "fresh.py"
+    src.write_text("def foo(): pass\n")
+    r = PythonAdapter().parse(src)
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert "[deprecated]" not in legend
+
+
+def test_legend_includes_deprecated_when_java_annotation_present(tmp_path):
+    """A single `@Deprecated` method anywhere in the batch is enough to
+    re-include the `[deprecated]` entry."""
+    src = tmp_path / "S.java"
+    src.write_text(
+        "package x;\n"
+        "public class S {\n"
+        "    @Deprecated public void old() {}\n"
+        "    public void fresh() {}\n"
+        "}\n"
+    )
+    r = JavaAdapter().parse(src)
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert "[deprecated]" in legend
+
+
+def test_legend_drops_inheritance_when_no_bases(tmp_path):
+    """A class with no `extends` / `implements` / `:` clause → no
+    `: Base, …=inheritance` entry."""
+    src = tmp_path / "lone.py"
+    src.write_text("class Lone:\n    def foo(self): pass\n")
+    r = PythonAdapter().parse(src)
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert ": Base" not in legend
+    assert "inheritance" not in legend
+
+
+def test_legend_includes_inheritance_when_class_has_base(python_dir):
+    """`hierarchy.py` has `class Dog(Animal)` etc. — bases populate the
+    inheritance entry."""
+    r = PythonAdapter().parse(python_dir / "hierarchy.py")
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert ": Base" in legend
+    assert "inheritance" in legend
+
+
+def test_legend_drops_kind_for_pure_function_module(tmp_path):
+    """A module with only free functions and no fields / properties /
+    classes → no `name [kind]=non-callable` entry."""
+    src = tmp_path / "funcs.py"
+    src.write_text("def a(): pass\n\ndef b(): pass\n")
+    r = PythonAdapter().parse(src)
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert "[kind]" not in legend
+    assert "name()" in legend  # callable still surfaces
+
+
+def test_legend_includes_kind_when_property_present(csharp_dir):
+    """`unity_behaviour.cs` has properties + events + fields — the
+    `[kind]` entry must appear to explain `[property]` / `[event]`
+    tags in the body."""
+    r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert "[kind]" in legend
+
+
+# --- All-or-nothing degenerate cases -------------------------------------
+
+
+def test_legend_omitted_for_empty_batch():
+    """`render_digest([])` returns `# no files\n` with no legend.
+    Smoke-test: legend builder shouldn't be invoked at all."""
+    out = render_digest([], DigestOptions())
+    assert out == "# no files\n"
+
+
+def test_legend_omitted_for_files_with_no_declarations(tmp_path):
+    """A code file containing only comments / blank lines yields no
+    declarations → no body tokens → no legend."""
+    src = tmp_path / "blank.py"
+    src.write_text("# just a comment\n# nothing else here\n")
+    r = PythonAdapter().parse(src)
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is None
+
+
+def test_legend_omitted_when_code_batch_only_emits_empty_types(tmp_path):
+    """Edge case: a code file that contains only empty type
+    declarations (no members, no bases, no deprecated attrs) renders
+    type headers carrying just `keyword Name  L<a>-<b>`. The only
+    legend-worthy token across the body is `L<a>-<b>` — and the
+    omission rule drops the legend in that case (line_range alone
+    isn't worth a one-entry legend).
+
+    This case is the practical edge of the rule for code languages —
+    most real code files have at least one member, base, or modifier,
+    but a file of pure marker types (e.g. empty exception classes)
+    legitimately hits this branch."""
+    src = tmp_path / "markers.py"
+    src.write_text(
+        "class A: pass\n"
+        "class B: pass\n"
+        "class C: pass\n"
+    )
+    r = PythonAdapter().parse(src)
+    out = render_digest([r], DigestOptions())
+    legend = _legend_line(out)
+    assert legend is None, (
+        "empty-type-only code batch must hit the line_range-only "
+        "omission branch; got: " + (legend or "<none>")
+    )
+    # And `L<a>` ranges must still appear in the body unchanged.
+    assert "L" in out
+
+
+def test_legend_present_when_only_callable_flag_fires(tmp_path):
+    """Single free function file → only `callable` flag fires (free
+    functions render without a line-range suffix in digest, only type
+    headers carry one). Legend has just the one entry — no
+    `line_range` because no `L<n>` token is emitted for this body."""
+    src = tmp_path / "one.py"
+    src.write_text("def foo() -> int:\n    return 1\n")
+    r = PythonAdapter().parse(src)
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert "name()=callable" in legend
+    # Body is a single free-function token `foo()` — no `L<n>` suffix
+    # appears anywhere, so the line_range entry stays out.
+    assert "L<a>-<b>" not in legend
+
+
+def test_legend_includes_line_range_when_class_present(python_dir):
+    """The line_range entry surfaces as soon as the body has any
+    `L<a>-<b>` token — type headers and YAML doc separators are the
+    surfaces that emit it. Verify with a class-bearing fixture."""
+    r = PythonAdapter().parse(python_dir / "hierarchy.py")
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert "L<a>-<b>" in legend
+
+
+# --- Cross-language sweep ------------------------------------------------
+#
+# One assertion per language: callable token surfaces and so does the
+# legend. Keeps every adapter honest about populating Declaration data
+# in a way the renderer can recognise as a callable.
+
+def test_legend_present_for_python_fixtures(python_dir):
+    r = PythonAdapter().parse(python_dir / "domain_model.py")
+    assert _legend_line(render_digest([r], DigestOptions())) is not None
+
+
+def test_legend_present_for_csharp_fixtures(csharp_dir):
+    r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
+    assert _legend_line(render_digest([r], DigestOptions())) is not None
+
+
+def test_legend_present_for_java_fixtures(java_dir):
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    assert _legend_line(render_digest([r], DigestOptions())) is not None
+
+
+def test_legend_present_for_kotlin_fixtures(kotlin_dir):
+    """Kotlin should trigger marker entry via `suspend` / `override` /
+    `open` keywords."""
+    r = KotlinAdapter().parse(kotlin_dir / "data_and_sealed.kt")
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+
+
+def test_legend_present_for_scala_fixtures(scala_dir):
+    r = ScalaAdapter().parse(scala_dir / "hierarchy.scala")
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+
+
+def test_legend_present_for_go_fixtures(go_dir):
+    r = GoAdapter().parse(go_dir / "hierarchy.go")
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+
+
+def test_legend_present_for_rust_fixtures(rust_dir):
+    r = RustAdapter().parse(rust_dir / "hierarchy.rs")
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+
+
+def test_legend_present_for_typescript_fixtures(fixtures_dir):
+    r = TypeScriptAdapter().parse(fixtures_dir / "typescript" / "hierarchy.ts")
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+
+
+def test_legend_present_for_php_fixtures(php_dir):
+    """At least one PHP fixture must produce a digest with callables
+    (and therefore a legend). We pick the directory's first parseable
+    file rather than naming a specific one — adapters evolve, fixtures
+    move, and the per-language sweep should be robust to that."""
+    from ast_outline.adapters.php import PhpAdapter
+    files = sorted(p for p in php_dir.iterdir() if p.suffix == ".php")
+    assert files
+    found_legend = False
+    for p in files:
+        r = PhpAdapter().parse(p)
+        if _legend_line(render_digest([r], DigestOptions())) is not None:
+            found_legend = True
+            break
+    assert found_legend, "no PHP fixture produced a legend-bearing digest"
+
+
+# --- Token-shape sanity --------------------------------------------------
+
+
+def test_legend_entries_in_canonical_order(csharp_dir):
+    """When multiple legend entries fire, they appear in the canonical
+    order defined by `_LEGEND_ENTRIES` (callable → kind → marker →
+    overloads → deprecated → line_range → inheritance). A regression
+    that shuffles entries would still pass token-presence tests but
+    would change the legend's visual stability."""
+    r = CSharpAdapter().parse(csharp_dir / "nested_and_overloads.cs")
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    body = legend[len("# legend: "):]
+    # Canonical order, using each entry's full literal text. We don't
+    # assert specific entries are present (that's what the per-flag
+    # tests cover) — just that whichever ARE present appear in this
+    # order in the legend body.
+    canonical_full = [
+        "name()=callable",
+        "name [kind]=non-callable",
+        "marker name()=method modifier (async/static/override/…)",
+        "[N overloads]=N callables share name",
+        "[deprecated]=obsolete",
+        "L<a>-<b>=line range",
+        ": Base, …=inheritance",
+    ]
+    pos = 0
+    for entry in canonical_full:
+        if entry in body:
+            idx = body.index(entry)
+            assert idx >= pos, (
+                f"entry {entry!r} appears before previous canonical entry "
+                f"in {legend!r}"
+            )
+            pos = idx
+
+
+def test_legend_entries_use_comma_space_separator(csharp_dir):
+    """Entries are joined by `, ` — same separator as the body member
+    tokens, parses cleanly under any BPE tokeniser."""
+    r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    # If multiple entries fire, comma-space must appear between them.
+    body = legend[len("# legend: "):]
+    if "," in body:
+        assert ", " in body
+
+
+# --- Body parsing invariant ----------------------------------------------
+
+
+def test_legend_absence_does_not_break_directory_header(yaml_dir):
+    """When the legend is omitted, the very first line must be the
+    directory header (`./` or `path/`), not a blank line, not the file
+    line. Regression guard: an off-by-one in `render_digest` that left
+    a stray empty leading line would shift every consumer's
+    splitlines indexing by one."""
+    files = sorted(p for p in yaml_dir.iterdir() if p.suffix in {".yaml", ".yml"})
+    results = [YamlAdapter().parse(p) for p in files]
+    out = render_digest(results, DigestOptions())
+    first = out.splitlines()[0]
+    assert first.endswith("/"), (
+        f"first line should be a directory header when legend is "
+        f"omitted; got: {first!r}"
+    )
+
+
+def test_legend_count_matches_exact_token_set():
+    """End-to-end check on the legend builder itself: build flags
+    manually and confirm the exact entries emitted match expectation.
+    Catches regressions where an entry text drifts (e.g. someone
+    rewords `name()=callable` to `name() = callable`) without anyone
+    noticing."""
+    from ast_outline.core import _LegendFlags, _build_legend
+
+    # No flags → no legend.
+    assert _build_legend(_LegendFlags()) == ""
+
+    # Only line_range → still no legend (intrinsically obvious).
+    assert _build_legend(_LegendFlags(line_range=True)) == ""
+
+    # Only callable → legend is just that one entry.
+    f = _LegendFlags(callable=True)
+    assert _build_legend(f) == "# legend: name()=callable"
+
+    # callable + line_range → both, in canonical order.
+    f = _LegendFlags(callable=True, line_range=True)
+    assert _build_legend(f) == "# legend: name()=callable, L<a>-<b>=line range"
+
+    # All flags → full legend with every entry literally present, in
+    # canonical order. We assert each expected entry text individually
+    # rather than splitting on `, ` (the inheritance entry contains an
+    # internal comma, so a split-and-count assertion would be fragile —
+    # any rewording that adds or removes a comma in any entry would
+    # silently drift the count).
+    f = _LegendFlags(
+        callable=True, kind=True, marker=True, overloads=True,
+        deprecated=True, line_range=True, inheritance=True,
+    )
+    full = _build_legend(f)
+    assert full.startswith("# legend: ")
+    expected_entries = [
+        "name()=callable",
+        "name [kind]=non-callable",
+        "marker name()=method modifier (async/static/override/…)",
+        "[N overloads]=N callables share name",
+        "[deprecated]=obsolete",
+        "L<a>-<b>=line range",
+        ": Base, …=inheritance",
+    ]
+    pos = 0
+    for entry in expected_entries:
+        idx = full.find(entry, pos)
+        assert idx >= 0, f"missing legend entry {entry!r} in {full!r}"
+        pos = idx + len(entry)
+
+
+# --- Adapter-level deprecation surface check ----------------------------
+
+
+def test_legend_includes_deprecated_when_csharp_obsolete_attribute(tmp_path):
+    """C# `[Obsolete(...)]` is the deprecation surface. A method
+    carrying it should re-include the `[deprecated]` legend entry,
+    same as Java `@Deprecated` and Python `@deprecated`."""
+    src = tmp_path / "S.cs"
+    src.write_text(
+        "namespace X {\n"
+        "    public class S {\n"
+        "        [Obsolete(\"use NewApi\")]\n"
+        "        public void OldApi() {}\n"
+        "        public void NewApi() {}\n"
+        "    }\n"
+        "}\n"
+    )
+    r = CSharpAdapter().parse(src)
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert "[deprecated]" in legend
+
+
+def test_legend_includes_deprecated_when_rust_attribute(tmp_path):
+    """Rust `#[deprecated]` is its deprecation surface."""
+    src = tmp_path / "lib.rs"
+    src.write_text(
+        "pub struct S;\n"
+        "impl S {\n"
+        "    #[deprecated(note = \"use new_api\")]\n"
+        "    pub fn old_api(&self) {}\n"
+        "    pub fn new_api(&self) {}\n"
+        "}\n"
+    )
+    r = RustAdapter().parse(src)
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert "[deprecated]" in legend
+
+
+# --- Type-level deprecation triggers legend (not just member-level) -----
+
+
+def test_legend_includes_deprecated_for_type_level_annotation(tmp_path):
+    """Deprecation can come from a type header too — Java's
+    `@Deprecated` annotation on a class. The flag should fire whether
+    deprecation surfaced on a member or a type."""
+    src = tmp_path / "S.java"
+    src.write_text(
+        "package x;\n"
+        "@Deprecated public class S {\n"
+        "    public void method() {}\n"
+        "}\n"
+    )
+    r = JavaAdapter().parse(src)
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None
+    assert "[deprecated]" in legend
+
+
+# --- Backward-compat: existing single-file-with-everything test ---------
+
+
+def test_legend_full_when_csharp_fixture_carries_all_token_shapes(
+    csharp_dir, tmp_path,
+):
+    """Synthesise a tiny C# file that exercises every legend entry
+    simultaneously (callable, kind, marker, overloads, deprecated,
+    inheritance, line_range) and confirm every entry surfaces in the
+    legend. Acts as a comprehensive end-to-end gate that the renderer
+    + flag wiring stays in lockstep."""
+    src = tmp_path / "Mega.cs"
+    src.write_text(
+        "namespace X {\n"
+        "    public abstract class Base {}\n"
+        "    public class Mega : Base {\n"
+        "        public int Counter { get; set; }\n"
+        "        public static async Task RunAsync() {}\n"
+        "        public void Foo(int x) {}\n"
+        "        public void Foo(string s) {}\n"
+        "        [Obsolete] public void OldApi() {}\n"
+        "    }\n"
+        "}\n"
+    )
+    r = CSharpAdapter().parse(src)
+    legend = _legend_line(render_digest([r], DigestOptions()))
+    assert legend is not None, "expected a fully populated legend"
+    assert "name()=callable" in legend
+    assert "name [kind]=non-callable" in legend     # property
+    assert "marker name()" in legend                # async / static
+    assert "[N overloads]" in legend                # Foo overloaded
+    assert "[deprecated]" in legend                 # [Obsolete]
+    assert "L<a>-<b>=line range" in legend
+    assert ": Base" in legend                       # Mega : Base

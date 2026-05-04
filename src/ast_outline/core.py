@@ -530,17 +530,82 @@ def render_signature_view(match: SymbolMatch, *, max_doc_lines: int = 6) -> str:
 # --- Digest ---------------------------------------------------------------
 
 
-# One-liner legend prepended to every digest. Keep this single line —
-# scannable, fits in a terminal, and survives copy-paste into LLM prompts
-# without wrapping. Only documents tokens that aren't plain English; size
-# labels (`[tiny]`/`[medium]`/`[large]`) and `[broken]` are
-# self-explanatory and stay out of the legend to keep it short.
-_DIGEST_LEGEND = (
-    "# legend: name()=callable, name [kind]=non-callable, "
-    "marker name()=method modifier (async/static/override/…), "
-    "[N overloads]=N callables share name, [deprecated]=obsolete, "
-    "L<a>-<b>=line range, : Base, …=inheritance"
+# Dynamic legend — built per-render from a `_LegendFlags` set during the
+# digest pass. Only tokens that actually appear in the rendered body get
+# documented, so a YAML- or markdown-only digest emits no legend at all
+# (their output uses no `name()`, no `[kind]`, no markers, no inheritance —
+# nothing the legend would explain). A mixed batch shrinks the legend to
+# just the tokens its languages contributed. The full legend below is
+# what gets emitted when every flag fires (a code batch with overloads,
+# deprecated members, and inheritance).
+#
+# Why dynamic: the legend is overhead on every digest call; documenting
+# tokens the body doesn't contain is noise for the LLM consuming the
+# output. We pay only for what's there.
+#
+# Why size labels (`[tiny]`/`[medium]`/`[large]`) and `[broken]` are
+# never in the legend: they're plain English, instantly recognisable
+# without a lookup. Keeping them out keeps the legend short for the
+# common case.
+
+# All possible legend entries, in canonical display order. The order
+# mirrors the order tokens visually appear in a typical digest line:
+# callable kind first, then non-callable kinds, modifiers, overload tag,
+# deprecation tag, line ranges, inheritance.
+_LEGEND_ENTRIES: tuple[tuple[str, str], ...] = (
+    ("callable", "name()=callable"),
+    ("kind", "name [kind]=non-callable"),
+    ("marker", "marker name()=method modifier (async/static/override/…)"),
+    ("overloads", "[N overloads]=N callables share name"),
+    ("deprecated", "[deprecated]=obsolete"),
+    ("line_range", "L<a>-<b>=line range"),
+    ("inheritance", ": Base, …=inheritance"),
 )
+
+
+@dataclass
+class _LegendFlags:
+    """Records which legend-worthy tokens actually appeared in the
+    rendered digest body. Populated during the render pass and consumed
+    once at the end to assemble the legend line.
+
+    Each flag corresponds to one entry in `_LEGEND_ENTRIES`. The entry
+    is included in the final legend iff its flag is True. Flags are
+    sticky (set-only, never cleared) — once a token surfaces anywhere
+    in the batch, it stays in the legend.
+    """
+    callable: bool = False        # any `name()` callable token
+    kind: bool = False            # any `name [kind]` non-callable token
+    marker: bool = False          # any method modifier prefix (async/static/…)
+    overloads: bool = False       # any `[N overloads]` annotation
+    deprecated: bool = False      # any `[deprecated]` tag
+    line_range: bool = False      # any `L<n>` / `L<a>-<b>` suffix
+    inheritance: bool = False     # any `: Base[, Base…]` clause
+
+
+def _build_legend(flags: _LegendFlags) -> str:
+    """Assemble the `# legend: ...` line from the recorded flags.
+
+    Returns the empty string in two cases — both producing a digest
+    with no legend at all:
+    - No flags set (a degenerate empty batch).
+    - Only `line_range` is set. Line ranges are intrinsically obvious
+      from the trailing `L<n>` / `L<a>-<b>` form alongside line counts
+      in the file header — emitting a one-entry legend just to document
+      them would be more overhead than insight. This is the case for
+      YAML-only and markdown-only digests, where line ranges are the
+      sole "non-English" token.
+    """
+    entries = [text for key, text in _LEGEND_ENTRIES if getattr(flags, key)]
+    if not entries:
+        return ""
+    # Derive the line-range entry text from `_LEGEND_ENTRIES` instead of
+    # repeating the literal here — keeps the omission rule in lockstep
+    # with however the entry text is worded.
+    line_range_text = next(text for key, text in _LEGEND_ENTRIES if key == "line_range")
+    if entries == [line_range_text]:
+        return ""
+    return "# legend: " + ", ".join(entries)
 
 
 # Type-modifier whitelist — keywords that meaningfully change how a
@@ -768,7 +833,16 @@ def _type_modifiers(d: Declaration) -> list[str]:
 
 
 def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optional[Path] = None) -> str:
-    """Compact per-directory public-API map across a batch of parsed files."""
+    """Compact per-directory public-API map across a batch of parsed files.
+
+    A self-describing legend line is prepended only when the rendered
+    body actually uses non-English tokens (callable parens, kind tags,
+    method markers, overload counts, deprecation tags, inheritance).
+    Pure YAML or markdown batches — whose digest contains only plain
+    keys / heading text and line-range suffixes — get no legend, since
+    there is nothing in the body that needs explaining. See
+    `_build_legend` for the exact omission rule.
+    """
     if not results:
         return "# no files\n"
     # Common root for relative paths
@@ -783,25 +857,29 @@ def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optiona
     for r in results:
         grouped.setdefault(r.path.parent, []).append(r)
 
-    # One-line legend at the top so the digest is self-describing for an
-    # LLM reading it cold (without `ast-outline prompt` loaded). The
-    # tokens cover everything that isn't plain English already
-    # (`[tiny]` / `[medium]` / `[large]` / `[broken]` are
-    # self-explanatory and don't need a legend entry).
-    lines: list[str] = [_DIGEST_LEGEND]
+    # Render the body first, populating `flags` as we go, then build
+    # the legend from only the tokens we actually emitted.
+    flags = _LegendFlags()
+    body: list[str] = []
     for directory in sorted(grouped.keys(), key=str):
         try:
             rel = str(directory.relative_to(root))
         except ValueError:
             rel = str(directory)
-        lines.append(f"{rel}/")
+        body.append(f"{rel}/")
         for r in grouped[directory]:
-            lines.extend(_digest_one(r, opts))
-        lines.append("")
+            body.extend(_digest_one(r, opts, flags))
+        body.append("")
+    legend = _build_legend(flags)
+    lines = ([legend] if legend else []) + body
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
+def _digest_one(
+    result: ParseResult,
+    opts: DigestOptions,
+    flags: Optional[_LegendFlags] = None,
+) -> list[str]:
     # Inject the descriptive size label between the filename and the
     # parenthesised counters: `  name.py [medium] (95 lines, ...)`.
     # The bracket lands right after the filename so the agent reads
@@ -834,7 +912,7 @@ def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
 
     # Markdown files digest as a hierarchical TOC, not a type/member list.
     if result.language == "markdown":
-        toc = _digest_markdown(result.declarations, opts, indent=4, depth=1)
+        toc = _digest_markdown(result.declarations, opts, indent=4, depth=1, flags=flags)
         if not toc:
             lines[-1] += "  # empty"
             return lines
@@ -847,7 +925,7 @@ def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
     # No `[yaml_key]` / `[yaml_doc]` annotations — the tag would be
     # uniform-and-noisy for every entry.
     if result.language == "yaml":
-        body = _digest_yaml(result.declarations, opts)
+        body = _digest_yaml(result.declarations, opts, flags=flags)
         if not body:
             lines[-1] += "  # empty"
             return lines
@@ -898,20 +976,27 @@ def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
         # attr that we filtered out above.
         if _is_deprecated(t):
             header_parts.append("[deprecated]")
+            if flags is not None:
+                flags.deprecated = True
 
         # Inheritance, kept at the end of the declarative part so the
         # eye finds bases predictably (and a long base list doesn't
         # push other tags off-screen).
         if t.bases:
             header_parts.append(": " + ", ".join(t.bases))
+            if flags is not None:
+                flags.inheritance = True
 
-        header = "    " + " ".join(header_parts) + t.lines_suffix()
+        suffix = t.lines_suffix()
+        if suffix and flags is not None:
+            flags.line_range = True
+        header = "    " + " ".join(header_parts) + suffix
         lines.append(header)
         members = _digest_members(t, opts)
         if members:
             collapsed = _collapse_overloads(members)
             shown = collapsed[: opts.max_members_per_type]
-            tokens = [_member_token(m, count, parent=t) for m, count in shown]
+            tokens = [_member_token(m, count, parent=t, flags=flags) for m, count in shown]
             lines.extend(_wrap_tokens(tokens, width=100, indent="      "))
             if len(collapsed) > len(shown):
                 lines.append(f"      ... ({len(collapsed) - len(shown)} more)")
@@ -923,7 +1008,7 @@ def _digest_one(result: ParseResult, opts: DigestOptions) -> list[str]:
     if free_functions:
         collapsed = _collapse_overloads(free_functions)
         shown = collapsed[: opts.max_members_per_type]
-        tokens = [_member_token(f, count, parent=None) for f, count in shown]
+        tokens = [_member_token(f, count, parent=None, flags=flags) for f, count in shown]
         lines.extend(_wrap_tokens(tokens, width=100, indent="    "))
     return lines
 
@@ -958,7 +1043,10 @@ def _collapse_overloads(decls: list[Declaration]) -> list[tuple[Declaration, int
 
 
 def _member_token(
-    d: Declaration, count: int, parent: Optional[Declaration] = None
+    d: Declaration,
+    count: int,
+    parent: Optional[Declaration] = None,
+    flags: Optional[_LegendFlags] = None,
 ) -> str:
     """Render a single digest token for a member or free declaration.
 
@@ -996,14 +1084,28 @@ def _member_token(
             base = f"{prefix}{d.name}() [{count} overloads]"
         else:
             base = f"{prefix}{d.name}()"
+        if flags is not None:
+            flags.callable = True
+            if markers:
+                flags.marker = True
+            if count > 1:
+                flags.overloads = True
     else:
         base = f"{d.name} [{d.kind}]"
+        if flags is not None:
+            flags.kind = True
     if _is_deprecated(d):
         base += " [deprecated]"
+        if flags is not None:
+            flags.deprecated = True
     return base
 
 
-def _digest_yaml(decls: list[Declaration], opts: DigestOptions) -> list[str]:
+def _digest_yaml(
+    decls: list[Declaration],
+    opts: DigestOptions,
+    flags: Optional[_LegendFlags] = None,
+) -> list[str]:
     """Render YAML declarations for the digest body.
 
     Two shapes:
@@ -1015,12 +1117,20 @@ def _digest_yaml(decls: list[Declaration], opts: DigestOptions) -> list[str]:
       annotation — every entry would carry it, pure noise. Tokens
       use the same comma-space separator and bare-name form as the
       code-digest body so YAML and code files share one mental model.
+
+    Records `flags.line_range` only — YAML digest never emits any of
+    the other legend tokens (no parens, no kind tags, no markers, no
+    inheritance, no deprecation). For single-doc YAML it sets nothing,
+    leaving the legend empty when the batch is YAML-only.
     """
     if any(d.kind == KIND_YAML_DOC for d in decls):
         out: list[str] = []
         for d in decls:
             if d.kind == KIND_YAML_DOC:
-                out.append("    " + d.signature + d.lines_suffix())
+                suffix = d.lines_suffix()
+                if suffix and flags is not None:
+                    flags.line_range = True
+                out.append("    " + d.signature + suffix)
         return out
     tokens = [d.name for d in decls if d.kind == KIND_YAML_KEY]
     if not tokens:
@@ -1033,12 +1143,18 @@ def _digest_markdown(
     opts: DigestOptions,
     indent: int,
     depth: int,
+    flags: Optional[_LegendFlags] = None,
 ) -> list[str]:
     """Render markdown declarations as a hierarchical TOC.
 
     Respects `opts.max_heading_depth`. Code blocks are shown only when
     `opts.include_fields` is True (they're treated as noise in a TOC by
     default).
+
+    Records only `flags.line_range` — every emitted heading carries a
+    line-range suffix and that's the only legend-worthy token markdown
+    digest emits. Pure-markdown batches therefore drop the legend
+    entirely (line_range alone is dropped — see `_build_legend`).
     """
     out: list[str] = []
     if depth > opts.max_heading_depth:
@@ -1046,10 +1162,16 @@ def _digest_markdown(
     pad = " " * indent
     for d in decls:
         if d.kind == KIND_HEADING:
-            out.append(pad + d.signature + d.lines_suffix())
-            out.extend(_digest_markdown(d.children, opts, indent + 2, depth + 1))
+            suffix = d.lines_suffix()
+            if suffix and flags is not None:
+                flags.line_range = True
+            out.append(pad + d.signature + suffix)
+            out.extend(_digest_markdown(d.children, opts, indent + 2, depth + 1, flags=flags))
         elif d.kind == KIND_CODE_BLOCK and opts.include_fields:
-            out.append(pad + d.signature + d.lines_suffix())
+            suffix = d.lines_suffix()
+            if suffix and flags is not None:
+                flags.line_range = True
+            out.append(pad + d.signature + suffix)
     return out
 
 

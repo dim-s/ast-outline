@@ -373,7 +373,10 @@ src/services/
 ```
 
 第一行是自描述的图例（legend），让 LLM 在没有加载 `ast-outline prompt`
-的情况下也能直接读懂输出。token 遵循通用编程文档约定：`name()` 表示
+的情况下也能直接读懂输出。图例是**动态的**——只列出输出正文中实际
+出现的 token。如果 batch 只包含 YAML 或 markdown 文件（没有 callable、
+没有 kind 标签、没有继承），则完全不输出图例；代码 batch 的图例也只
+保留实际使用到的 token 子集。token 遵循通用编程文档约定：`name()` 表示
 可调用，`name [kind]` 表示属性/字段/事件等非可调用项，方法修饰符
 （`async`、`static`、`abstract`、`override`、`virtual`，以及语言原生
 形式：Kotlin 的 `open` / `suspend`、Python 的 `@staticmethod` /

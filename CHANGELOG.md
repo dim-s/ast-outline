@@ -7,6 +7,57 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.6.7] — 2026-05-04
+
+### Changed
+
+- `ast-outline digest` legend is now **dynamic** — only entries whose
+  token shape actually appears in the rendered body are listed. A
+  YAML-only or markdown-only batch (whose digest contains no
+  callables, kinds, markers, or inheritance) emits no legend at all,
+  since none of the legend tokens apply. A code batch keeps a legend
+  pruned to whichever subset of `name()=callable`,
+  `name [kind]=non-callable`, `marker name()=method modifier`,
+  `[N overloads]`, `[deprecated]`, `L<a>-<b>=line range`, and
+  `: Base, …=inheritance` actually surfaces. Drops ~200 bytes of
+  noise from yaml/md digests and shrinks per-language digests
+  proportional to which tokens they don't use. Saves prompt budget
+  when digest output is piped into LLM context. The omission rule
+  also drops the legend when only `line_range` would fire (e.g. a
+  code batch of pure marker classes with no members) — a one-entry
+  legend documenting line ranges is more overhead than insight when
+  the `L<n>` form is already obvious from the trailing suffixes.
+- `ast-outline help digest` (`GUIDE_DIGEST`) updated to describe the
+  dynamic legend behavior so agents reading the guide understand
+  why a yaml-only digest has no legend line.
+
+### Internal
+
+- New `core._LegendFlags` dataclass + `_LEGEND_ENTRIES` table +
+  `_build_legend()`. Render functions thread an optional
+  `_LegendFlags` through `_digest_one`, `_member_token`,
+  `_digest_yaml`, `_digest_markdown`; flags are set inline on the
+  existing render pass — no second pass over data, no parsing of
+  rendered output. `_DIGEST_LEGEND` constant removed.
+- `_member_token` gains an optional `flags` keyword argument with a
+  `None` default — backward-compatible with existing call sites
+  (e.g. unit tests using `_member_token(method, count=1)`).
+
+### Tests
+
+- 36 new tests in `test_digest_format.py` covering: omission rules
+  for pure yaml / pure markdown / yaml+markdown-mixed / empty batch /
+  no-declarations / empty-types-only code; per-flag triggers
+  (drop-and-include) for each of `callable`, `kind`, `marker`,
+  `overloads`, `deprecated`, `inheritance`, `line_range`;
+  cross-language legend-presence sweep across Python, C#, Java,
+  Kotlin, Scala, Go, Rust, TypeScript, PHP; canonical entry
+  ordering; comma-space separator; builder unit test (no flags /
+  line-range-only / single flag / all flags); type-level
+  deprecation; C# `[Obsolete]`; Rust `#[deprecated]`; regression
+  guard that legend-absent digest still has a directory-header line
+  at index 0.
+
 ## [0.6.6] — 2026-05-04
 
 ### Added

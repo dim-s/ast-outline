@@ -562,7 +562,16 @@ WHAT IT DOES
       <file>  (N lines, ~tokens)
         [Attr] <modifiers> <kind> <Name> [deprecated][ : <bases>]  L<start>-<end>
           <marker> method1(), method2(), property [property], ...
-    Output starts with a one-line legend so it is parseable cold.
+    The legend line is dynamic — only entries whose token shape
+    actually appears in the rendered body are listed, so a YAML- or
+    markdown-only batch (whose digest contains no callables, kinds,
+    markers, or inheritance) emits no legend at all. Code batches
+    nearly always carry a legend explaining whichever subset of
+    tokens they use; the only exception is a batch whose every file
+    contains nothing but empty type declarations, in which case
+    `L<a>-<b>` is the sole token shape and the legend is dropped (a
+    one-entry legend documenting line ranges adds noise without
+    insight).
     Callable names carry `()`; properties / fields / events show
     `[kind]`. Method markers (`async`, `static`, `abstract`,
     `override`, `virtual`, Kotlin `open` / `suspend`, Python

@@ -412,7 +412,11 @@ src/services/
 ```
 
 The first line is a self-describing legend so an LLM can read the
-output cold without `ast-outline prompt` loaded. Tokens follow the
+output cold without `ast-outline prompt` loaded. The legend is
+**dynamic** — only entries whose token shape actually appears in the
+body are listed, so a YAML- or markdown-only batch (no callables, no
+kinds, no inheritance) emits no legend at all, and code batches keep
+a legend pruned to the subset of tokens they use. Tokens follow the
 universal programming-doc convention — `name()` for a callable,
 `name [kind]` for a property/field/event/etc., method markers
 (`async`, `static`, `abstract`, `override`, `virtual`, plus
