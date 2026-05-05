@@ -20,6 +20,11 @@ def csharp_dir() -> Path:
 
 
 @pytest.fixture(scope="session")
+def cpp_dir() -> Path:
+    return FIXTURES_DIR / "cpp"
+
+
+@pytest.fixture(scope="session")
 def python_dir() -> Path:
     return FIXTURES_DIR / "python"
 

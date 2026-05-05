@@ -94,6 +94,7 @@ MCP shim wrapping the same calls.
 | Language   | Extensions |
 | ---        | --- |
 | C#         | `.cs` |
+| C++        | `.cpp`, `.cc`, `.cxx`, `.c++`, `.h`, `.hpp`, `.hh`, `.hxx`, `.h++`, `.ipp`, `.tpp`, `.inl`, `.cppm`, `.ixx` |
 | Python     | `.py`, `.pyi` |
 | TypeScript | `.ts`, `.tsx` |
 | JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` *(parsed by the TypeScript grammar)* |
@@ -113,6 +114,7 @@ MCP shim wrapping the same calls.
 - **Kotlin** — classes, interfaces, `fun interface`, `object` / `companion object`, `data` / `sealed` / `enum` / `annotation` classes, extension functions, `suspend` / `inline` / `const` / `lateinit`, generics with `where` constraints, `typealias`, KDoc.
 - **Scala** — Scala 2 + Scala 3: classes, traits, `object` / `case object`, `case class`, `sealed` hierarchies, Scala 3 `enum` / `given` / `using` / `extension`, indentation-based bodies, higher-kinded types, context bounds, `opaque type`, `type` aliases, Scaladoc.
 - **Go** — packages, structs (with method-grouping under receiver), interfaces, struct/interface embedding as inheritance, generics (Go 1.18+), `type` aliases + defined types, `iota` enum-blocks, doc-comment chains.
+- **C++** — namespaces (single-chain old-style folds into `a::b::c`, anonymous → `<anonymous>`, `inline` preserved), classes / structs / unions / enums (classic + `enum class`), templates (header preserved as signature prefix on class / function / member templates), virtual / pure-virtual / `const` / `noexcept` qualifiers, ctors / dtors / operators (incl. conversion operators like `operator bool()`), `= default` / `= delete`, `public:` / `protected:` / `private:` access blocks with C++-correct defaults, base-class clauses with access + `virtual` markers, out-of-class definitions (`Widget::draw`), `#include` directives as imports. Unreal Engine `UCLASS()` / `UFUNCTION()` / `GENERATED_BODY()` macros parse without interference.
 - **Rust** — modules (recursive), structs (regular / tuple / unit), unions, enums with all variant shapes, traits with supertraits as bases, **`impl` block regrouping under the target type** (inherent + `impl Trait for Foo` adds Trait to bases), `extern "C"` blocks, `macro_rules!`, type aliases, generics + lifetimes + `where` clauses, `pub` / `pub(crate)` visibility, outer doc comments (`///`, `/** */`) and `#[...]` attributes.
 - **PHP** — modern PHP 8.x and the still-deployed 7.4 LTS line: namespaces (file-scoped + bracketed), classes (`abstract` / `final` / `readonly` and combinations), interfaces, traits, PHP 8.1 enums (pure + backed), methods, magic ctor / dtor (`__construct` → ctor, `__destruct` → dtor), PHP 8.0 constructor property promotion (promoted parameters surface as fields), single + multi-variable properties, PHP 8.3 typed class constants, PHP 8.0 `#[Attr]` attributes, top-level `use` / `use function` / `use const` / grouped `use Foo\{A, B}`, plus top-level `include` / `include_once` / `require` / `require_once` for pre-Composer / WordPress / Drupal-7 codebases. Tested on real WordPress core (no parse errors on files up to 291 KB).
 - **Markdown** — heading TOC + fenced code blocks.

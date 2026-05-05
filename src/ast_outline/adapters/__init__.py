@@ -19,6 +19,7 @@ from typing import Optional
 from pathspec import GitIgnoreSpec
 
 from .base import LanguageAdapter
+from .cpp import CppAdapter
 from .csharp import CSharpAdapter
 from .go import GoAdapter
 from .java import JavaAdapter
@@ -34,6 +35,7 @@ from .yaml import YamlAdapter
 
 ADAPTERS: list[LanguageAdapter] = [
     CSharpAdapter(),
+    CppAdapter(),
     PythonAdapter(),
     TypeScriptAdapter(),
     JavaAdapter(),

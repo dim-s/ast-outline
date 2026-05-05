@@ -7,6 +7,41 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.7.0] — 2026-05-05
+
+### Added
+
+- C++ adapter — parses `.cpp`, `.cc`, `.cxx`, `.c++`, `.h`, `.hpp`,
+  `.hh`, `.hxx`, `.h++`, `.ipp`, `.tpp`, `.inl`, `.cppm`, `.ixx`
+  via `tree-sitter-cpp`. Surfaces classes, structs, unions, enums
+  (both classic and `enum class`), namespaces, free functions,
+  methods, ctors, dtors, operators (including conversion operators
+  like `operator bool()`), templates (header preserved as signature
+  prefix), out-of-class member definitions (`Widget::draw`), and
+  `#include` directives as imports. Tracks `public:` / `protected:`
+  / `private:` access blocks so member visibility matches source,
+  with C++-correct defaults (`class` → `private`, `struct`/`union`
+  → `public`).
+- Namespace collapse for C++ — single-child
+  `namespace a { namespace b { … } }` chains fold into one
+  `namespace a::b` declaration so the outline reads identically
+  whether the source uses C++17 nested-namespace syntax or the old
+  multi-level form. Multiple siblings at one level break the chain
+  and stay nested in the IR. Anonymous namespaces render as
+  `namespace <anonymous>`; inline namespaces keep the keyword in
+  the name (`namespace inline v1`).
+- Unreal Engine reflection macros recognised by default. `UCLASS(...)`
+  / `USTRUCT(...)` / `UENUM(...)` / `UINTERFACE(...)` attach as
+  attrs on the next type declaration; `UPROPERTY(...)` /
+  `UFUNCTION(...)` attach to the next member. The
+  `GENERATED_BODY()` family is stripped from the source before
+  parsing (length-preserving — line numbers stay aligned) so
+  tree-sitter can recover from UHT's missing-semicolon convention
+  and the rest of the file outlines cleanly. Synthetic
+  MISSING-`;` parse errors that tree-sitter inserts after every
+  UE macro are subtracted from the reported error count, so
+  valid UE headers no longer surface as `[broken]` in the digest.
+
 ## [0.6.8] — 2026-05-05
 
 ### Added
