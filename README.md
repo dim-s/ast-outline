@@ -226,9 +226,10 @@ ast-outline prompt | pbcopy   # macOS clipboard
 ```markdown
 ## Code exploration — prefer `ast-outline` over full reads
 
-For `.cs`, `.py`, `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`,
-`.scala`, `.sc`, `.go`, `.rs`, `.php`, `.phtml`, `.md`, and `.yaml`/`.yml`
-files, read structure with `ast-outline` before opening full contents.
+For `.cs`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hh`, `.py`, `.pyi`,
+`.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`, `.scala`, `.sc`,
+`.go`, `.rs`, `.php`, `.phtml`, `.md`, and `.yaml`/`.yml` files, read
+structure with `ast-outline` before opening full contents.
 
 Pick the smallest of these that answers your question — they're a
 broad-to-narrow menu, not a sequence; skip straight to `show` when

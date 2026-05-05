@@ -90,6 +90,7 @@ embeddings 的 MCP 服务器）相反。现代 LLM Agent 足够聪明，能将
 | 语言       | 扩展名 |
 | ---        | --- |
 | C#         | `.cs` |
+| C++        | `.cpp`、`.cc`、`.cxx`、`.c++`、`.h`、`.hpp`、`.hh`、`.hxx`、`.h++`、`.ipp`、`.tpp`、`.inl`、`.cppm`、`.ixx` *（含 Unreal Engine）* |
 | Python     | `.py`、`.pyi` |
 | TypeScript | `.ts`、`.tsx` |
 | JavaScript | `.js`、`.jsx`、`.mjs`、`.cjs` *（由 TypeScript 语法解析）* |
@@ -200,9 +201,10 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
 ```markdown
 ## 代码探索 —— 优先用 `ast-outline`，而不是完整读取
 
-对于 `.cs`、`.py`、`.pyi`、`.ts`、`.tsx`、`.js`、`.jsx`、`.java`、`.kt`、`.kts`、
-`.scala`、`.sc`、`.go`、`.rs`、`.md` 和 `.yaml`/`.yml` 文件，先用 `ast-outline`
-读结构，再考虑打开完整内容。
+对于 `.cs`、`.cpp`、`.cc`、`.cxx`、`.h`、`.hpp`、`.hh`、`.py`、`.pyi`、`.ts`、
+`.tsx`、`.js`、`.jsx`、`.java`、`.kt`、`.kts`、`.scala`、`.sc`、`.go`、`.rs`、
+`.php`、`.phtml`、`.md` 和 `.yaml`/`.yml` 文件，先用 `ast-outline` 读结构,
+再考虑打开完整内容。
 
 从下面三个工具中选最小的那个，能回答你的问题就够了——这是一个
 "从粗到细"的菜单，不是必须按顺序执行的步骤；如果已经知道符号名，
