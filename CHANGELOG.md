@@ -7,6 +7,109 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.6.8] — 2026-05-05
+
+### Added
+
+- Directory walks now respect `.gitignore` and prune a hardcoded list
+  of universally non-source dirs out of the box — no flag, no config.
+  Defaults cover VCS metadata (`.git/`, `.svn/`, `.hg/`), Node
+  (`node_modules/`), Python caches / venvs / build metadata
+  (`__pycache__/`, `.venv/`, `venv/`, `.tox/`, `.mypy_cache/`,
+  `.pytest_cache/`, `.ruff_cache/`, `.eggs/`, `*.egg-info/`), JVM
+  (`.gradle/`), IDE metadata (`.idea/`, `.vs/`, `.vscode/`,
+  `.cursor/`, `.zed/`, `.fleet/`), JS test infra & hooks
+  (`__snapshots__/`, `.husky/`), JS framework build caches
+  (`.next/`, `.nuxt/`, `.svelte-kit/`, `.turbo/`, `.parcel-cache/`,
+  `.vite/`), and Terraform plugin cache (`.terraform/`). Conflict-prone
+  names like `build/`, `bin/`, `dist/`, `target/`, `vendor/`, `out/`,
+  `obj/` are intentionally NOT in the hardcoded list — they're
+  legitimate source/data dirs in some projects, so we delegate to
+  `.gitignore` per-project. Ignored dirs are pruned at walk time so
+  we never descend into `node_modules` just to throw the files away.
+- **Nested `.gitignore` files** are now respected. A
+  `.gitignore` in a subdir applies to that subtree only (patterns
+  inside it are resolved relative to the subdir, mirroring
+  `git`'s behavior), and a deeper `.gitignore` can override
+  parent rules via `!` negation (e.g. a top-level `*.skip.py`
+  un-ignored at `keep/.gitignore` with `!*.skip.py`). The
+  monorepo escape hatch for hardcoded defaults works via
+  git's standard three-line idiom — `!node_modules/` to
+  un-exclude the dir, `node_modules/*` to re-exclude its
+  contents, then a specific `!node_modules/our-fork/` to keep
+  one subtree.
+- **`--no-ignore` flag** on `outline` and `digest` — single
+  switch to disable the entire filter pipeline (hardcoded
+  defaults, `.gitignore`, `.ignore`, all of it). Walks every dir
+  and filters only by supported extension. Use case: outline a
+  vendored fork inside `node_modules` without editing any
+  ignore files; debug "why isn't file X in my digest?". The
+  `# note: ignored …` line now reads `via .gitignore/.ignore +
+  defaults — pass --no-ignore to disable` so agents see both
+  consulted sources and discover the flag from output rather
+  than docs.
+- **`.ignore` files** (the search-tool convention from `ripgrep`
+  / `fd` / `ast-grep`) are now supported alongside `.gitignore`,
+  with **higher priority** — patterns in `.ignore` override
+  conflicting `.gitignore` patterns. Use case: hide a
+  committed generated file like `schema.gen.ts` from outline /
+  digest without removing it from git tracking. Or invert: keep
+  a `vendor/` dir tracked but rescue one curated fork via
+  `.ignore` containing `!vendor/`, `vendor/*`,
+  `!vendor/our-fork/`. Nested `.ignore` files in subdirs work
+  the same as nested `.gitignore` files.
+- When the walker prunes any dirs, `outline` and `digest` now print
+  a leading `# note: ignored N dirs (name1, name2, …) via .gitignore
+  + defaults` line so an agent reading the output knows filtering
+  happened **and which dir basenames got skipped** (otherwise a
+  missing file looks like a bug). Unique basenames are deduplicated
+  across nested occurrences (one `node_modules` listed once even if
+  pruned in 12 places); the count reflects total prunes. The list is
+  capped at 8 names with a `… +N more` tail in deep monorepos.
+  File-level gitignore matches (e.g. a top-level file matching
+  `*.generated.py`) are still filtered, just not counted in the note
+  — bare "+N files" without names was confusing and rarely
+  informative. On a clean directory the note is omitted.
+
+### Internal
+
+- New `pathspec>=0.12` dependency (MPL-2.0). Apache-2.0 compatible
+  for use as a transitive dep — no relicensing impact on
+  ast-outline's own code.
+- `adapters.collect_files_with_stats(...)` returns a
+  `CollectResult(files, ignored_dirs, ignored_dir_names)` —
+  `ignored_dir_names` is a sorted tuple of unique basenames so
+  callers don't have to dedupe.
+  `collect_files(...)` is preserved as a thin wrapper returning just
+  the list, so existing test callers don't change.
+- Filter implementation uses a stack of `(anchor_dir,
+  GitIgnoreSpec)` frames built top-down during `os.walk`. The stack
+  is queried **deepest-first** via `pathspec.GitIgnoreSpec.check_file`
+  — first frame returning `include={True,False}` decides, mirroring
+  git's "more-specific gitignore overrides parent" rule. Frames
+  whose anchor is no longer an ancestor of the current dir are
+  pruned each iteration so sibling subtrees don't bleed
+  gitignore patterns into each other.
+
+### Tests
+
+- New `test_ignore_filtering.py` covers hardcoded defaults
+  (`node_modules`, `__pycache__`, `.git`, `.venv`/`venv`),
+  `*.egg-info/` glob patterns, `.gitignore` semantics (project-root
+  + ancestor fallback), cross-language junk-dir coverage (`.tox`,
+  `.mypy_cache`, `.next`, `.svelte-kit`, …), modern IDE dirs
+  (`.vscode`, `.cursor`, `.zed`, `.fleet`, `.vs`), nested
+  `.gitignore` files (subtree-scoped patterns, sibling isolation,
+  multi-level chains, the un-ignore-default monorepo idiom),
+  `.ignore` file behavior (basic filtering, override of
+  conflicting `.gitignore` rules, hiding tracked files, nested
+  in subdirs, mixed with nested `.gitignore` at different levels),
+  unreadable-`.gitignore` graceful handling, CLI surfacing of
+  the `# note: ignored …` line including dedup of repeated
+  basenames and `+N more` cap in deep monorepos, and the
+  all-ignored-content edge case (where the agent would otherwise
+  see "no files" and be misled).
+
 ## [0.6.7] — 2026-05-04
 
 ### Changed

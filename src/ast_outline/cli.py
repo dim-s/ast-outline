@@ -16,7 +16,12 @@ import sys
 from pathlib import Path
 
 from ._prompt import AGENT_PROMPT
-from .adapters import collect_files, get_adapter_for, supported_extensions
+from .adapters import (
+    CollectResult,
+    collect_files_with_stats,
+    get_adapter_for,
+    supported_extensions,
+)
 from .core import (
     DigestOptions,
     OutlineOptions,
@@ -126,6 +131,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Show each file's import / use / using statements as a header line",
     )
+    p_digest.add_argument(
+        "--no-ignore",
+        action="store_true",
+        help="Disable .gitignore / .ignore / hardcoded defaults — walk every dir except by extension",
+    )
 
     p_help = sub.add_parser("help", help="Show usage guide with examples")
     p_help.add_argument(
@@ -170,7 +180,7 @@ def _cmd_version(_args) -> int:
     print(f"ast-outline {__version__}")
     print("author: Dmitrii Zaitsev <zayceffdev@gmail.com>")
     print("homepage: https://github.com/ast-outline/ast-outline")
-    print("license: MIT")
+    print("license: Apache-2.0")
     return 0
 
 
@@ -199,14 +209,26 @@ def _add_outline_args(p: argparse.ArgumentParser) -> None:
         help="Show each file's import / use / using statements as a header line",
     )
     p.add_argument("--glob", default=None, help="Custom glob for directory mode (default: all supported extensions)")
+    p.add_argument(
+        "--no-ignore",
+        action="store_true",
+        help="Disable .gitignore / .ignore / hardcoded defaults — walk every dir except by extension",
+    )
 
 
-def _parse_paths(paths: list[Path], glob: str | None = None) -> tuple[list[ParseResult], list[tuple[Path, Exception]]]:
-    """Parse every supported file under the given paths."""
-    files = collect_files(paths, glob=glob)
+def _parse_paths(
+    paths: list[Path], glob: str | None = None, no_ignore: bool = False
+) -> tuple[list[ParseResult], list[tuple[Path, Exception]], CollectResult]:
+    """Parse every supported file under the given paths.
+
+    Returns the parsed results, per-file errors, and the raw collection
+    stats (so callers can surface how many files/dirs were filtered out
+    by ``.gitignore`` + defaults).
+    """
+    collected = collect_files_with_stats(paths, glob=glob, no_ignore=no_ignore)
     results: list[ParseResult] = []
     errors: list[tuple[Path, Exception]] = []
-    for f in files:
+    for f in collected.files:
         adapter = get_adapter_for(f)
         if adapter is None:
             continue  # silently skip unsupported extensions
@@ -214,7 +236,37 @@ def _parse_paths(paths: list[Path], glob: str | None = None) -> tuple[list[Parse
             results.append(adapter.parse(f))
         except Exception as e:
             errors.append((f, e))
-    return results, errors
+    return results, errors, collected
+
+
+_MAX_DIR_NAMES_IN_NOTE = 8
+
+
+def _ignore_note(collected: CollectResult) -> str | None:
+    """Format the ``# note:`` line for ignored entries, or ``None``.
+
+    Lists the unique **basenames** of pruned dirs (capped at
+    ``_MAX_DIR_NAMES_IN_NOTE`` to keep the line readable in deep
+    monorepos) so the agent can see *what* got skipped, not just *how
+    many*. The dir count itself is informative when one basename
+    (e.g. ``node_modules``) is pruned in multiple places across a
+    monorepo — list-of-1 + count-of-12 conveys both shape and scale.
+    """
+    if collected.ignored_dirs == 0:
+        return None
+    names = list(collected.ignored_dir_names)
+    if len(names) > _MAX_DIR_NAMES_IN_NOTE:
+        shown = (
+            ", ".join(names[:_MAX_DIR_NAMES_IN_NOTE])
+            + f", … +{len(names) - _MAX_DIR_NAMES_IN_NOTE} more"
+        )
+    else:
+        shown = ", ".join(names)
+    word = "dir" if collected.ignored_dirs == 1 else "dirs"
+    return (
+        f"# note: ignored {collected.ignored_dirs} {word} ({shown}) "
+        "via .gitignore/.ignore + defaults — pass --no-ignore to disable"
+    )
 
 
 def _cmd_outline(args) -> int:
@@ -241,7 +293,9 @@ def _cmd_outline(args) -> int:
         show_imports=args.imports,
     )
 
-    results, errors = _parse_paths(paths, glob=args.glob)
+    results, errors, collected = _parse_paths(
+        paths, glob=args.glob, no_ignore=args.no_ignore
+    )
     if not results:
         # All-failure path: surface parse errors on stdout as `# note:`
         # lines so the LLM agent (which only reads stdout) sees what
@@ -251,12 +305,22 @@ def _cmd_outline(args) -> int:
             for f, e in errors:
                 print(f"# note: parse error in {f}: {e}")
             return 0
+        note = _ignore_note(collected)
+        if note:
+            # Empty result + something ignored is the classic "the file
+            # you wanted was filtered" trap — surface the filter so the
+            # agent doesn't think the path is empty.
+            print(note)
+            return 0
         exts = sorted(supported_extensions())
         print(
             f"# note: no files found matching supported extensions: {exts}"
         )
         return 0
 
+    note = _ignore_note(collected)
+    if note:
+        print(note)
     for i, r in enumerate(results):
         if i > 0:
             print()
@@ -348,7 +412,7 @@ def _cmd_digest(args) -> int:
         max_members_per_type=args.max_members,
         show_imports=args.imports,
     )
-    results, errors = _parse_paths(paths)
+    results, errors, collected = _parse_paths(paths, no_ignore=args.no_ignore)
     if not results:
         # See `_cmd_outline` for rationale — an all-failure batch needs
         # the parse errors visible on stdout (the LLM's channel), not
@@ -359,8 +423,15 @@ def _cmd_digest(args) -> int:
             for f, e in errors:
                 print(f"# note: parse error in {f}: {e}")
             return 0
+        note = _ignore_note(collected)
+        if note:
+            print(note)
+            return 0
         print("# note: no supported files found")
         return 0
+    note = _ignore_note(collected)
+    if note:
+        print(note)
     print(render_digest(results, opts), end="")
     # Per-file parse errors are warnings on a successful batch — stderr.
     for f, e in errors:

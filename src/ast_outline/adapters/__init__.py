@@ -2,11 +2,21 @@
 
 Each adapter knows: a set of file extensions it handles, and how to convert
 tree-sitter AST nodes for its language into the `core.Declaration` tree.
+
+Directory traversal also lives here. ``collect_files`` walks input dirs,
+filters out junk (``.gitignore`` patterns + a small hardcoded fallback list
+covering ``.git`` / ``node_modules`` / ``__pycache__`` / ``.venv`` / ``venv``),
+and prunes ignored directories at walk time so we don't pay the cost of
+descending into ``node_modules`` just to throw the files away.
 """
 from __future__ import annotations
 
+import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from pathspec import GitIgnoreSpec
 
 from .base import LanguageAdapter
 from .csharp import CSharpAdapter
@@ -37,6 +47,55 @@ ADAPTERS: list[LanguageAdapter] = [
 ]
 
 
+# Each entry must have an unambiguous name with no realistic conflict
+# with hand-written source dirs across our supported languages — the
+# rationale for inclusion / exclusion lives in CHANGELOG and docs.
+_DEFAULT_IGNORE_PATTERNS: list[str] = [
+    # VCS metadata
+    ".git/",
+    ".svn/",
+    ".hg/",
+    # JS / TS — package manager
+    "node_modules/",
+    # Python — bytecode, virtual envs, tool caches, build metadata
+    "__pycache__/",
+    ".venv/",
+    "venv/",
+    ".tox/",
+    ".mypy_cache/",
+    ".pytest_cache/",
+    ".ruff_cache/",
+    ".eggs/",
+    "*.egg-info/",
+    # JVM — Gradle's local build cache (NOT ``gradle/`` which is wrapper scripts)
+    ".gradle/",
+    # IDE / editor metadata — none of these contain files we'd parse (JSON
+    # / XML configs), so pruning is mostly cosmetic for the output, but it
+    # keeps the walk fast and the ``# note: ignored`` line informative when
+    # present in deep monorepos.
+    ".idea/",
+    ".vs/",
+    ".vscode/",
+    ".cursor/",
+    ".zed/",
+    ".fleet/",
+    # JS test infra & hooks
+    "__snapshots__/",
+    ".husky/",
+    # JS framework build caches — these regenerate ``.ts``/``.tsx`` files
+    # that look like real source, so tree-sitter would happily parse them
+    # if we descended.
+    ".next/",
+    ".nuxt/",
+    ".svelte-kit/",
+    ".turbo/",
+    ".parcel-cache/",
+    ".vite/",
+    # Infra tooling
+    ".terraform/",
+]
+
+
 def get_adapter_for(path: Path) -> Optional[LanguageAdapter]:
     ext = path.suffix.lower()
     for a in ADAPTERS:
@@ -52,22 +111,272 @@ def supported_extensions() -> set[str]:
     return out
 
 
-def collect_files(paths: list[Path], glob: Optional[str] = None) -> list[Path]:
-    """Gather all source files under `paths` that any adapter handles.
+@dataclass(frozen=True)
+class CollectResult:
+    """Result of a directory walk: matched files + ignore-filter stats.
 
-    If `glob` is given, only match that pattern (used for --glob override).
-    Otherwise every supported extension is included.
+    ``ignored_dir_names`` holds the **unique basenames** of pruned dirs
+    (sorted), not full paths — agents reading the ``# note:`` line want
+    to see "what kind of thing got skipped" (``node_modules``,
+    ``.gradle``, …), not every nested occurrence.
+
+    File-level gitignore matches (e.g. a top-level file matching
+    ``*.generated.py``) are still filtered out, just not counted —
+    surfacing a bare "+ N files" without their names is more confusing
+    than informative (the agent can't tell whether they're inside the
+    listed dirs or somewhere else).
+    """
+
+    files: list[Path]
+    ignored_dirs: int = 0
+    ignored_dir_names: tuple[str, ...] = ()
+
+
+def _find_project_root(start: Path) -> Path:
+    """Walk up from ``start`` to the directory containing ``.git``.
+
+    Falls back to ``start`` itself if no git root is found in the ancestors.
+    Used to anchor ``.gitignore`` pattern matching — gitignore patterns are
+    relative to the directory containing the ``.gitignore`` file, which we
+    approximate as the project root for the common single-gitignore case.
+    """
+    cur = start.resolve()
+    while True:
+        if (cur / ".git").exists():
+            return cur
+        if cur.parent == cur:
+            return start.resolve()
+        cur = cur.parent
+
+
+# Order matters: later files in the tuple win on conflict via
+# gitignore's last-pattern-wins semantics. ``.ignore`` (the
+# search-tool convention from ripgrep / fd / ast-grep) overrides
+# ``.gitignore`` so users can hide a tracked dir from outline / digest
+# without affecting git tracking — and conversely, un-hide something
+# their ``.gitignore`` excludes.
+_IGNORE_FILE_NAMES: tuple[str, ...] = (".gitignore", ".ignore")
+
+
+def _read_ignore_lines(dirpath: Path) -> list[str]:
+    """Read every ``.gitignore`` / ``.ignore`` in ``dirpath`` as one line list.
+
+    Files are concatenated in ``_IGNORE_FILE_NAMES`` order so the last
+    one (``.ignore``) gets the final say on conflicts. Missing or
+    unreadable files are skipped silently — a permission error on one
+    config file shouldn't kill the whole walk.
+    """
+    out: list[str] = []
+    for name in _IGNORE_FILE_NAMES:
+        f = dirpath / name
+        if not f.is_file():
+            continue
+        try:
+            out.extend(f.read_text(encoding="utf-8", errors="ignore").splitlines())
+        except OSError:
+            pass
+    return out
+
+
+def _build_root_spec(project_root: Path) -> GitIgnoreSpec:
+    """Build the root frame's spec.
+
+    Combines, in priority order: hardcoded defaults < project-root
+    ``.gitignore`` < project-root ``.ignore``. Defaults come first so
+    a user pattern (``!node_modules/our-fork/``) can override them.
+    """
+    lines = list(_DEFAULT_IGNORE_PATTERNS) + _read_ignore_lines(project_root)
+    return GitIgnoreSpec.from_lines(lines)
+
+
+def _read_nested_spec(dirpath: Path) -> Optional[GitIgnoreSpec]:
+    """Build a spec from any ``.gitignore`` / ``.ignore`` in ``dirpath``.
+
+    Returns ``None`` if neither file exists, so the caller can skip
+    pushing an empty frame.
+    """
+    lines = _read_ignore_lines(dirpath)
+    if not lines:
+        return None
+    return GitIgnoreSpec.from_lines(lines)
+
+
+def _is_ignored(
+    full_path: Path,
+    is_dir: bool,
+    frames: list[tuple[Path, GitIgnoreSpec]],
+) -> bool:
+    """Decide whether a path is ignored using a stack of gitignore frames.
+
+    Frames are ordered shallowest → deepest. We check **deepest-first**
+    and return on the first frame that gives a definitive answer
+    (``include=True`` for ignore, ``include=False`` for explicit
+    un-ignore via ``!`` negation). Mirrors git's actual semantics
+    where a more-specific ``.gitignore`` overrides patterns from a
+    parent ``.gitignore``.
+    """
+    for anchor, spec in reversed(frames):
+        try:
+            rel = full_path.relative_to(anchor)
+        except ValueError:
+            continue
+        rel_str = str(rel).replace(os.sep, "/")
+        if is_dir:
+            rel_str += "/"
+        result = spec.check_file(rel_str)
+        if result.include is True:
+            return True
+        if result.include is False:
+            return False
+    return False
+
+
+def collect_files(
+    paths: list[Path], glob: Optional[str] = None, no_ignore: bool = False
+) -> list[Path]:
+    """Gather all source files under ``paths`` that any adapter handles.
+
+    Convenience wrapper around :func:`collect_files_with_stats` for callers
+    that don't need ignore-filter statistics. ``.gitignore`` and the
+    hardcoded fallback list are still applied unless ``no_ignore=True``.
+    """
+    return collect_files_with_stats(paths, glob=glob, no_ignore=no_ignore).files
+
+
+def collect_files_with_stats(
+    paths: list[Path], glob: Optional[str] = None, no_ignore: bool = False
+) -> CollectResult:
+    """Walk input paths and return matched files plus ignore-filter stats.
+
+    Filtering uses a stack of gitignore frames mimicking ``git`` (with
+    a small extension borrowed from ripgrep / fd / ast-grep):
+
+    * The **root frame** combines, in priority order: hardcoded
+      defaults < project-root ``.gitignore`` < project-root ``.ignore``.
+      Project root is located by walking up from the input path until
+      ``.git`` is found, falling back to the input dir.
+    * Nested ``.gitignore`` and ``.ignore`` files encountered during
+      the walk push additional frames anchored at their containing
+      dir (combined into one spec per dir).
+    * Matching is **deepest-first** — a nested ignore file can
+      override a parent's rule via ``!`` negation. Within a single
+      frame, ``.ignore`` patterns sit after ``.gitignore`` patterns,
+      so they override on conflict. Defaults sit before the project
+      ``.gitignore``, so a user pattern like ``!node_modules/our-fork/``
+      un-ignores something the defaults would have pruned.
+
+    ``.ignore`` is the search-tool convention shared with ripgrep /
+    fd / ast-grep — a way to hide files from search-style tools
+    without affecting git tracking.
+
+    Matching directories are pruned at walk time so we never descend
+    into them. Files are filtered by supported extension (or by
+    ``glob`` if provided).
     """
     out: list[Path] = []
+    ignored_dirs = 0
+    ignored_dir_basenames: set[str] = set()
     exts = supported_extensions()
+
     for p in paths:
         if p.is_file():
             out.append(p)
-        elif p.is_dir():
-            if glob:
-                out.extend(sorted(p.rglob(glob)))
-            else:
-                for f in sorted(p.rglob("*")):
-                    if f.is_file() and f.suffix.lower() in exts:
-                        out.append(f)
-    return out
+            continue
+        if not p.is_dir():
+            continue
+
+        if no_ignore:
+            # Raw walk — no defaults, no .gitignore, no .ignore. Only
+            # the extension (or ``glob``) filter applies. Used when the
+            # agent / user explicitly opts out of smart filtering, e.g.
+            # to outline a vendored fork inside ``node_modules`` without
+            # editing any ignore files.
+            for dirpath, _, files in os.walk(p):
+                dpath = Path(dirpath)
+                for fname in sorted(files):
+                    f = dpath / fname
+                    if glob:
+                        if not f.match(glob):
+                            continue
+                    else:
+                        if f.suffix.lower() not in exts:
+                            continue
+                    out.append(f)
+            continue
+
+        project_root = _find_project_root(p).resolve()
+        # Frame stack: shallowest → deepest. The root frame includes
+        # hardcoded defaults + project-root .gitignore. Nested
+        # ``.gitignore`` files encountered during the walk add their
+        # own frames anchored at their containing dir (per git
+        # semantics — a nested gitignore's patterns are relative to
+        # that nested dir, not the project root).
+        frames: list[tuple[Path, GitIgnoreSpec]] = [
+            (project_root, _build_root_spec(project_root))
+        ]
+
+        for dirpath, dirs, files in os.walk(p):
+            dpath = Path(dirpath).resolve()
+
+            # Drop frames whose anchor is no longer an ancestor of the
+            # current dir (we backed up the tree to a sibling). The
+            # root frame is always kept — it covers every path.
+            frames = [
+                (anchor, spec)
+                for anchor, spec in frames
+                if anchor == project_root or _is_ancestor_or_self(anchor, dpath)
+            ]
+
+            # If this dir has its own ``.gitignore`` and we haven't
+            # already pushed a frame for it, add one now. The root's
+            # ``.gitignore`` is already folded into the root frame —
+            # don't double-load it.
+            if dpath != project_root and not any(a == dpath for a, _ in frames):
+                nested = _read_nested_spec(dpath)
+                if nested is not None:
+                    frames.append((dpath, nested))
+
+            # Prune ignored subdirectories in place — git matches
+            # directories with a trailing slash, so ``_is_ignored``
+            # appends one for is_dir=True paths.
+            kept: list[str] = []
+            for d in dirs:
+                if _is_ignored(dpath / d, is_dir=True, frames=frames):
+                    ignored_dirs += 1
+                    ignored_dir_basenames.add(d)
+                    continue
+                kept.append(d)
+            dirs[:] = sorted(kept)
+
+            for fname in sorted(files):
+                f = dpath / fname
+                if glob:
+                    if not f.match(glob):
+                        continue
+                else:
+                    if f.suffix.lower() not in exts:
+                        continue
+                # File-level gitignore matches are filtered silently
+                # (no count) — see CollectResult docstring.
+                if _is_ignored(f, is_dir=False, frames=frames):
+                    continue
+                out.append(f)
+
+    return CollectResult(
+        files=out,
+        ignored_dirs=ignored_dirs,
+        ignored_dir_names=tuple(sorted(ignored_dir_basenames)),
+    )
+
+
+def _is_ancestor_or_self(anchor: Path, descendant: Path) -> bool:
+    """True if ``anchor == descendant`` or ``anchor`` is a parent of it.
+
+    Both paths must already be resolved. Used to keep gitignore
+    frames whose subtree still encloses the dir being walked.
+    """
+    try:
+        descendant.relative_to(anchor)
+        return True
+    except ValueError:
+        return False
