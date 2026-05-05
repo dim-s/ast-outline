@@ -7,6 +7,21 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.7.1] — 2026-05-05
+
+### Fixed
+
+- Canonical agent-prompt snippet (`ast-outline prompt`, the three
+  README copies, `docs/agents.md`) now lists C++ extensions
+  (`.cpp`/`.cc`/`.cxx`/`.h`/`.hpp`/`.hh`) alongside the rest of
+  the supported set. v0.7.0 shipped the C++ adapter but the
+  agent-facing snippet still claimed the tool only handled C# /
+  Python / TS / Java / Kotlin / Scala / Go / Rust / PHP /
+  Markdown / YAML — agents reading that snippet on a UE or
+  general C++ project would skip ast-outline. Russian + Chinese
+  READMEs also got the C++ row in their supported-languages
+  table that was previously only in the English copy.
+
 ## [0.7.0] — 2026-05-05
 
 ### Added
