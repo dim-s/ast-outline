@@ -108,6 +108,8 @@ embeddings и vector search. Подход надёжный, но дорогой:
 | Rust       | `.rs` |
 | PHP        | `.php`, `.phtml`, `.phps`, `.php8` |
 | Ruby       | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile` *(вкл. Rails)* |
+| CSS        | `.css` |
+| SCSS       | `.scss` *(миксины, функции, переменные, плейсхолдеры; `&` резолвится против родителя)* |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` |
 | YAML       | `.yaml`, `.yml` |
 
@@ -120,6 +122,8 @@ embeddings и vector search. Подход надёжный, но дорогой:
 - **Go** — пакеты, struct'ы (методы группируются под receiver), интерфейсы, embedding (struct и interface) как механизм «наследования», generics (Go 1.18+), type-алиасы + defined types, `iota`-enum'ы, цепочки doc-комментариев.
 - **Rust** — модули (рекурсивно), struct'ы (regular / tuple / unit), unions, enum'ы со всеми формами variant'ов, trait'ы (supertraits → bases), **группировка `impl`-блоков под целевой тип** (inherent + `impl Trait for Foo` добавляет Trait в bases), `extern "C"`, `macro_rules!`, type-алиасы, generics + lifetimes + `where`-clauses, классификация видимости (`pub` / `pub(crate)` / `pub(super)` / `pub(in path)`), внешние doc-комментарии (`///`, `/** */`) и `#[...]`-атрибуты.
 - **Ruby** — модули (`module Foo::Bar` с qualified-формой + сворачивание вложенных модулей в `A::B::C`), классы с `< Super` + миксины (`include` / `extend` / `prepend`) на заголовке типа, методы, `def self.foo` (singleton-методы) и `class << self`-блоки помечаются `[static]`, операторы (`+`, `<=>`, `[]`, `[]=`, `-@`, `+@`, `==`, `!`, …), `attr_accessor` / `attr_reader` / `attr_writer` (одно поле на каждый символ с маркером), `alias` / `alias_method`, видимость как state-machine (`private` / `protected` / `public` переключают режим; `private :foo` точечно). **По умолчанию распознаются Rails-ассоциации** (`has_many` / `has_one` / `belongs_to` / `has_and_belongs_to_many`). `Rakefile` / `Gemfile` без расширения — через basename. `require` / `require_relative` / `load` / `autoload` собираются в imports.
+- **CSS** — правила (`.foo, .bar { ... }`), at-rules (`@media`, `@supports`, `@layer`, `@keyframes`, `@container`, `@font-face`), нативная вложенность с `&`. Каждое правило несёт bare simple-selector-токены, поэтому `find_symbols(".btn-primary")` возвращает все каскадные определения (top-level, внутри `@media`, в темах, в `.modal .btn-primary`) с обёрткой at-rule в breadcrumb. Псевдоклассы и атрибутные фильтры отбрасываются для матчинга — `.btn-primary:hover` и `.btn-primary[disabled]` оба матчат `.btn-primary`. `:is(.a, .b)` / `:where(.a, .b)` recurse (additive); `:not(...)` / `:has(...)` нет. `@import` собираются в imports.
+- **SCSS** — полное покрытие CSS плюс `@mixin name($args)` (callable, в digest получает `()`), `@function name($args)`, top-level `$variable: value` (с `!default`), `%placeholder`. Sass-конвенция приватности: имена с `_` / `-` помечаются private и скрываются под `--include-private=False` (так же, как Sass их не экспортирует через `@use`). Вложенные правила с `&` резолвятся против каждого parent simple selector — `.card { &__header { } }` ищется как `.card__header`; multi-selector родители распространяются (`a, .link { &:hover { } }` ищется и как `a`, и как `.link`). `@use`, `@forward`, legacy `@import` собираются в imports.
 - **Markdown** — оглавление по заголовкам + код-блоки.
 - **YAML** — иерархия ключей с диапазонами строк, `[i]` пути для sequence-элементов, multi-document сепараторы, format-detect для Kubernetes / OpenAPI / GitHub Actions в шапке.
 
@@ -579,8 +583,8 @@ uv pip install -e ".[dev]"
 .venv/bin/pytest -k file_scoped_namespace -v
 ```
 
-Сьют (600+ тестов) покрывает все адаптеры (C#, Python, TypeScript/JS,
-Java, Kotlin, Scala, Go, Rust, Markdown, YAML), языко-агностичные рендереры, поиск по
+Сьют (1000+ тестов) покрывает все адаптеры (C#, C++, Python, TypeScript/JS,
+Java, Kotlin, Scala, Go, Rust, PHP, Ruby, CSS, SCSS, Markdown, YAML), языко-агностичные рендереры, поиск по
 символам и CLI end-to-end. Фикстуры лежат в `tests/fixtures/`; тесты не
 выходят за эту директорию. Любая новая фича должна приходить с тестом;
 новый язык — с отдельной папкой фикстур и файлом

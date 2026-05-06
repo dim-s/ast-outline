@@ -105,6 +105,8 @@ MCP shim wrapping the same calls.
 | Rust       | `.rs` |
 | PHP        | `.php`, `.phtml`, `.phps`, `.php8` |
 | Ruby       | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile` *(incl. Rails)* |
+| CSS        | `.css` |
+| SCSS       | `.scss` *(mixins, functions, variables, placeholders; `&` resolves against parent)* |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` |
 | YAML       | `.yaml`, `.yml` |
 
@@ -119,6 +121,8 @@ MCP shim wrapping the same calls.
 - **Rust** — modules (recursive), structs (regular / tuple / unit), unions, enums with all variant shapes, traits with supertraits as bases, **`impl` block regrouping under the target type** (inherent + `impl Trait for Foo` adds Trait to bases), `extern "C"` blocks, `macro_rules!`, type aliases, generics + lifetimes + `where` clauses, `pub` / `pub(crate)` visibility, outer doc comments (`///`, `/** */`) and `#[...]` attributes.
 - **PHP** — modern PHP 8.x and the still-deployed 7.4 LTS line: namespaces (file-scoped + bracketed), classes (`abstract` / `final` / `readonly` and combinations), interfaces, traits, PHP 8.1 enums (pure + backed), methods, magic ctor / dtor (`__construct` → ctor, `__destruct` → dtor), PHP 8.0 constructor property promotion (promoted parameters surface as fields), single + multi-variable properties, PHP 8.3 typed class constants, PHP 8.0 `#[Attr]` attributes, top-level `use` / `use function` / `use const` / grouped `use Foo\{A, B}`, plus top-level `include` / `include_once` / `require` / `require_once` for pre-Composer / WordPress / Drupal-7 codebases. Tested on real WordPress core (no parse errors on files up to 291 KB).
 - **Ruby** — modules (with `module Foo::Bar` qualified form + old-style nested-module collapse to `A::B::C`), classes with `< Super` superclass + `include` / `extend` / `prepend` mixins surfaced on the type header, methods, `def self.foo` singleton methods (marked `[static]`), `class << self` block (unwraps flat with `[static]` markers), operators (`+`, `<=>`, `[]`, `[]=`, `-@`, `+@`, `==`, `!`, …), `attr_accessor` / `attr_reader` / `attr_writer` (one field per symbol with marker), `alias` / `alias_method`. Visibility tracked as a state machine — bare `private` / `public` / `protected` flips subsequent decls; `private :foo, :bar` / `private_class_method :baz` retroactively mark named methods. **Rails associations recognised by default** (`has_many` / `has_one` / `belongs_to` / `has_and_belongs_to_many` surface as fields with marker). Convention-named `Rakefile` / `Gemfile` resolve via basename match. `require` / `require_relative` / `load` / `autoload` collected as imports; lazy loads inside method bodies counted into `[+ N conditional includes]`.
+- **CSS** — rules (`.foo, .bar { ... }`), at-rules (`@media`, `@supports`, `@layer`, `@keyframes`, `@container`, `@font-face`), CSS native nesting with `&`. Each rule carries the bare simple-selector tokens it styles, so `find_symbols(".btn-primary")` returns every cascade-relevant definition (top-level, inside `@media`, themed, descendant in `.modal`) with the wrapping at-rule visible in the breadcrumb. Pseudo-classes and attribute filters stripped for matching — `.btn-primary:hover` and `.btn-primary[disabled]` both match `.btn-primary`. `:is(.a, .b)` / `:where(.a, .b)` recurse (additive); `:not(...)` / `:has(...)` don't. `@import` collected as imports.
+- **SCSS** — full CSS coverage plus `@mixin name($args)` (callable, gets `()` in digest), `@function name($args)`, top-level `$variable: value` (with `!default`), `%placeholder` extend-only selectors. Sass privacy convention applied — names with leading `_` / `-` marked private and hidden under `--include-private=False`, mirroring what Sass itself doesn't export via `@use`. Nested rules with `&` resolve against each parent simple selector — `.card { &__header { } }` is findable as `.card__header`; multi-selector parents propagate (`a, .link { &:hover { } }` is findable as both `a` and `.link`). `@use`, `@forward`, and legacy `@import` collected as imports.
 - **Markdown** — heading TOC + fenced code blocks.
 - **YAML** — key hierarchy with line ranges, `[i]` sequence paths, multi-document separators, format-detect for Kubernetes / OpenAPI / GitHub Actions in the header.
 
@@ -605,7 +609,7 @@ uv pip install -e ".[dev]"
 ```
 
 The suite covers every adapter (C#, C++, Python, TypeScript/JS, Java,
-Kotlin, Scala, Go, Rust, PHP, Ruby, Markdown, YAML), the language-agnostic
+Kotlin, Scala, Go, Rust, PHP, Ruby, CSS, SCSS, Markdown, YAML), the language-agnostic
 renderers, symbol search, and the CLI end-to-end. Fixtures live under `tests/fixtures/`;
 tests never reach outside that directory.
 New behaviour should come with a test; new languages should ship with a
