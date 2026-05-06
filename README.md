@@ -215,19 +215,51 @@ ast-outline help show
 
 ## Using with LLM coding agents
 
-This is the main use case. Add the snippet below to your `CLAUDE.md`,
-`AGENTS.md`, subagent file, or any system prompt that steers a coding
-agent. It will then prefer `ast-outline` over reading full files.
+This is the main use case. The agent learns about `ast-outline` from a
+short snippet in your repo's `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`
+(or whatever persistent-context file your tool reads). Two paths to
+get the snippet there:
 
-The same snippet ships with the tool — `ast-outline prompt` prints it
-verbatim, so you can append it to a project's agent config without
-copy-pasting:
+### Automatic — `ast-outline setup-prompt` (recommended)
+
+Inside Claude Code / Codex CLI / Gemini CLI / Cursor, ask the agent:
+
+> Run `ast-outline setup-prompt` and follow its instructions.
+
+The agent reads a checklist from stdout and walks you through:
+
+1. Verify `ast-outline` is installed (offers to install via
+   `uv tool install` / `pipx` / `pip` if missing, with your consent).
+2. Check PyPI for a newer release; if available, mention the upgrade
+   command — never auto-upgrades.
+3. Pick the right target file for your tooling — `./AGENTS.md`
+   (cross-tool default, covers Codex CLI / Claude Code via
+   `@AGENTS.md` / Gemini CLI with `settings.json` / Cursor),
+   or the native single-vendor file (`./CLAUDE.md`, `./GEMINI.md`)
+   if you only use one CLI.
+4. Append the canonical snippet wrapped in
+   `<!-- ast-outline:start --> ... <!-- ast-outline:end -->` markers
+   so re-runs upgrade the block without duplicating. Diff-aware on
+   re-run — never overwrites your manual edits silently.
+5. Optionally patch existing exploration-oriented subagents in
+   `.claude/agents/` / `.codex/agents/` / `.gemini/agents/`, with
+   per-agent permission.
+
+Safe to re-run after every `pip install -U ast-outline` to refresh
+the bundled snippet.
+
+### Manual — `ast-outline prompt`
+
+The same snippet, no agent involvement — pipe it where you want:
 
 ```bash
 ast-outline prompt >> AGENTS.md
 ast-outline prompt >> .claude/CLAUDE.md
 ast-outline prompt | pbcopy   # macOS clipboard
 ```
+
+Use this when you don't have a coding-agent CLI handy, or when you
+want full control over file edits.
 
 ### Prompt snippet (copy-paste)
 
@@ -476,17 +508,64 @@ calibrated against an approximate token count (`len(chars)/4`, ±15-20% vs
 real BPE tokenizers — fine for the heuristic). The same `~N tokens` count
 appears in every `outline` header too.
 
-### `prompt` — print the agent prompt snippet
+### `setup-prompt` — let an agent wire ast-outline in (automatic, recommended)
+
+```bash
+ast-outline setup-prompt
+```
+
+Prints an install-time checklist for one-shot consumption by a coding
+agent. Tell your agent:
+
+> Run `ast-outline setup-prompt` and follow its instructions.
+
+The agent walks you through: verify the CLI (offer to install via
+`uv tool install` / `pipx` / `pip` if missing, with consent), check
+PyPI for a newer release (offer to upgrade, never auto-upgrades),
+pick the right target file for your tooling (`./AGENTS.md` cross-tool
+default; `./CLAUDE.md` / `./GEMINI.md` for single-vendor users; or
+the matching `~/.<tool>/...` global file), append the snippet inside
+`<!-- ast-outline:start --> ... <!-- ast-outline:end -->` markers
+(diff-aware on re-run — never overwrites your manual edits silently),
+and optionally patch existing exploration subagents in
+`.claude/agents/` / `.codex/agents/` / `.gemini/agents/` with
+per-agent permission.
+
+Cross-vendor universal — same checklist works in Claude Code, Codex
+CLI, Gemini CLI, and Cursor; the agent adapts to your shell
+(`which` / `where.exe` / `Get-Command`) and to the conversation's
+human language. In headless mode (`codex exec`, `claude -p`, Gemini
+non-interactive, CI) it restricts itself to read-only checks plus
+the AGENTS.md write at project-local scope, skipping anything that
+would need consent and listing the skipped items in the final report.
+
+The CLI itself does no file I/O — it just emits the checklist text.
+The active coding agent performs every edit using its native tools,
+so each change is reviewable before it lands.
+
+### `prompt` — print the agent snippet (manual install path)
 
 ```bash
 ast-outline prompt
 ast-outline prompt >> AGENTS.md
 ```
 
-Prints the canonical copy-paste snippet used to steer LLM coding agents
-to prefer `ast-outline` over full reads. English, universal across
-Claude Opus 4.7 / Sonnet 4.6 / Haiku 4.5. Running it ensures you always
-get the current recommended version.
+Prints the canonical copy-paste snippet that steers LLM coding agents
+to prefer `ast-outline` over full file reads. English, universal across
+Claude Opus 4.7 / Sonnet 4.6 / Haiku 4.5, OpenAI GPT-5.x, and Gemini
+3.x. Running it always emits the current recommended version.
+
+This is the **manual** path — pipe it where you want, no agent
+involvement. For the automated equivalent (recommended), see
+`setup-prompt` above.
+
+Distinct from `setup-prompt`:
+
+- `prompt` is the **use-time** snippet — lives in AGENTS.md, steers
+  every code-reading turn. Manual, one-shot.
+- `setup-prompt` is the **install-time** checklist — gets `prompt`'s
+  output into the right file, with version checks, diff-aware re-run,
+  and optional subagent patches. Automatic, one-shot.
 
 ---
 

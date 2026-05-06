@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from ._prompt import AGENT_PROMPT
+from ._setup_prompt import SETUP_PROMPT
 from .adapters import (
     CollectResult,
     collect_files_with_stats,
@@ -33,7 +34,7 @@ from .core import (
 )
 
 
-SUBCOMMANDS = {"outline", "show", "help", "digest", "prompt"}
+SUBCOMMANDS = {"outline", "show", "help", "digest", "prompt", "setup-prompt"}
 
 
 class _LLMArgumentParser(argparse.ArgumentParser):
@@ -141,13 +142,18 @@ def main(argv: list[str] | None = None) -> int:
     p_help.add_argument(
         "topic",
         nargs="?",
-        choices=["outline", "show", "digest", "prompt"],
+        choices=["outline", "show", "digest", "prompt", "setup-prompt"],
         help="Topic-specific help",
     )
 
     sub.add_parser(
         "prompt",
         help="Print the canonical copy-paste agent prompt snippet (English, universal)",
+    )
+
+    sub.add_parser(
+        "setup-prompt",
+        help="Print the agent-facing setup-prompt — instructs an LLM to wire ast-outline into the current repo",
     )
 
     try:
@@ -167,6 +173,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_digest(args)
     if args.cmd == "prompt":
         return _cmd_prompt(args)
+    if args.cmd == "setup-prompt":
+        return _cmd_setup_prompt(args)
     return _cmd_outline(args)
 
 
@@ -193,6 +201,21 @@ def _cmd_prompt(_args) -> int:
     # newline; the user inserts a blank separator line by hand if they
     # want one between existing content and the snippet).
     print(AGENT_PROMPT, end="")
+    return 0
+
+
+def _cmd_setup_prompt(_args) -> int:
+    """Print the canonical setup-prompt for an LLM-agent installer flow.
+
+    Distinct from ``ast-outline prompt`` — that command emits the
+    use-time snippet meant for AGENTS.md / CLAUDE.md (steers an agent
+    to prefer ast-outline whenever it reads code). This command emits
+    the install-time snippet meant for one-shot consumption by a coding
+    agent: a checklist that performs version check, AGENTS.md
+    create/update, and optional patching of existing exploration
+    subagents — all idempotent via marker-wrapped blocks.
+    """
+    print(SETUP_PROMPT, end="")
     return 0
 
 
@@ -508,6 +531,7 @@ COMMANDS
     ast-outline show <file> <symbols...>    Print source of one or more symbols
     ast-outline digest <paths...>           Compact public-API map of a dir
     ast-outline prompt                      Print the canonical agent prompt snippet
+    ast-outline setup-prompt                Print the install-time setup-prompt for an LLM agent
     ast-outline --version                   Print version + author
     ast-outline help [topic]                Show this guide (or topic-specific)
 
@@ -696,6 +720,44 @@ EXAMPLES
     ast-outline prompt | xclip -sel c    # Linux
 """
 
+GUIDE_SETUP_PROMPT = """\
+ast-outline setup-prompt — print the install-time setup-prompt
+
+USAGE
+    ast-outline setup-prompt
+
+WHAT IT DOES
+    Prints a checklist meant for one-shot consumption by a coding
+    agent (Claude Code, Codex CLI, Gemini CLI, Cursor). The agent
+    follows it to wire ast-outline into the current repo:
+
+      1. Verify `ast-outline --version` and best-effort check PyPI
+         for a newer release.
+      2. Append (or in-place upgrade) the canonical agent snippet
+         to ./AGENTS.md, wrapped in markers so re-runs don't
+         duplicate.
+      3. Optionally patch existing exploration-oriented subagent
+         files in .claude/agents/ / .codex/agents/ / .gemini/agents/
+         (only with explicit user approval, per agent).
+
+    Universal — same instruction works across Claude Opus 4.7 /
+    Sonnet 4.6 / Haiku 4.5, OpenAI GPT-5.x, and Gemini 3.x.
+
+    Distinct from `ast-outline prompt`:
+      - `prompt`        — use-time snippet for AGENTS.md / CLAUDE.md
+                          (steers code-reading behavior on every turn).
+      - `setup-prompt`  — install-time checklist; one-shot integration.
+
+EXAMPLES
+    # In a Claude Code / Codex CLI / Gemini CLI session, ask the
+    # agent to wire ast-outline into this repo:
+    #     "Run `ast-outline setup-prompt` and follow its instructions."
+
+    # Or pipe directly:
+    ast-outline setup-prompt | pbcopy          # macOS clipboard
+    ast-outline setup-prompt | xclip -sel c    # Linux clipboard
+"""
+
 def _print_guide(topic: str | None = None) -> None:
     if topic == "outline":
         print(GUIDE_OUTLINE)
@@ -705,6 +767,8 @@ def _print_guide(topic: str | None = None) -> None:
         print(GUIDE_DIGEST)
     elif topic == "prompt":
         print(GUIDE_PROMPT)
+    elif topic == "setup-prompt":
+        print(GUIDE_SETUP_PROMPT)
     else:
         print(GUIDE_GENERAL)
 

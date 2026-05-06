@@ -7,6 +7,75 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.7.6] — 2026-05-06
+
+### Added
+
+- **`setup-prompt` subcommand** — `ast-outline setup-prompt` prints
+  an install-time checklist meant for one-shot consumption by a
+  coding agent (Claude Code, Codex CLI, Gemini CLI, Cursor). Tell
+  the agent "run `ast-outline setup-prompt` and follow its
+  instructions" and it walks the user through three idempotent
+  steps: (1) **verify the CLI** — runs `ast-outline --version`. If
+  missing, detects what install tooling is on PATH
+  (`uv` / `pipx` / `pip`) and whether a Python venv is active
+  (`VIRTUAL_ENV`, `.venv/`), presents both install paths — global
+  isolated (`uv tool install ast-outline`, recommended) or project
+  venv (`pip install ast-outline`) — and may install on the user's
+  behalf with explicit consent. Best-effort PyPI version check
+  surfaces the matching upgrade command (`uv tool upgrade` /
+  `pipx upgrade` / `pip install -U`) per install path; never
+  auto-upgrades. (2) **persistent-context file write** is
+  system-aware and diff-aware. Target file adapts to the user's
+  tooling: `./AGENTS.md` cross-tool default (covers Codex CLI
+  natively, Claude Code via `@AGENTS.md` import, Gemini CLI with
+  `~/.gemini/settings.json` `context.fileName` config, and Cursor),
+  or the native single-vendor file (`./CLAUDE.md` for Claude Code
+  only, `./GEMINI.md` for Gemini CLI only — detected from which
+  `~/.<tool>/` directories exist). Project-local vs global scope
+  choice (`~/.claude/CLAUDE.md` / `~/.codex/AGENTS.md` /
+  `~/.gemini/GEMINI.md`); Codex `AGENTS.override.md` precedence
+  handling so writes are not silently shadowed. Snippet wrapped in
+  `<!-- ast-outline:start -->` / `<!-- ast-outline:end -->`
+  markers so re-runs find the existing block. On re-run, if the
+  block content differs from the fresh `ast-outline prompt` output
+  (likely a CLI upgrade or a user-edited block), the agent shows
+  the diff and offers replace / keep / show-full-diff — never
+  overwrites customizations silently. (3) **optional subagent
+  patches** — finds exploration-oriented subagent files under
+  `.claude/agents/` / `.codex/agents/` / `.gemini/agents/` and, with
+  per-agent permission, inserts a small `## Tooling — ast-outline`
+  block. Built-in subagents (Claude Code's `Explore`,
+  `codebase-scout`, etc.) are out of scope — not file-based.
+  Headless harnesses (`codex exec`, `claude -p`, Gemini
+  non-interactive, scheduled CI) restrict execution to Steps 1
+  and 2 at project-local scope; skip Step 3 entirely; list every
+  skipped optional decision in the final report. The agent mirrors
+  the user's conversation language (Russian, Chinese, etc.) for
+  spoken replies and any free-form prose written into a freshly-
+  created `./AGENTS.md` / `./CLAUDE.md` (top headings, brief
+  section labels); two exceptions stay English regardless — the
+  marker-wrapped snippet (cross-vendor LLM reliability) and
+  subagent files entirely (system prompts). Cross-OS by design —
+  the agent translates `which`, `$VIRTUAL_ENV`, `curl` examples to
+  the user's shell (`where.exe` / `Get-Command`,
+  `%VIRTUAL_ENV%` / `$env:VIRTUAL_ENV`). User-facing questions
+  are short and beginner-friendly, one decision at a time, with
+  the exact command shown before any run. The CLI itself is
+  `print(SETUP_PROMPT, end="")` — file I/O is delegated to the
+  agent's native edit tools, so encoding / permission / merge-
+  conflict edge cases are handled in the agent's context, not in
+  Python. Distinct from `ast-outline prompt`, which emits the
+  use-time snippet that lives inside AGENTS.md and steers every
+  code-reading turn; `setup-prompt` is the install-time checklist
+  that puts that snippet there. Cross-vendor universal —
+  calibrated to work across Claude Opus 4.7 / Sonnet 4.6 / Haiku
+  4.5, OpenAI GPT-5.x (5.3-codex / 5.4 / 5.5), and Gemini 3.x (Pro
+  / Flash / Flash-Lite): outcome-first phrasing under markdown
+  headings, no persona, no chain-of-thought scaffolding, no
+  aggressive emphasis, no model-name pinning. Reachable via
+  `ast-outline help setup-prompt` for a topic-specific guide.
+
 ## [0.7.5] — 2026-05-06
 
 ### Added
