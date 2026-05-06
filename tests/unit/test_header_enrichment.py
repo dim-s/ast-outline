@@ -632,6 +632,47 @@ def test_size_label_appears_before_counters_in_digest(java_dir):
     assert 0 < bracket_pos < paren_pos, file_line
 
 
+def test_outline_header_includes_size_label(java_dir):
+    """Outline emits the same size label as digest — an agent calling
+    `outline` directly (skipping digest) still gets the categorical
+    size signal in plain English alongside the precise token count."""
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    assert any(tag in first for tag in ("[tiny]", "[medium]", "[large]")), first
+
+
+def test_outline_size_label_appears_before_counters(java_dir):
+    """Same visual scan order as digest: path → size label → counters
+    in parens. The label is the at-a-glance signal."""
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    first = render_outline(r, OutlineOptions()).splitlines()[0]
+    bracket_pos = max(first.find("[tiny]"), first.find("[medium]"), first.find("[large]"))
+    paren_pos = first.find("(")
+    assert 0 < bracket_pos < paren_pos, first
+
+
+def test_outline_size_label_present_for_every_language(
+    csharp_dir, python_dir, java_dir, kotlin_dir, scala_dir, go_dir, fixtures_dir
+):
+    """The label is computed from source bytes — must work universally
+    without per-adapter changes."""
+    samples = [
+        CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs"),
+        PythonAdapter().parse(python_dir / "domain_model.py"),
+        JavaAdapter().parse(java_dir / "user_service.java"),
+        KotlinAdapter().parse(kotlin_dir / "user_service.kt"),
+        ScalaAdapter().parse(scala_dir / "user_service.scala"),
+        GoAdapter().parse(go_dir / "user_service.go"),
+        TypeScriptAdapter().parse(fixtures_dir / "typescript" / "storage_service.ts"),
+        MarkdownAdapter().parse(fixtures_dir / "markdown" / "readme_style.md"),
+    ]
+    for r in samples:
+        first = render_outline(r, OutlineOptions()).splitlines()[0]
+        assert any(tag in first for tag in ("[tiny]", "[medium]", "[large]")), (
+            f"{r.language}: {first}"
+        )
+
+
 def test_token_estimate_uses_chars_not_bytes_for_cyrillic(tmp_path):
     """Cyrillic content is 2 bytes/char in UTF-8. Counting bytes would
     inflate the estimate by ~2× for Cyrillic files. We count characters

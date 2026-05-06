@@ -7,6 +7,19 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.7.3] — 2026-05-06
+
+### Changed
+
+- **Outline header now carries the size label** — `[tiny]` / `[medium]`
+  / `[large]`, the same categorical bucket digest stamps next to each
+  filename. An agent calling `outline` directly (skipping `digest`)
+  gets the at-a-glance size signal in plain English alongside the
+  precise `~N tokens` count, instead of having to map the raw token
+  number onto a bucket from memory. Header reads
+  `# /abs/path.py [medium] (95 lines, ~1,200 tokens, 5 types, 12 methods)`.
+  Digest output is unchanged.
+
 ## [0.7.2] — 2026-05-06
 
 ### Added

@@ -184,7 +184,14 @@ class SymbolMatch:
 
 
 def render_outline(result: ParseResult, opts: OutlineOptions) -> str:
-    lines: list[str] = [_format_file_header(f"# {result.path}", result)]
+    # Same `[tiny]` / `[medium]` / `[large]` label digest stamps next to
+    # each filename — emitted here too so an agent calling `outline`
+    # directly (skipping digest) gets the categorical size signal in
+    # plain English alongside the precise `~N tokens` count. The
+    # English label triggers more reliably than parsing the raw token
+    # number when the agent reads cold without having seen the digest.
+    label = _size_label(_estimate_tokens(result.source))
+    lines: list[str] = [_format_file_header(f"# {result.path} {label}", result)]
     warn = _format_error_warning(result)
     if warn:
         lines.append(warn)
