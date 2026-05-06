@@ -352,7 +352,7 @@ syntax — no synthetic format for the agent to learn:
 
 ```
 $ ast-outline service.py --imports
-# src/services/user_service.py (140 lines, ~1,200 tokens, 1 types, 5 methods)
+# src/services/user_service.py [medium] (140 lines, ~1,200 tokens, 1 types, 5 methods)
 # imports: from .core import UserBase; from .utils import parse_id; from typing import Optional
 class UserService(UserBase):  L8-138
     ...
