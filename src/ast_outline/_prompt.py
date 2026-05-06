@@ -47,7 +47,7 @@ you already know the symbol:
    call `ast-outline outline <path>` on them when you need full structure.
 
 2. **File-level shape** — `ast-outline <paths…>`: signatures with line
-   ranges, no bodies (5–10× smaller than a full read on non-trivial
+   ranges, no bodies (2–10× smaller than a full read on non-trivial
    files). A `# WARNING: N parse errors` line in the header means the
    outline is partial — read the source for the affected region.
 

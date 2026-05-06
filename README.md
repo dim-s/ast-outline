@@ -38,7 +38,7 @@ answer *"what methods exist here?"*.
 
 `ast-outline` closes that gap. It's a **pre-reading layer** for agents:
 
-1. **Token savings — typically 5–10×.** An outline replaces a full file
+1. **Token savings — typically 2–10×.** An outline replaces a full file
    read when the agent only needs structural understanding.
 2. **Faster exploration.** A whole module's public API fits on one screen.
 3. **Precise navigation.** Every declaration has a line range (`L42-58`).
@@ -63,7 +63,7 @@ Agent: Read DamageSystem.cs      # 400 lines of tokens
 
 ```
 Agent: ast-outline digest src/Combat         # ~100 lines, whole module
-Agent: ast-outline Player.cs                 # signatures only, 5–10× smaller
+Agent: ast-outline Player.cs                 # signatures only, 2–10× smaller
 Agent: ast-outline show Player.cs TakeDamage # just the method body
 ```
 
@@ -252,7 +252,7 @@ you already know the symbol:
    call `ast-outline outline <path>` on them when you need full structure.
 
 2. **File-level shape** — `ast-outline <paths…>`: signatures with line
-   ranges, no bodies (5–10× smaller than a full read on non-trivial
+   ranges, no bodies (2–10× smaller than a full read on non-trivial
    files). A `# WARNING: N parse errors` line in the header means the
    outline is partial — read the source for the affected region.
 

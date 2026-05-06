@@ -36,7 +36,7 @@
 
 `ast-outline` 填平了这个缺口。它是给 Agent 的**预读层**：
 
-1. **Token 节省 —— 通常 5–10 倍。** 当 Agent 只需要结构层面的理解时，
+1. **Token 节省 —— 通常 2–10 倍。** 当 Agent 只需要结构层面的理解时，
    用 outline 代替完整文件读取。
 2. **更快的探索。** 整个模块的公共 API 一屏就能看完。
 3. **精确定位。** 每个声明都带有行号范围（`L42-58`）。Agent 可以直接跳到
@@ -61,7 +61,7 @@ Agent: Read DamageSystem.cs      # 400 行 token
 
 ```
 Agent: ast-outline digest src/Combat         # ~100 行，整个模块一览
-Agent: ast-outline Player.cs                 # 仅签名，5–10× 更小
+Agent: ast-outline Player.cs                 # 仅签名，2–10× 更小
 Agent: ast-outline show Player.cs TakeDamage # 只取需要的方法体
 ```
 
@@ -225,7 +225,7 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
    可能不完整时再加 `[broken]`。
 
 2. **文件级结构** —— `ast-outline <paths…>`:签名 + 行号范围,不含
-   方法体(对非平凡文件,比完整读取少用 5–10 倍 token)。如果头部出现
+   方法体(对非平凡文件,比完整读取少用 2–10 倍 token)。如果头部出现
    `# WARNING: N parse errors`,说明 outline 是不完整的 —— 直接读取受影响
    区域的源码。
 

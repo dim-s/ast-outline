@@ -488,7 +488,7 @@ ast-outline — structural outline for source files
 
 WHAT IT DOES
     Prints class/method/function/field signatures with line numbers,
-    WITHOUT method bodies. Typical output is 5–10× smaller than the source.
+    WITHOUT method bodies. Typical output is 2–10× smaller than the source.
     Designed for LLM agents that need to understand a file's shape before
     reading (or editing) specific parts.
 

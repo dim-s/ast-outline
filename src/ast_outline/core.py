@@ -401,7 +401,7 @@ def _size_label(token_count: int) -> str:
     - ``[tiny]`` — under ~500 tokens. Outline returns roughly the same
       content as Read, with light structural overlay.
     - ``[medium]`` — 500-5000 tokens. Outline meaningfully compresses
-      (5-10× typical) while staying compact enough to consume whole.
+      (2-10× typical) while staying compact enough to consume whole.
     - ``[large]`` — 5000-100k tokens. Outline output itself can run long;
       ``show`` for specific sections is the surgical follow-up.
     - ``[huge]`` — 100k+ tokens. The file's outline alone would crowd the
