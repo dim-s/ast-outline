@@ -72,3 +72,13 @@ def md_dir() -> Path:
 @pytest.fixture(scope="session")
 def yaml_dir() -> Path:
     return FIXTURES_DIR / "yaml"
+
+
+@pytest.fixture(scope="session")
+def css_dir() -> Path:
+    return FIXTURES_DIR / "css"
+
+
+@pytest.fixture(scope="session")
+def scss_dir() -> Path:
+    return FIXTURES_DIR / "scss"

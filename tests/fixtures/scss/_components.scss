@@ -1,0 +1,130 @@
+// Component styles — buttons, cards, modals.
+@use "sass:math";
+@use "../tokens" as t;
+@forward "icons";
+@import "legacy-mixins";
+
+// Public design tokens (referenced by sibling component files).
+$primary: #007bff !default;
+$secondary: #6c757d !default;
+$radius: 4px;
+$spacing-unit: 0.25rem;
+
+// Internal helpers — leading underscore marks them as not exported via @use.
+$_default-padding: 1rem;
+$-also-private: 0;
+
+// Extend-only base — used via @extend in concrete buttons.
+%button-base {
+    display: inline-block;
+    padding: $_default-padding;
+    border-radius: $radius;
+    cursor: pointer;
+    user-select: none;
+}
+
+// Private placeholder — internal use only.
+%_internal-reset {
+    margin: 0;
+    padding: 0;
+}
+
+// Public mixin: configurable button factory.
+@mixin button($bg: $primary, $fg: white, $size: medium) {
+    @extend %button-base;
+    background: $bg;
+    color: $fg;
+
+    @if $size == large {
+        font-size: 1.25rem;
+        padding: 1rem 2rem;
+    } @else if $size == small {
+        font-size: 0.875rem;
+        padding: 0.5rem 1rem;
+    }
+
+    &:hover {
+        background: darken($bg, 10%);
+    }
+}
+
+// Private mixin (not exported).
+@mixin _internal-helper {
+    display: none;
+}
+
+// Public function.
+@function strip-unit($value) {
+    @return math.div($value, ($value * 0 + 1));
+}
+
+@function adjust-color-mix($base, $amount: 10%) {
+    @return mix($base, white, $amount);
+}
+
+// Concrete components.
+.btn {
+    @include button;
+}
+
+.btn-primary {
+    @include button($primary);
+}
+
+.btn-secondary {
+    @include button($secondary, white);
+
+    &.disabled {
+        opacity: 0.5;
+        pointer-events: none;
+    }
+}
+
+// Card with deep nesting.
+.card {
+    background: white;
+    border-radius: $radius;
+
+    &__header {
+        padding: 1rem;
+        border-bottom: 1px solid #eee;
+
+        h2 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+    }
+
+    &__body {
+        padding: 1rem;
+    }
+
+    &--featured {
+        border: 2px solid $primary;
+
+        .card__header {
+            background: $primary;
+            color: white;
+        }
+    }
+}
+
+// Multi-selector with nested pseudo.
+a, .link {
+    color: $primary;
+
+    &:hover { color: darken($primary, 15%); }
+    &:visited { color: $secondary; }
+}
+
+// Responsive overrides — at-rule wrapping nested rules.
+@media (max-width: 768px) {
+    .card {
+        margin: 0 -1rem;
+
+        &__header,
+        &__body {
+            padding: 0.75rem;
+        }
+    }
+}

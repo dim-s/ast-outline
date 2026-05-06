@@ -21,6 +21,7 @@ from pathspec import GitIgnoreSpec
 from .base import LanguageAdapter
 from .cpp import CppAdapter
 from .csharp import CSharpAdapter
+from .css import CssAdapter
 from .go import GoAdapter
 from .java import JavaAdapter
 from .kotlin import KotlinAdapter
@@ -30,6 +31,7 @@ from .python import PythonAdapter
 from .ruby import RubyAdapter
 from .rust import RustAdapter
 from .scala import ScalaAdapter
+from .scss import ScssAdapter
 from .typescript import TypeScriptAdapter
 from .yaml import YamlAdapter
 
@@ -46,6 +48,8 @@ ADAPTERS: list[LanguageAdapter] = [
     RustAdapter(),
     PhpAdapter(),
     RubyAdapter(),
+    CssAdapter(),
+    ScssAdapter(),
     MarkdownAdapter(),
     YamlAdapter(),
 ]
@@ -97,6 +101,22 @@ _DEFAULT_IGNORE_PATTERNS: list[str] = [
     ".vite/",
     # Infra tooling
     ".terraform/",
+    # Minified web bundles — single-line generated artifacts that
+    # tree-sitter can parse but for which an outline is meaningless
+    # (one giant rule / one giant function with no semantic structure).
+    # The ``.min.`` infix is an unambiguous build-output signal in JS /
+    # CSS pipelines (UglifyJS, Terser, cssnano, postcss-minify); the
+    # extension filter alone would still let them through because the
+    # final ``.js`` / ``.css`` is real. Source maps (``.map``) get
+    # filtered too — they're JSON, but since no adapter claims ``.map``
+    # the existing extension filter already drops them; pattern is
+    # listed for clarity.
+    "*.min.js",
+    "*.min.mjs",
+    "*.min.cjs",
+    "*.min.css",
+    "*.min.html",
+    "*.map",
 ]
 
 

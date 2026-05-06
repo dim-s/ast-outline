@@ -31,9 +31,9 @@ AGENT_PROMPT = """## Code exploration — prefer `ast-outline` over full reads
 
 For `.cs`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hh`, `.py`, `.pyi`,
 `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`, `.scala`, `.sc`,
-`.go`, `.rs`, `.php`, `.phtml`, `.rb`, `.rake`, `.gemspec`, `.md`, and
-`.yaml`/`.yml` files, read structure with `ast-outline` before opening
-full contents.
+`.go`, `.rs`, `.php`, `.phtml`, `.rb`, `.rake`, `.gemspec`, `.css`,
+`.scss`, `.md`, and `.yaml`/`.yml` files, read structure with
+`ast-outline` before opening full contents.
 
 Pick the smallest of these that answers your question — they're a
 broad-to-narrow menu, not a sequence; skip straight to `show` when
@@ -41,8 +41,10 @@ you already know the symbol:
 
 1. **Unfamiliar directory** — `ast-outline digest <paths…>`: one-page map
    of every file's types and public methods. Each file is tagged with a
-   size label — `[tiny]` / `[medium]` / `[large]` — plus `[broken]`
-   when parse errors may have left the outline partial.
+   size label — `[tiny]` / `[medium]` / `[large]` / `[huge]` — plus
+   `[broken]` when parse errors may have left the outline partial.
+   `[huge]` files (≥100k tokens) collapse to header-only in the digest;
+   call `ast-outline outline <path>` on them when you need full structure.
 
 2. **File-level shape** — `ast-outline <paths…>`: signatures with line
    ranges, no bodies (5–10× smaller than a full read on non-trivial
@@ -60,6 +62,10 @@ you already know the symbol:
    `"2.1 Installation (macOS / Linux)"`. For yaml, the symbol is a
    dotted key path (`spec.containers[0].image`) — `show` matches keys,
    not values, so for free-text search inside values use `grep`.
+   For css/scss, the symbol is a selector token (`.btn-primary`,
+   `$var`) — pseudos and attribute filters are stripped, so
+   `.btn-primary` finds the rule even when it carries `:hover` or
+   nests in `.modal`.
    Add `--signature` to any of the above to return header only
    (docs + attrs + signature, no body) — useful after `digest`, when
    you have the name and want the contract, not the implementation.

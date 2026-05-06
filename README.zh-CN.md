@@ -206,8 +206,8 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
 
 对于 `.cs`、`.cpp`、`.cc`、`.cxx`、`.h`、`.hpp`、`.hh`、`.py`、`.pyi`、`.ts`、
 `.tsx`、`.js`、`.jsx`、`.java`、`.kt`、`.kts`、`.scala`、`.sc`、`.go`、`.rs`、
-`.php`、`.phtml`、`.rb`、`.rake`、`.gemspec`、`.md` 和 `.yaml`/`.yml` 文件，
-先用 `ast-outline` 读结构，再考虑打开完整内容。
+`.php`、`.phtml`、`.rb`、`.rake`、`.gemspec`、`.css`、`.scss`、`.md`
+和 `.yaml`/`.yml` 文件，先用 `ast-outline` 读结构，再考虑打开完整内容。
 
 从下面三个工具中选最小的那个，能回答你的问题就够了——这是一个
 "从粗到细"的菜单，不是必须按顺序执行的步骤；如果已经知道符号名，
@@ -232,6 +232,9 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
    能命中 `"2.1 Installation (macOS / Linux)"`。yaml 的符号是点分键路径
    (`spec.containers[0].image`) —— `show` 匹配**键**,不匹配值;要在值的
    文本里做自由搜索请用 `grep`。
+   css/scss 的符号是选择器 token(`.btn-primary`、`$var`、
+   `%placeholder`);伪类和属性过滤会被剥离,所以 `.btn-primary`
+   能命中规则,即使它带有 `:hover` 或嵌套在 `.modal` 里。
    给以上任一形式加 `--signature` 只返回头部(docs + 属性 + 签名,
    不带方法体)—— 在 `digest` 之后,当你已经有符号名、只需契约而非实现时
    使用。

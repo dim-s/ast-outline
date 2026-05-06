@@ -1,7 +1,7 @@
 [project]
 name = "ast-outline"
-version = "0.7.3"
-description = "AST-based structural outline for source files (C#, C++, Python, TypeScript/JavaScript, Java, Kotlin, Scala, Go, Rust, PHP, Ruby, Markdown, YAML) — tree-sitter-powered, LLM-agent-first. Complement to ast-grep: ast-grep searches, ast-outline overviews."
+version = "0.7.4"
+description = "AST-based structural outline for source files (C#, C++, Python, TypeScript/JavaScript, Java, Kotlin, Scala, Go, Rust, PHP, Ruby, CSS, SCSS, Markdown, YAML) — tree-sitter-powered, LLM-agent-first. Complement to ast-grep: ast-grep searches, ast-outline overviews."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
@@ -66,6 +66,8 @@ dependencies = [
     "pathspec>=0.12",
     "tree-sitter-cpp>=0.23.4",
     "tree-sitter-ruby>=0.23",
+    "tree-sitter-css>=0.25.0",
+    "tree-sitter-scss>=1.0.0",
 ]
 
 [project.optional-dependencies]

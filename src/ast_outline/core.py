@@ -45,8 +45,21 @@ KIND_CODE_BLOCK = "code_block"
 KIND_YAML_KEY = "yaml_key"
 KIND_YAML_DOC = "yaml_doc"
 
+# Stylesheet kinds — used by the CSS / SCSS adapters. Rules are the
+# atomic block (`.foo { ... }`); at-rules cover named conditional
+# wrappers and grouped blocks (`@media`, `@supports`, `@layer`,
+# `@keyframes`, `@container`, `@font-face`, …). SCSS adds named
+# top-level constructs: `@mixin` and `@function` are callable
+# (`KIND_MIXIN` joins `CALLABLE_KINDS`), `$variable` is a value
+# binding, `%placeholder` is an extend-only selector.
+KIND_RULE = "rule"
+KIND_AT_RULE = "at_rule"
+KIND_MIXIN = "mixin"
+KIND_VARIABLE = "variable"
+KIND_PLACEHOLDER = "placeholder"
+
 TYPE_KINDS = {KIND_CLASS, KIND_STRUCT, KIND_INTERFACE, KIND_RECORD, KIND_ENUM}
-CALLABLE_KINDS = {KIND_METHOD, KIND_FUNCTION, KIND_CTOR, KIND_DTOR, KIND_OPERATOR}
+CALLABLE_KINDS = {KIND_METHOD, KIND_FUNCTION, KIND_CTOR, KIND_DTOR, KIND_OPERATOR, KIND_MIXIN}
 
 
 @dataclass
@@ -71,6 +84,14 @@ class Declaration:
     end_byte: int = 0
     doc_start_byte: int = 0 # if there's leading doc, slice starts here
     children: list["Declaration"] = field(default_factory=list)
+    # Alternative names a `find_symbols` query can match this declaration
+    # by, used when one declaration is reachable under several
+    # identifiers — e.g. a CSS rule whose selector list is
+    # `.btn-primary, .btn-secondary` is one block but matches either
+    # name. Empty list means "match by `name` only" (the common case
+    # for code adapters). When non-empty, the search walker uses the
+    # matched entry as the qualified name in the resulting `SymbolMatch`.
+    match_names: list[str] = field(default_factory=list)
 
     # Convenience: rendered line suffix for line-range display
     def lines_suffix(self) -> str:
@@ -354,28 +375,40 @@ def _estimate_tokens(source: bytes) -> int:
 # against typical code/config sizes where outline-vs-Read trade-offs
 # meaningfully shift.
 
-_SIZE_LABEL_MEDIUM_FLOOR = 500    # below this — outline shrinks little vs full read
-_SIZE_LABEL_LARGE_FLOOR = 5000    # above this — outline alone may be long; show helps
+_SIZE_LABEL_MEDIUM_FLOOR = 500       # below this — outline shrinks little vs full read
+_SIZE_LABEL_LARGE_FLOOR = 5000       # above this — outline alone may be long; show helps
+_SIZE_LABEL_HUGE_FLOOR = 100_000     # above this — even the outline becomes unwieldy;
+                                     # digest collapses the body (header-only) so a
+                                     # directory full of generated SDKs / vendored mega-
+                                     # files doesn't bloat the digest.
 
 
 def _size_label(token_count: int) -> str:
-    """One of three descriptive size labels.
+    """One of four descriptive size labels.
 
     - ``[tiny]`` — under ~500 tokens. Outline returns roughly the same
       content as Read, with light structural overlay.
     - ``[medium]`` — 500-5000 tokens. Outline meaningfully compresses
       (5-10× typical) while staying compact enough to consume whole.
-    - ``[large]`` — 5000+ tokens. Outline output itself can run long;
+    - ``[large]`` — 5000-100k tokens. Outline output itself can run long;
       ``show`` for specific sections is the surgical follow-up.
+    - ``[huge]`` — 100k+ tokens. The file's outline alone would crowd the
+      digest; ``digest`` collapses it to the header line only (counters
+      still shown). ``outline`` and ``show`` work normally — the label is
+      informational there, behavior changes only in ``digest``.
 
-    The agent reads the label, weighs its task, and decides. We don't
-    tell it what to do.
+    The label is descriptive: in ``outline`` and ``show`` it just signals
+    size. In ``digest`` ``[huge]`` is also a behavioral marker — the
+    body of that one file is omitted; agent uses ``ast-outline outline
+    <path>`` to expand on demand.
     """
     if token_count < _SIZE_LABEL_MEDIUM_FLOOR:
         return "[tiny]"
     if token_count < _SIZE_LABEL_LARGE_FLOOR:
         return "[medium]"
-    return "[large]"
+    if token_count < _SIZE_LABEL_HUGE_FLOOR:
+        return "[large]"
+    return "[huge]"
 
 
 def _format_error_warning(result: ParseResult) -> Optional[str]:
@@ -553,12 +586,15 @@ def render_signature_view(match: SymbolMatch, *, max_doc_lines: int = 6) -> str:
 # Why size labels (`[tiny]`/`[medium]`/`[large]`) and `[broken]` are
 # never in the legend: they're plain English, instantly recognisable
 # without a lookup. Keeping them out keeps the legend short for the
-# common case.
+# common case. `[huge]` is the exception — unlike the other size labels
+# it ALSO changes digest behavior (body suppressed), so it's documented
+# in the legend whenever a huge file appears in the batch.
 
 # All possible legend entries, in canonical display order. The order
 # mirrors the order tokens visually appear in a typical digest line:
 # callable kind first, then non-callable kinds, modifiers, overload tag,
-# deprecation tag, line ranges, inheritance.
+# deprecation tag, line ranges, inheritance, then size-driven omission
+# markers at the very end.
 _LEGEND_ENTRIES: tuple[tuple[str, str], ...] = (
     ("callable", "name()=callable"),
     ("kind", "name [kind]=non-callable"),
@@ -567,6 +603,7 @@ _LEGEND_ENTRIES: tuple[tuple[str, str], ...] = (
     ("deprecated", "[deprecated]=obsolete"),
     ("line_range", "L<a>-<b>=line range"),
     ("inheritance", ": Base, …=inheritance"),
+    ("huge", "[huge]=body omitted (use `ast-outline outline <path>`)"),
 )
 
 
@@ -588,6 +625,7 @@ class _LegendFlags:
     deprecated: bool = False      # any `[deprecated]` tag
     line_range: bool = False      # any `L<n>` / `L<a>-<b>` suffix
     inheritance: bool = False     # any `: Base[, Base…]` clause
+    huge: bool = False            # any file rendered as header-only `[huge]` collapse
 
 
 def _build_legend(flags: _LegendFlags) -> str:
@@ -917,6 +955,24 @@ def _digest_one(
             )
         )
 
+    # `[huge]` files (>100k tokens) collapse to header-only in digest. The
+    # parenthesised counters (`51232 lines, ~742k tokens, 21 types, 25
+    # methods, 47 fields`) already give the agent enough to decide whether
+    # to drill in — expanding the body adds 30+ lines per file and inflates
+    # the digest of a directory with many generated/vendored mega-files
+    # (TS compiler internals, generated SDKs, large checkers) by 30×. A
+    # second `ast-outline outline <path>` call recovers the full structure
+    # on demand. The label is the agent's signal — documented in the
+    # legend whenever a huge file appears in the batch.
+    #
+    # Outline / show are unchanged: when the agent explicitly opens a
+    # single file by path, they wanted its full structure regardless of
+    # size. Only digest (the broad-survey command) collapses.
+    if label == "[huge]":
+        if flags is not None:
+            flags.huge = True
+        return lines
+
     # Markdown files digest as a hierarchical TOC, not a type/member list.
     if result.language == "markdown":
         toc = _digest_markdown(result.declarations, opts, indent=4, depth=1, flags=flags)
@@ -933,6 +989,22 @@ def _digest_one(
     # uniform-and-noisy for every entry.
     if result.language == "yaml":
         body = _digest_yaml(result.declarations, opts, flags=flags)
+        if not body:
+            lines[-1] += "  # empty"
+            return lines
+        lines.extend(body)
+        return lines
+
+    # CSS / SCSS files digest as a flat token list — the existing
+    # types/free-functions split assumes class-with-members shape, which
+    # CSS doesn't have (rules don't have "members" the same way; nested
+    # rules in SCSS are siblings under a parent block). Rendering rules
+    # as types would produce header-per-rule clutter for files with 50+
+    # selectors; rendering as a flat token list mirrors how the file
+    # actually reads. Outline still shows the full hierarchy for an
+    # agent that needs structure.
+    if result.language in ("css", "scss"):
+        body = _digest_css(result.declarations, opts, flags=flags)
         if not body:
             lines[-1] += "  # empty"
             return lines
@@ -1145,6 +1217,60 @@ def _digest_yaml(
     return _wrap_tokens(tokens, width=100, indent="    ")
 
 
+def _digest_css(
+    decls: list[Declaration],
+    opts: DigestOptions,
+    flags: Optional["_LegendFlags"] = None,
+) -> list[str]:
+    """Render CSS / SCSS declarations for the digest body.
+
+    Flattens the declaration tree to a single token list — rules nested
+    under at-rules (`@media .btn { }`), under each other (CSS native
+    nesting), or under SCSS `&` parents all surface as siblings here.
+    Hierarchy is intentionally lost in digest, since digest is the
+    catalog view (`what's defined here?`); the agent uses `outline`
+    when it wants structure.
+
+    Each token uses `_member_token` so callable kinds (`@mixin`,
+    `@function`) get the universal `()` suffix and non-callable kinds
+    get a `[kind]` tag. The kind tag is signal for the agent — `[rule]`
+    vs `[at_rule]` vs `[variable]` vs `[placeholder]` answer different
+    agent questions, even though the sigil prefix already disambiguates
+    most cases.
+    """
+    flat = _flatten_css(decls, opts)
+    if not flat:
+        return []
+    tokens = [_member_token(d, 1, parent=None, flags=flags) for d in flat]
+    return _wrap_tokens(tokens, width=100, indent="    ")
+
+
+def _flatten_css(
+    decls: list[Declaration], opts: DigestOptions
+) -> list[Declaration]:
+    """Walk the declaration tree depth-first and return every entry as a
+    flat list — parents first, then their resolved children. Respects
+    `include_private` (skips `_`-prefixed SCSS mixins/functions/vars
+    flagged as private by the adapter) and `include_fields` (skips
+    SCSS `$variables`)."""
+    out: list[Declaration] = []
+    for d in decls:
+        if d.kind == KIND_VARIABLE and not opts.include_fields:
+            continue
+        if d.visibility == "private" and not opts.include_private:
+            # Skip the whole subtree — a filtered parent shouldn't leak
+            # its children into the digest. For SCSS this matters most
+            # for private `%placeholder` blocks: they have nested rules
+            # whose own visibility is empty, so without the `continue`
+            # the children would surface even when the parent was
+            # explicitly hidden.
+            continue
+        out.append(d)
+        if d.children:
+            out.extend(_flatten_css(d.children, opts))
+    return out
+
+
 def _digest_markdown(
     decls: list[Declaration],
     opts: DigestOptions,
@@ -1221,6 +1347,7 @@ def _flatten_types(decls: list[Declaration], prefix: str = "") -> list[Declarati
                 end_byte=d.end_byte,
                 doc_start_byte=d.doc_start_byte,
                 children=d.children,
+                match_names=d.match_names,
             )
             out.append(qualified)
             # Also flatten nested types (they appear as their own rows)
@@ -1319,7 +1446,17 @@ def _split_query(symbol: str) -> list[str]:
     ``["spec", "containers", "[0]", "image"]``. The bracket part lands
     as its OWN trail entry (matching how the YAML adapter emits
     sequence items as ``Declaration(name="[0]")``), so suffix-matching
-    works without special cases in the walker."""
+    works without special cases in the walker.
+
+    CSS-style queries — anything starting with ``.``, ``#``, ``%``,
+    ``&``, ``@``, or ``:`` (a CSS sigil) — are returned as a single
+    token. The dots inside `.btn.primary` are NOT path separators
+    here: they're part of the CSS compound-selector syntax. Without
+    this short-circuit, querying `.btn-primary` would split into
+    `["btn-primary"]` (the leading dot stripped) and miss the rule
+    whose `match_names` contains the literal `.btn-primary`."""
+    if symbol[:1] in ".#%&@:":
+        return [symbol]
     return _QUERY_TOKEN_RE.findall(symbol)
 
 
@@ -1351,26 +1488,43 @@ def _search_walk(
     out: list[SymbolMatch],
 ) -> None:
     for d in decls:
-        new_trail = trail + [d.name] if d.name else trail
         # Markdown headings opt in to substring matching — see find_symbols
         # docstring. Other kinds keep strict suffix-equality semantics so
         # code-symbol lookups stay precise.
         substring = d.kind == KIND_HEADING
-        if d.name and _trail_matches(new_trail, parts, substring=substring):
-            # Include doc block in source slice if present
-            start = d.doc_start_byte or d.start_byte
-            end = d.end_byte
-            out.append(
-                SymbolMatch(
-                    qualified_name=_join_trail(new_trail),
-                    kind=d.kind,
-                    start_line=d.start_line,
-                    end_line=d.end_line,
-                    source=src[start:end].decode("utf8", errors="replace"),
-                    ancestor_signatures=[a.signature for a in ancestors if a.signature],
-                    decl=d,
+        # `match_names` is the opt-in mechanism for declarations
+        # reachable under multiple identifiers (e.g. CSS rule with a
+        # selector list `.a, .b, .c`, or an SCSS nested rule with `&`
+        # resolved against each parent). When set, the entries are the
+        # canonical *absolute* names — they aren't path-joined with the
+        # parent trail, since they already carry whatever scope they
+        # have. When empty, fall back to `[d.name]` and the standard
+        # path-joining semantics — code adapters get unchanged behavior.
+        candidates = d.match_names or ([d.name] if d.name else [])
+        new_trail = trail + [d.name] if d.name else trail
+        matched = False
+        for cand in candidates:
+            if matched:
+                break
+            cand_trail = trail + [cand] if cand else trail
+            if cand and _trail_matches(cand_trail, parts, substring=substring):
+                start = d.doc_start_byte or d.start_byte
+                end = d.end_byte
+                # Absolute names from `match_names` represent themselves
+                # as `qualified_name`; everything else is path-joined.
+                qual = cand if d.match_names else _join_trail(cand_trail)
+                out.append(
+                    SymbolMatch(
+                        qualified_name=qual,
+                        kind=d.kind,
+                        start_line=d.start_line,
+                        end_line=d.end_line,
+                        source=src[start:end].decode("utf8", errors="replace"),
+                        ancestor_signatures=[a.signature for a in ancestors if a.signature],
+                        decl=d,
+                    )
                 )
-            )
+                matched = True
         if d.children:
             _search_walk(d.children, src, new_trail, ancestors + [d], parts, out)
 

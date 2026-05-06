@@ -93,8 +93,8 @@ def test_snippet_mentions_every_supported_file_extension():
     # (Haiku concreteness). Assert each supported ext appears at least once.
     for ext in [
         ".cs", ".py", ".pyi", ".ts", ".tsx", ".js", ".jsx",
-        ".java", ".kt", ".kts", ".scala", ".sc", ".go", ".md",
-        ".yaml", ".yml",
+        ".java", ".kt", ".kts", ".scala", ".sc", ".go", ".css",
+        ".scss", ".md", ".yaml", ".yml",
     ]:
         assert f"`{ext}`" in AGENT_PROMPT, f"snippet missing extension {ext!r}"
 
@@ -140,15 +140,20 @@ def test_snippet_avoids_emphasis_overuse():
 
 
 def test_snippet_fits_rough_length_budget():
-    """Snippet is intentionally short. If it balloons past ~3200 chars
+    """Snippet is intentionally short. If it balloons past ~3600 chars
     the rewrite probably regressed the tighter ~180-word target the
     prompt-tuner review settled on. The budget grew from 3000 to 3100
-    in v0.6.6 (`--signature` step), and 3100 to 3200 in v0.7.2 (Ruby
+    in v0.6.6 (`--signature` step), 3100 to 3200 in v0.7.2 (Ruby
     adapter — three extensions + one canonical require example added
-    to the imports paragraph). A single new capability or language
-    earns a small allowance, but the bar for further growth stays
-    tight: shave existing wording first, then bump."""
-    assert len(AGENT_PROMPT) < 3200, (
+    to the imports paragraph), 3200 to 3600 in v0.7.4 (CSS/SCSS
+    adapters — two new extensions + a tight 3-line paragraph on
+    selector-token matching, sized to match the markdown / yaml
+    adjacent paragraphs after a prompt-tuner review trimmed the
+    initial 5-line draft — plus the `[huge]` digest size-label tier
+    added the same release for ≥100k-token files). A new language or
+    behavioral signal earns a small allowance, but the bar for further
+    growth stays tight: shave existing wording first, then bump."""
+    assert len(AGENT_PROMPT) < 3600, (
         f"AGENT_PROMPT is {len(AGENT_PROMPT)} chars — snippet may have bloated; "
         f"re-run prompt-tuner review."
     )

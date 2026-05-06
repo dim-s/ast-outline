@@ -599,17 +599,20 @@ def test_digest_per_file_header_includes_token_count(java_dir):
     assert re.search(r"\d+ lines, ~[\d,]+ tokens", file_line), file_line
 
 
+_ALL_SIZE_LABELS = ("[tiny]", "[medium]", "[large]", "[huge]")
+
+
 def test_digest_per_file_includes_size_label_bracket(java_dir):
-    """Each file line carries one of the three descriptive size labels —
+    """Each file line carries one of the four descriptive size labels —
     the agent's primary at-a-glance signal for the file's bulk."""
     r = JavaAdapter().parse(java_dir / "user_service.java")
     out = render_digest([r], DigestOptions())
     file_line = next(ln for ln in out.splitlines() if ln.lstrip().startswith("user_service.java"))
-    assert any(tag in file_line for tag in ("[tiny]", "[medium]", "[large]")), file_line
+    assert any(tag in file_line for tag in _ALL_SIZE_LABELS), file_line
 
 
 def test_size_label_thresholds():
-    """The three buckets must map cleanly — boundary values verified
+    """The four buckets must map cleanly — boundary values verified
     here so silent threshold drift breaks a test, not an agent."""
     from ast_outline.core import _size_label
 
@@ -618,7 +621,9 @@ def test_size_label_thresholds():
     assert _size_label(500) == "[medium]"
     assert _size_label(4999) == "[medium]"
     assert _size_label(5000) == "[large]"
-    assert _size_label(1_000_000) == "[large]"
+    assert _size_label(99_999) == "[large]"
+    assert _size_label(100_000) == "[huge]"
+    assert _size_label(1_000_000) == "[huge]"
 
 
 def test_size_label_appears_before_counters_in_digest(java_dir):
@@ -627,7 +632,7 @@ def test_size_label_appears_before_counters_in_digest(java_dir):
     r = JavaAdapter().parse(java_dir / "user_service.java")
     out = render_digest([r], DigestOptions())
     file_line = next(ln for ln in out.splitlines() if ln.lstrip().startswith("user_service.java"))
-    bracket_pos = max(file_line.find("[tiny]"), file_line.find("[medium]"), file_line.find("[large]"))
+    bracket_pos = max(file_line.find(t) for t in _ALL_SIZE_LABELS)
     paren_pos = file_line.find("(")
     assert 0 < bracket_pos < paren_pos, file_line
 
@@ -638,7 +643,7 @@ def test_outline_header_includes_size_label(java_dir):
     size signal in plain English alongside the precise token count."""
     r = JavaAdapter().parse(java_dir / "user_service.java")
     first = render_outline(r, OutlineOptions()).splitlines()[0]
-    assert any(tag in first for tag in ("[tiny]", "[medium]", "[large]")), first
+    assert any(tag in first for tag in _ALL_SIZE_LABELS), first
 
 
 def test_outline_size_label_appears_before_counters(java_dir):
@@ -646,7 +651,7 @@ def test_outline_size_label_appears_before_counters(java_dir):
     in parens. The label is the at-a-glance signal."""
     r = JavaAdapter().parse(java_dir / "user_service.java")
     first = render_outline(r, OutlineOptions()).splitlines()[0]
-    bracket_pos = max(first.find("[tiny]"), first.find("[medium]"), first.find("[large]"))
+    bracket_pos = max(first.find(t) for t in _ALL_SIZE_LABELS)
     paren_pos = first.find("(")
     assert 0 < bracket_pos < paren_pos, first
 
@@ -668,9 +673,115 @@ def test_outline_size_label_present_for_every_language(
     ]
     for r in samples:
         first = render_outline(r, OutlineOptions()).splitlines()[0]
-        assert any(tag in first for tag in ("[tiny]", "[medium]", "[large]")), (
+        assert any(tag in first for tag in _ALL_SIZE_LABELS), (
             f"{r.language}: {first}"
         )
+
+
+# --- [huge] collapse behavior ---------------------------------------------
+#
+# `[huge]` (≥100k tokens) is the one size label that ALSO changes digest
+# behavior — the file's body is omitted in `digest`, leaving only the
+# header line with full counters. Reasons: a directory with many huge
+# generated/vendored files would otherwise produce thousands of lines of
+# digest noise, and the agent already has the agg counters in parens to
+# decide whether to drill in via `ast-outline outline <path>`.
+#
+# Outline / show are NOT affected — when the agent explicitly opens one
+# file by path, they want its full structure regardless of size.
+
+
+def _make_huge_parse_result(name: str = "huge_module.py", language: str = "python"):
+    """Build a synthetic ParseResult whose token estimate exceeds the
+    `[huge]` floor (≥100k tokens). `_estimate_tokens` is `chars // 4`,
+    so 400_001 chars guarantees the threshold is crossed regardless of
+    encoding.
+
+    Synthetic so tests don't depend on a real-world mega-file fixture
+    bigger than the rest of the repo combined.
+    """
+    from pathlib import Path
+    from ast_outline.core import (
+        Declaration,
+        KIND_CLASS,
+        KIND_METHOD,
+        ParseResult,
+    )
+
+    method = Declaration(
+        kind=KIND_METHOD,
+        name="visible_method",
+        signature="def visible_method(self)",
+        start_line=10,
+        end_line=11,
+    )
+    cls = Declaration(
+        kind=KIND_CLASS,
+        name="VisibleClass",
+        signature="class VisibleClass",
+        start_line=1,
+        end_line=20,
+        children=[method],
+    )
+    return ParseResult(
+        path=Path(f"/tmp/{name}"),
+        language=language,
+        source=b"x" * 400_001,
+        line_count=12345,
+        declarations=[cls],
+    )
+
+
+def test_digest_collapses_huge_file_to_header_only():
+    """A `[huge]` file in `digest` produces only the header line — no
+    type signatures, no method tokens. The agg counters in parens still
+    appear so the agent can size up the file."""
+    from ast_outline.core import DigestOptions, render_digest
+
+    out = render_digest([_make_huge_parse_result()], DigestOptions())
+    assert "[huge]" in out
+    # No body lines for the synthetic class/method
+    assert "VisibleClass" not in out
+    assert "visible_method" not in out
+    # File header counters still present
+    assert "12345 lines" in out
+
+
+def test_outline_does_not_collapse_huge_file():
+    """`outline` is unaffected by `[huge]` — when an agent explicitly
+    opens one file by path, they want its full structure regardless of
+    size. Only `digest` (the broad-survey command) collapses."""
+    from ast_outline.core import OutlineOptions, render_outline
+
+    out = render_outline(_make_huge_parse_result(), OutlineOptions())
+    assert "[huge]" in out
+    # Outline must still render the body
+    assert "VisibleClass" in out
+    assert "visible_method" in out
+
+
+def test_digest_legend_documents_huge_when_present():
+    """The `[huge]` collapse changes what the agent sees, so the legend
+    must explain the marker — and tell the agent how to expand on
+    demand. Only fires when a huge file is actually in the batch."""
+    from ast_outline.core import DigestOptions, render_digest
+
+    out = render_digest([_make_huge_parse_result()], DigestOptions())
+    legend = out.splitlines()[0]
+    assert "[huge]" in legend
+    assert "ast-outline outline" in legend
+
+
+def test_digest_legend_omits_huge_when_no_huge_file(java_dir):
+    """Legend stays compact when no huge file is in the batch — the
+    `[huge]` entry is added only when the marker actually appears in
+    the body, same dynamic-legend rule as the other entries."""
+    from ast_outline.core import DigestOptions, render_digest
+
+    r = JavaAdapter().parse(java_dir / "user_service.java")
+    out = render_digest([r], DigestOptions())
+    legend = out.splitlines()[0]
+    assert "[huge]" not in legend
 
 
 def test_token_estimate_uses_chars_not_bytes_for_cyrillic(tmp_path):

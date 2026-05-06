@@ -230,9 +230,9 @@ ast-outline prompt | pbcopy   # macOS clipboard
 
 For `.cs`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hh`, `.py`, `.pyi`,
 `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`, `.scala`, `.sc`,
-`.go`, `.rs`, `.php`, `.phtml`, `.rb`, `.rake`, `.gemspec`, `.md`, and
-`.yaml`/`.yml` files, read structure with `ast-outline` before opening
-full contents.
+`.go`, `.rs`, `.php`, `.phtml`, `.rb`, `.rake`, `.gemspec`, `.css`,
+`.scss`, `.md`, and `.yaml`/`.yml` files, read structure with
+`ast-outline` before opening full contents.
 
 Pick the smallest of these that answers your question — they're a
 broad-to-narrow menu, not a sequence; skip straight to `show` when
@@ -240,8 +240,10 @@ you already know the symbol:
 
 1. **Unfamiliar directory** — `ast-outline digest <paths…>`: one-page map
    of every file's types and public methods. Each file is tagged with a
-   size label — `[tiny]` / `[medium]` / `[large]` — plus `[broken]`
-   when parse errors may have left the outline partial.
+   size label — `[tiny]` / `[medium]` / `[large]` / `[huge]` — plus
+   `[broken]` when parse errors may have left the outline partial.
+   `[huge]` files (≥100k tokens) collapse to header-only in the digest;
+   call `ast-outline outline <path>` on them when you need full structure.
 
 2. **File-level shape** — `ast-outline <paths…>`: signatures with line
    ranges, no bodies (5–10× smaller than a full read on non-trivial
@@ -259,6 +261,10 @@ you already know the symbol:
    `"2.1 Installation (macOS / Linux)"`. For yaml, the symbol is a
    dotted key path (`spec.containers[0].image`) — `show` matches keys,
    not values, so for free-text search inside values use `grep`.
+   For css/scss, the symbol is a selector token (`.btn-primary`,
+   `$var`) — pseudos and attribute filters are stripped, so
+   `.btn-primary` finds the rule even when it carries `:hover` or
+   nests in `.modal`.
    Add `--signature` to any of the above to return header only
    (docs + attrs + signature, no body) — useful after `digest`, when
    you have the name and want the contract, not the implementation.
@@ -444,12 +450,16 @@ Source-language keywords (Rust `trait`, Scala `object`, Kotlin
 canonical kind.
 
 Each filename gets a descriptive size label — `[tiny]` (under ~500 tokens),
-`[medium]` (500–5000), `[large]` (5000+). A `[broken]` marker appears next
-to the size label when the parse hit syntax errors and the outline may be
-partial. The labels describe the file; they don't prescribe an action.
-An LLM agent reads them, weighs its task (does it need the whole file? a
-single section? just structure?) and picks Read / outline / show accordingly
-— the tool informs, the agent decides.
+`[medium]` (500–5000), `[large]` (5000–100k), `[huge]` (100k+). A `[broken]`
+marker appears next to the size label when the parse hit syntax errors and
+the outline may be partial. `[tiny]` / `[medium]` / `[large]` describe the
+file without changing what gets rendered; `[huge]` is also a behavioral
+marker — in `digest` only, the file collapses to its header line so a
+directory full of generated SDKs / vendored mega-files doesn't bloat the
+output. `outline` and `show` ignore the `[huge]` collapse — when an agent
+explicitly opens one file, it gets the full structure regardless of size.
+The labels describe the file; the agent picks Read / outline / show based
+on its task — the tool informs, the agent decides.
 
 The label conventions live in the canonical agent prompt (`ast-outline prompt`)
 so they're paid for once per session, not on every digest call. Size class is
