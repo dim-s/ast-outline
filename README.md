@@ -104,6 +104,7 @@ MCP shim wrapping the same calls.
 | Go         | `.go` |
 | Rust       | `.rs` |
 | PHP        | `.php`, `.phtml`, `.phps`, `.php8` |
+| Ruby       | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile` *(incl. Rails)* |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` |
 | YAML       | `.yaml`, `.yml` |
 
@@ -117,6 +118,7 @@ MCP shim wrapping the same calls.
 - **C++** — namespaces (single-chain old-style folds into `a::b::c`, anonymous → `<anonymous>`, `inline` preserved), classes / structs / unions / enums (classic + `enum class`), templates (header preserved as signature prefix on class / function / member templates), virtual / pure-virtual / `const` / `noexcept` qualifiers, ctors / dtors / operators (incl. conversion operators like `operator bool()`), `= default` / `= delete`, `public:` / `protected:` / `private:` access blocks with C++-correct defaults, base-class clauses with access + `virtual` markers, out-of-class definitions (`Widget::draw`), `#include` directives as imports. Unreal Engine `UCLASS()` / `UFUNCTION()` / `GENERATED_BODY()` macros parse without interference.
 - **Rust** — modules (recursive), structs (regular / tuple / unit), unions, enums with all variant shapes, traits with supertraits as bases, **`impl` block regrouping under the target type** (inherent + `impl Trait for Foo` adds Trait to bases), `extern "C"` blocks, `macro_rules!`, type aliases, generics + lifetimes + `where` clauses, `pub` / `pub(crate)` visibility, outer doc comments (`///`, `/** */`) and `#[...]` attributes.
 - **PHP** — modern PHP 8.x and the still-deployed 7.4 LTS line: namespaces (file-scoped + bracketed), classes (`abstract` / `final` / `readonly` and combinations), interfaces, traits, PHP 8.1 enums (pure + backed), methods, magic ctor / dtor (`__construct` → ctor, `__destruct` → dtor), PHP 8.0 constructor property promotion (promoted parameters surface as fields), single + multi-variable properties, PHP 8.3 typed class constants, PHP 8.0 `#[Attr]` attributes, top-level `use` / `use function` / `use const` / grouped `use Foo\{A, B}`, plus top-level `include` / `include_once` / `require` / `require_once` for pre-Composer / WordPress / Drupal-7 codebases. Tested on real WordPress core (no parse errors on files up to 291 KB).
+- **Ruby** — modules (with `module Foo::Bar` qualified form + old-style nested-module collapse to `A::B::C`), classes with `< Super` superclass + `include` / `extend` / `prepend` mixins surfaced on the type header, methods, `def self.foo` singleton methods (marked `[static]`), `class << self` block (unwraps flat with `[static]` markers), operators (`+`, `<=>`, `[]`, `[]=`, `-@`, `+@`, `==`, `!`, …), `attr_accessor` / `attr_reader` / `attr_writer` (one field per symbol with marker), `alias` / `alias_method`. Visibility tracked as a state machine — bare `private` / `public` / `protected` flips subsequent decls; `private :foo, :bar` / `private_class_method :baz` retroactively mark named methods. **Rails associations recognised by default** (`has_many` / `has_one` / `belongs_to` / `has_and_belongs_to_many` surface as fields with marker). Convention-named `Rakefile` / `Gemfile` resolve via basename match. `require` / `require_relative` / `load` / `autoload` collected as imports; lazy loads inside method bodies counted into `[+ N conditional includes]`.
 - **Markdown** — heading TOC + fenced code blocks.
 - **YAML** — key hierarchy with line ranges, `[i]` sequence paths, multi-document separators, format-detect for Kubernetes / OpenAPI / GitHub Actions in the header.
 
@@ -228,8 +230,9 @@ ast-outline prompt | pbcopy   # macOS clipboard
 
 For `.cs`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hh`, `.py`, `.pyi`,
 `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`, `.scala`, `.sc`,
-`.go`, `.rs`, `.php`, `.phtml`, `.md`, and `.yaml`/`.yml` files, read
-structure with `ast-outline` before opening full contents.
+`.go`, `.rs`, `.php`, `.phtml`, `.rb`, `.rake`, `.gemspec`, `.md`, and
+`.yaml`/`.yml` files, read structure with `ast-outline` before opening
+full contents.
 
 Pick the smallest of these that answers your question — they're a
 broad-to-narrow menu, not a sequence; skip straight to `show` when
@@ -270,7 +273,8 @@ type / function comes from**, add `--imports` to `outline` or `digest`.
 The file header gets an `imports:` line listing every
 `import` / `use` / `using` statement verbatim in the language's native
 syntax — `from .core import X`, `use foo::Bar`,
-`import { X } from './foo'`, `use App\Foo`, `require_once 'config.php'`.
+`import { X } from './foo'`, `use App\Foo`, `require_once 'config.php'`,
+`require "json"`.
 Read the imports, then call `outline` / `show` on the source file
 instead of grepping for the definition. Skip the flag for routine
 structure reads — it adds one line per file.
@@ -590,8 +594,8 @@ uv pip install -e ".[dev]"
 .venv/bin/pytest -k file_scoped_namespace -v
 ```
 
-The suite (800+ tests) covers every adapter (C#, Python, TypeScript/JS,
-Java, Kotlin, Scala, Go, Rust, PHP, Markdown, YAML), the language-agnostic
+The suite covers every adapter (C#, C++, Python, TypeScript/JS, Java,
+Kotlin, Scala, Go, Rust, PHP, Ruby, Markdown, YAML), the language-agnostic
 renderers, symbol search, and the CLI end-to-end. Fixtures live under `tests/fixtures/`;
 tests never reach outside that directory.
 New behaviour should come with a test; new languages should ship with a
@@ -615,6 +619,7 @@ Create `src/ast_outline/adapters/<lang>.py` implementing the
 - [x] Go adapter (`.go`) — packages, structs (with method-grouping under receiver), interfaces, struct/interface embedding as inheritance, generics (Go 1.18+), `type` aliases + defined types, `iota` enum-blocks, doc-comment chains
 - [x] Rust adapter (`.rs`) — modules (recursive), structs (regular / tuple / unit), unions, enums with all variant shapes, traits + supertraits as bases, **`impl` block regrouping under the target type** (inherent + `impl Trait for Foo` adds Trait to bases), `extern "C"` blocks, `macro_rules!`, type aliases, generics + lifetimes + `where` clauses, full visibility classifier (`pub` / `pub(crate)` / `pub(super)` / `pub(in path)`), outer doc comments + `#[...]` attributes
 - [x] PHP adapter (`.php`, `.phtml`, `.phps`, `.php8`) — modern PHP 8.x + 7.4 LTS: namespaces (file-scoped + bracketed), classes (`abstract` / `final` / `readonly` and combinations), interfaces, traits, PHP 8.1 enums (pure + backed), methods, magic ctor / dtor, PHP 8.0 ctor property promotion, multi-variable properties, PHP 8.3 typed class constants, PHP 8.0 `#[Attr]` attributes, top-level `use` (incl. grouped) + `include` / `require`, robust on real WordPress core
+- [x] Ruby adapter (`.rb`, `.rake`, `.gemspec`, `.ru`, plus `Rakefile` / `Gemfile` by basename) — modules with qualified-form (`module Foo::Bar`) + nested-module collapse, classes with superclass + `include` / `extend` / `prepend` mixins, methods, `def self.foo` singleton methods + `class << self` blocks (both render `[static]`), full operator coverage (`+` / `<=>` / `[]` / `[]=` / `-@` / `+@` / `==` / `!` / …), `attr_accessor` / `attr_reader` / `attr_writer` (one field per symbol with marker), `alias` / `alias_method`, visibility state machine (`private` / `protected` / `public` flips + targeted `private :foo`), **Rails associations recognised by default** (`has_many` / `has_one` / `belongs_to` / `has_and_belongs_to_many`), `require` / `require_relative` / `load` / `autoload` as imports
 - [x] Markdown adapter (`.md`, `.markdown`, `.mdx`, `.mdown`) — heading TOC + code blocks
 - [x] YAML adapter (`.yaml`, `.yml`) — key hierarchy, `[i]` sequence paths, multi-document support, format-detect for Kubernetes / OpenAPI / GitHub Actions
 - [ ] `--format json` output mode for programmatic consumers

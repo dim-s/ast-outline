@@ -27,6 +27,7 @@ from .kotlin import KotlinAdapter
 from .markdown import MarkdownAdapter
 from .php import PhpAdapter
 from .python import PythonAdapter
+from .ruby import RubyAdapter
 from .rust import RustAdapter
 from .scala import ScalaAdapter
 from .typescript import TypeScriptAdapter
@@ -44,6 +45,7 @@ ADAPTERS: list[LanguageAdapter] = [
     GoAdapter(),
     RustAdapter(),
     PhpAdapter(),
+    RubyAdapter(),
     MarkdownAdapter(),
     YamlAdapter(),
 ]
@@ -99,9 +101,18 @@ _DEFAULT_IGNORE_PATTERNS: list[str] = [
 
 
 def get_adapter_for(path: Path) -> Optional[LanguageAdapter]:
+    """Resolve the adapter for ``path`` by suffix first, then by exact
+    basename. The basename branch covers convention-named extensionless
+    files like ``Rakefile`` and ``Gemfile`` — Ruby projects routinely
+    ship them, and treating them as "unknown" would force the agent
+    into a full read for what is in practice plain Ruby."""
     ext = path.suffix.lower()
     for a in ADAPTERS:
         if ext in a.extensions:
+            return a
+    name = path.name
+    for a in ADAPTERS:
+        if name in getattr(a, "basenames", set()):
             return a
     return None
 
@@ -110,6 +121,15 @@ def supported_extensions() -> set[str]:
     out: set[str] = set()
     for a in ADAPTERS:
         out.update(a.extensions)
+    return out
+
+
+def supported_basenames() -> set[str]:
+    """Convention-named extensionless files that some adapter claims
+    by exact basename match. See :func:`get_adapter_for` rationale."""
+    out: set[str] = set()
+    for a in ADAPTERS:
+        out.update(getattr(a, "basenames", set()))
     return out
 
 
@@ -279,6 +299,7 @@ def collect_files_with_stats(
     ignored_dirs = 0
     ignored_dir_basenames: set[str] = set()
     exts = supported_extensions()
+    basenames = supported_basenames()
 
     for p in paths:
         if p.is_file():
@@ -301,7 +322,10 @@ def collect_files_with_stats(
                         if not f.match(glob):
                             continue
                     else:
-                        if f.suffix.lower() not in exts:
+                        if (
+                            f.suffix.lower() not in exts
+                            and f.name not in basenames
+                        ):
                             continue
                     out.append(f)
             continue
@@ -356,7 +380,10 @@ def collect_files_with_stats(
                     if not f.match(glob):
                         continue
                 else:
-                    if f.suffix.lower() not in exts:
+                    if (
+                        f.suffix.lower() not in exts
+                        and f.name not in basenames
+                    ):
                         continue
                 # File-level gitignore matches are filtered silently
                 # (no count) — see CollectResult docstring.

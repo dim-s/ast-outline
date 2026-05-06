@@ -1,0 +1,17 @@
+# Standard Gemfile — also extensionless.
+source "https://rubygems.org"
+
+ruby "3.2.2"
+
+gem "rails", "~> 7.1"
+gem "puma"
+gem "pg"
+
+group :development, :test do
+  gem "rspec-rails"
+  gem "factory_bot_rails"
+end
+
+group :production do
+  gem "redis"
+end

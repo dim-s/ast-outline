@@ -7,6 +7,69 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.7.2] — 2026-05-06
+
+### Added
+
+- **Ruby language adapter** — parses `.rb`, `.rake`, `.gemspec`, `.ru`,
+  plus `Rakefile` / `Gemfile` resolved by exact basename (the first
+  adapter to ship basename-matching). Covers:
+  - `module Foo::Bar` qualified-form modules + old-style nested-module
+    collapse to `A::B::C`, applying the HIGH-fix from the C++ adapter:
+    only NAMED children (excluding comments) count when deciding
+    whether a wrapper is single-child.
+  - Classes with `< Super` superclass plus `include` / `extend` /
+    `prepend` mixins surfaced on the digest type header as
+    `: Super, include Mod, extend Mod2`. Signature line stays
+    Ruby-true (`class Foo < Bar`) so the outline doesn't synthesise
+    non-Ruby syntax.
+  - Methods, `def self.foo` singleton methods, and entire
+    `class << self` blocks — singleton/class-method methods carry a
+    `[static]` marker (mirroring how Python's `@staticmethod` is
+    surfaced).
+  - Full operator coverage as `KIND_OPERATOR` (arithmetic `+`/`-`/`*`/
+    `/`/`%`/`**`, comparison `==`/`!=`/`<`/`>`/`<=`/`>=`/`<=>`/`===`,
+    bitwise `&`/`|`/`^`/`~`, shift `<<`/`>>`, indexing `[]`/`[]=`,
+    unary `-@`/`+@`/`!`).
+  - `attr_accessor` / `attr_reader` / `attr_writer` — multi-symbol
+    calls split into one `KIND_FIELD` per symbol with `[accessor]` /
+    `[reader]` / `[writer]` marker, so each name stays grep-able.
+    `alias` / `alias_method` surface as `KIND_FIELD` with `[alias]`
+    marker and `new → old` signature.
+  - Class- and top-level constants (`MAX_NAME_LENGTH = 64`) as fields.
+  - Visibility tracked as a state machine across the class body —
+    bare `private` / `public` / `protected` flips subsequent
+    declarations; targeted `private :foo, :bar` and
+    `private_class_method :baz` retroactively mark named methods
+    (forward + backward references both supported); `private()` with
+    explicit empty parens parses as a `call` node and still flips
+    state correctly.
+  - `require` / `require_relative` / `load` / `autoload` collected
+    as imports verbatim. Lazy loads inside method / block / lambda
+    bodies counted into `conditional_imports_count` so the digest's
+    `[+ N conditional includes]` annotation reflects them.
+- **Rails associations recognised by default** — `has_many` /
+  `has_one` / `belongs_to` / `has_and_belongs_to_many` calls inside
+  a class body produce one `KIND_FIELD` per symbol with
+  `[has_many]` / `[has_one]` / `[belongs_to]` / `[habtm]` markers.
+  Direct analogue to how the C++ adapter recognises Unreal Engine
+  `UPROPERTY` macros — these name real model-to-model edges that
+  dominate the value of digesting a Rails model file. Other Rails
+  DSL (`validates`, `scope`, `before_action`) intentionally NOT
+  recognised — the line is drawn at relations because they describe
+  model-to-model edges, not behaviour.
+- Adapter selection now honours an optional `basenames` attribute so
+  convention-named extensionless files like `Rakefile` and `Gemfile`
+  are routed to the right adapter without hijacking suffix matching.
+  `get_adapter_for(path)` checks suffix first, then basename;
+  `collect_files()` walker filters on either match.
+
+### Notes
+
+- New dependency: `tree-sitter-ruby>=0.23`.
+- 55 unit tests added for the Ruby adapter; full suite now at 1039
+  tests, all passing.
+
 ## [0.7.1] — 2026-05-05
 
 ### Fixed

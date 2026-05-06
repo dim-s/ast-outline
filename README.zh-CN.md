@@ -99,6 +99,8 @@ embeddings 的 MCP 服务器）相反。现代 LLM Agent 足够聪明，能将
 | Scala      | `.scala`、`.sc` |
 | Go         | `.go` |
 | Rust       | `.rs` |
+| PHP        | `.php`、`.phtml`、`.phps`、`.php8` |
+| Ruby       | `.rb`、`.rake`、`.gemspec`、`.ru`、`Rakefile`、`Gemfile` *（含 Rails）* |
 | Markdown   | `.md`、`.markdown`、`.mdx`、`.mdown` |
 | YAML       | `.yaml`、`.yml` |
 
@@ -110,6 +112,7 @@ embeddings 的 MCP 服务器）相反。现代 LLM Agent 足够聪明，能将
 - **Scala** —— Scala 2 + Scala 3：类、trait、`object` / `case object`、`case class`、`sealed` 继承层级、Scala 3 `enum` / `given` / `using` / `extension`、缩进式语法体、higher-kinded 类型、context bound、`opaque type`、类型别名、Scaladoc。
 - **Go** —— 包、结构体（方法按 receiver 分组）、接口、struct/interface 嵌入作为「继承」、泛型（Go 1.18+）、类型别名 + defined type、`iota` 枚举块、文档注释链。
 - **Rust** —— 模块（递归）、结构体（普通 / 元组 / 单元）、unions、覆盖所有 variant 形式的 enum、trait（supertraits → bases）、**`impl` 块按目标类型重新分组**（inherent + `impl Trait for Foo` 将 Trait 加入 bases）、`extern "C"` 块、`macro_rules!`、类型别名、泛型 + 生命周期 + `where` 子句、可见性分类（`pub` / `pub(crate)` / `pub(super)` / `pub(in path)`）、外部文档注释 + `#[...]` 属性。
+- **Ruby** —— 模块（支持 `module Foo::Bar` 限定形式 + 嵌套模块折叠为 `A::B::C`）、带 `< Super` 父类与 `include` / `extend` / `prepend` 混入的类（混入显示在类型头部）、方法、`def self.foo` 单例方法与 `class << self` 块（均标记 `[static]`）、运算符（`+` / `<=>` / `[]` / `[]=` / `-@` / `+@` / `==` / `!` / …）、`attr_accessor` / `attr_reader` / `attr_writer`（每个符号一条字段并附带标记）、`alias` / `alias_method`、可见性状态机（`private` / `protected` / `public` 切换；`private :foo` 点对点）。**默认识别 Rails 关联**（`has_many` / `has_one` / `belongs_to` / `has_and_belongs_to_many`）。无扩展名的 `Rakefile` / `Gemfile` 通过 basename 匹配。`require` / `require_relative` / `load` / `autoload` 收集为 imports。
 - **Markdown** —— 标题目录 + 代码块。
 - **YAML** —— 键层级（含行范围）、`[i]` 序列索引路径、多文档分隔符、Kubernetes / OpenAPI / GitHub Actions 头部格式自动识别。
 
@@ -203,8 +206,8 @@ ast-outline prompt | pbcopy   # macOS 剪贴板
 
 对于 `.cs`、`.cpp`、`.cc`、`.cxx`、`.h`、`.hpp`、`.hh`、`.py`、`.pyi`、`.ts`、
 `.tsx`、`.js`、`.jsx`、`.java`、`.kt`、`.kts`、`.scala`、`.sc`、`.go`、`.rs`、
-`.php`、`.phtml`、`.md` 和 `.yaml`/`.yml` 文件，先用 `ast-outline` 读结构,
-再考虑打开完整内容。
+`.php`、`.phtml`、`.rb`、`.rake`、`.gemspec`、`.md` 和 `.yaml`/`.yml` 文件，
+先用 `ast-outline` 读结构，再考虑打开完整内容。
 
 从下面三个工具中选最小的那个，能回答你的问题就够了——这是一个
 "从粗到细"的菜单，不是必须按顺序执行的步骤；如果已经知道符号名，

@@ -1,0 +1,21 @@
+# Standard Rakefile — extensionless Ruby file.
+require "rake"
+require "rake/testtask"
+
+namespace :db do
+  task :migrate do
+    puts "migrating"
+  end
+
+  task :seed do
+    puts "seeding"
+  end
+end
+
+task default: ["db:migrate"]
+
+def helper_task(name)
+  task name do
+    yield
+  end
+end

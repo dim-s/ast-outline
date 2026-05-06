@@ -106,6 +106,8 @@ embeddings и vector search. Подход надёжный, но дорогой:
 | Scala      | `.scala`, `.sc` |
 | Go         | `.go` |
 | Rust       | `.rs` |
+| PHP        | `.php`, `.phtml`, `.phps`, `.php8` |
+| Ruby       | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile` *(вкл. Rails)* |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` |
 | YAML       | `.yaml`, `.yml` |
 
@@ -117,6 +119,7 @@ embeddings и vector search. Подход надёжный, но дорогой:
 - **Scala** — Scala 2 + Scala 3: классы, trait'ы, `object` / `case object`, `case class`, `sealed`-иерархии, Scala 3 `enum` / `given` / `using` / `extension`, indentation-синтаксис, higher-kinded types, context bounds, `opaque type`, type-алиасы, Scaladoc.
 - **Go** — пакеты, struct'ы (методы группируются под receiver), интерфейсы, embedding (struct и interface) как механизм «наследования», generics (Go 1.18+), type-алиасы + defined types, `iota`-enum'ы, цепочки doc-комментариев.
 - **Rust** — модули (рекурсивно), struct'ы (regular / tuple / unit), unions, enum'ы со всеми формами variant'ов, trait'ы (supertraits → bases), **группировка `impl`-блоков под целевой тип** (inherent + `impl Trait for Foo` добавляет Trait в bases), `extern "C"`, `macro_rules!`, type-алиасы, generics + lifetimes + `where`-clauses, классификация видимости (`pub` / `pub(crate)` / `pub(super)` / `pub(in path)`), внешние doc-комментарии (`///`, `/** */`) и `#[...]`-атрибуты.
+- **Ruby** — модули (`module Foo::Bar` с qualified-формой + сворачивание вложенных модулей в `A::B::C`), классы с `< Super` + миксины (`include` / `extend` / `prepend`) на заголовке типа, методы, `def self.foo` (singleton-методы) и `class << self`-блоки помечаются `[static]`, операторы (`+`, `<=>`, `[]`, `[]=`, `-@`, `+@`, `==`, `!`, …), `attr_accessor` / `attr_reader` / `attr_writer` (одно поле на каждый символ с маркером), `alias` / `alias_method`, видимость как state-machine (`private` / `protected` / `public` переключают режим; `private :foo` точечно). **По умолчанию распознаются Rails-ассоциации** (`has_many` / `has_one` / `belongs_to` / `has_and_belongs_to_many`). `Rakefile` / `Gemfile` без расширения — через basename. `require` / `require_relative` / `load` / `autoload` собираются в imports.
 - **Markdown** — оглавление по заголовкам + код-блоки.
 - **YAML** — иерархия ключей с диапазонами строк, `[i]` пути для sequence-элементов, multi-document сепараторы, format-detect для Kubernetes / OpenAPI / GitHub Actions в шапке.
 
@@ -212,8 +215,9 @@ ast-outline prompt | pbcopy   # буфер обмена в macOS
 
 Для файлов `.cs`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hh`, `.py`,
 `.pyi`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`, `.scala`,
-`.sc`, `.go`, `.rs`, `.php`, `.phtml`, `.md` и `.yaml`/`.yml` сначала
-читай структуру через `ast-outline`, а не полное содержимое.
+`.sc`, `.go`, `.rs`, `.php`, `.phtml`, `.rb`, `.rake`, `.gemspec`, `.md`
+и `.yaml`/`.yml` сначала читай структуру через `ast-outline`, а не
+полное содержимое.
 
 Выбирай минимальный из инструментов, который отвечает на твой вопрос —
 это меню «от широкого к узкому», а не последовательность; сразу прыгай

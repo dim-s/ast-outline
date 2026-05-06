@@ -31,8 +31,9 @@ AGENT_PROMPT = """## Code exploration — prefer `ast-outline` over full reads
 
 For `.cs`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hh`, `.py`, `.pyi`,
 `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`, `.scala`, `.sc`,
-`.go`, `.rs`, `.php`, `.phtml`, `.md`, and `.yaml`/`.yml` files, read
-structure with `ast-outline` before opening full contents.
+`.go`, `.rs`, `.php`, `.phtml`, `.rb`, `.rake`, `.gemspec`, `.md`, and
+`.yaml`/`.yml` files, read structure with `ast-outline` before opening
+full contents.
 
 Pick the smallest of these that answers your question — they're a
 broad-to-narrow menu, not a sequence; skip straight to `show` when
@@ -73,7 +74,8 @@ type / function comes from**, add `--imports` to `outline` or `digest`.
 The file header gets an `imports:` line listing every
 `import` / `use` / `using` statement verbatim in the language's native
 syntax — `from .core import X`, `use foo::Bar`,
-`import { X } from './foo'`, `use App\\Foo`, `require_once 'config.php'`.
+`import { X } from './foo'`, `use App\\Foo`, `require_once 'config.php'`,
+`require "json"`.
 Read the imports, then call `outline` / `show` on the source file
 instead of grepping for the definition. Skip the flag for routine
 structure reads — it adds one line per file.
