@@ -246,6 +246,25 @@ def test_snippet_headless_covers_all_vendors():
     assert "Gemini CLI" in SETUP_PROMPT
 
 
+def test_snippet_offers_claude_code_explore_shadow():
+    """Claude Code's built-in `Explore` subagent runs in an isolated
+    context — it doesn't inherit CLAUDE.md / AGENTS.md. Without a
+    shadow file at `.claude/agents/Explore.md`, the snippet written
+    in Step 2 never reaches Explore. The setup-prompt should offer
+    this opt-in shadow creation. This is Claude-Code-only — Codex
+    and Gemini subagents are user-defined files only, no built-in
+    to shadow."""
+    # Shadow concept named.
+    assert "shadow" in SETUP_PROMPT.lower()
+    # Built-in Explore mentioned.
+    assert "Explore" in SETUP_PROMPT
+    # Claude Code is the gating condition.
+    assert "Claude-Code-only" in SETUP_PROMPT or "Claude Code" in SETUP_PROMPT
+    # Both project-local and global shadow paths must be mentioned.
+    assert ".claude/agents/Explore.md" in SETUP_PROMPT
+    assert "~/.claude/agents/Explore.md" in SETUP_PROMPT
+
+
 def test_snippet_lists_cursor_in_cross_tool_coverage():
     """Cursor reads AGENTS.md in recent versions. The cross-tool
     preamble in Step 2 must mention Cursor alongside Codex CLI,
@@ -254,6 +273,23 @@ def test_snippet_lists_cursor_in_cross_tool_coverage():
     need a `### Do not` rule against Cursor-specific files when the
     same AGENTS.md covers Cursor too."""
     assert "Cursor" in SETUP_PROMPT
+
+
+def test_snippet_handles_user_written_content_outside_markers():
+    """If a user has hand-written ast-outline content in AGENTS.md
+    (perhaps from an old `ast-outline prompt >> AGENTS.md` run that
+    they then edited, or notes in their own words), Step 2 must not
+    silently append a second marker block on top — that would leave
+    two competing references in the file. The agent must scan for
+    `ast-outline` mentions outside markers and ask the user how to
+    handle them: wrap-as-is, replace, append-anyway, or skip."""
+    lowered = SETUP_PROMPT.lower()
+    # Scan logic explicit.
+    assert "outside markers" in lowered or "outside the markers" in lowered or "outside" in lowered
+    # The four options the user gets.
+    assert "wrap" in lowered  # wrap-existing-content option
+    # And the negative invariant — no silent append on top of user content.
+    assert "silently append" in lowered or "silently" in lowered
 
 
 def test_snippet_carries_diff_aware_re_run_logic():

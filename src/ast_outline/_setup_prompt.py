@@ -222,27 +222,61 @@ cross-project awareness.
 
    - **File missing** — create it containing only the marker-wrapped
      fresh canonical. No question needed.
-   - **Markers absent (file exists)** — append the marker-wrapped
-     fresh canonical at the end of the file with one blank line
-     above the opening marker. No question needed.
-   - **Markers present** — read the content between them and
-     compare to the fresh canonical:
-     - **Identical** — already up to date. Tell the user, continue.
-     - **Different** — the user may have either an older bundled
-       version (regular case) or a manual customization (their
-       project-specific tweaks). Do not replace silently. Show a
-       short diff summary — what changed in a sentence or two —
-       and ask which path they want:
-       1. **Replace with the fresh canonical** — overwrite.
-          Recommended when the diff looks like a version bump
-          (added language extensions, new fallback markers).
-       2. **Keep the existing block** — skip the write. Note this
-          in Step 4 so the user knows the snippet is now lagging.
-       3. **Show full diff first** — print the diff, then ask
-          again with the same three options.
+   - **File exists** — scan for any mention of `ast-outline`,
+     `## Code exploration` (the snippet's heading), or the markers
+     themselves. The scan governs which sub-branch applies:
 
-       Default to **ask**, never to overwrite. The user's manual
-       edits are load-bearing until proven otherwise.
+     - **No mention anywhere** — append the marker-wrapped fresh
+       canonical at the end of the file with one blank line above
+       the opening marker. No question needed.
+     - **Markers present** — read the content between them and
+       compare to the fresh canonical:
+       - **Identical** — already up to date. Tell the user,
+         continue.
+       - **Different** — the user may have either an older bundled
+         version (regular case) or a manual customization (their
+         project-specific tweaks). Do not replace silently. Show
+         a short diff summary — what changed in a sentence or two
+         — and ask which path they want:
+         1. **Replace with the fresh canonical** — overwrite.
+            Recommended when the diff looks like a version bump
+            (added language extensions, new fallback markers).
+         2. **Keep the existing block** — skip the write. Note
+            this in Step 4 so the user knows the snippet is now
+            lagging.
+         3. **Show full diff first** — print the diff, then ask
+            again with the same three options.
+
+         Default to **ask**, never to overwrite. The user's
+         manual edits are load-bearing until proven otherwise.
+     - **`ast-outline` mentioned outside markers** — the user has
+       hand-written content (perhaps from an old `ast-outline
+       prompt >> AGENTS.md` run that they then edited, or notes in
+       their own words). Do not append a second block silently —
+       that would leave two competing references in the same file.
+       Show the user the offending lines (file, line range, brief
+       excerpt) and ask which path they want:
+
+       1. **Wrap their existing content in markers** — leave the
+          text exactly as written, just add
+          `<!-- ast-outline:start -->` above and
+          `<!-- ast-outline:end -->` below. Future re-runs then
+          fall under the diff-aware branch. Recommended when the
+          user's version is intentional and they want to keep it.
+       2. **Replace it with the fresh canonical** — remove the
+          old hand-written block and write the marker-wrapped
+          fresh canonical in its place. Recommended when the old
+          content was a stale `ast-outline prompt` paste and the
+          user wants the current version.
+       3. **Append the fresh canonical anyway, in addition** —
+          accept the duplication. Use only when the user
+          explicitly wants both (rare; usually a sign of
+          confusion).
+       4. **Skip Step 2 entirely** — leave AGENTS.md untouched.
+          Note in Step 4 that the snippet was not written.
+
+       Default to **ask**. Never silently append on top of
+       existing user content.
 
 3. Cross-tool wiring (only when relevant): if you wrote to
    `./AGENTS.md` AND `./CLAUDE.md` also exists AND CLAUDE.md does
@@ -294,6 +328,53 @@ content between them to the canonical block above.
 Do not patch built-in subagents (Claude Code's `Explore`,
 `codebase-scout`, `general-purpose`, and similar) — they are not
 file-based and not user-modifiable.
+
+**Claude-Code-only sub-step: shadow the built-in `Explore` agent.**
+Claude Code lets you override a built-in subagent by creating a
+file with the same name in `.claude/agents/`. This is useful
+because Claude Code's `Explore` runs in an isolated context — it
+does not inherit `CLAUDE.md` / `AGENTS.md`, so the snippet you just
+wrote in Step 2 does not reach `Explore` invocations on its own.
+
+If — and only if — the user has Claude Code (`~/.claude/` exists)
+AND no `.claude/agents/Explore.md` (or `~/.claude/agents/Explore.md`)
+exists yet, ask once:
+
+> Claude Code's built-in `Explore` subagent runs in an isolated
+> context — it won't see the snippet from Step 2. Create a shadow
+> at `.claude/agents/Explore.md` (project) or
+> `~/.claude/agents/Explore.md` (global) so `Explore` learns to use
+> ast-outline too?
+
+If approved, create the file with this body (project-local default,
+ask which scope the user wants). The shadow file embeds the **full
+fresh canonical** from Step 2.1 — not a short pointer — because the
+shadow is a brand-new file, the canonical is the entire reason the
+shadow exists, and embedding avoids forcing every `Explore`
+invocation to re-run `ast-outline prompt`. Future `setup-prompt`
+re-runs will pick up the shadow under the diff-aware branch (Step 3
+patch flow) and offer to refresh it when `ast-outline` upgrades:
+
+    ---
+    name: Explore
+    description: Explore the codebase to find files and code relevant to a task. Returns a focused summary with file paths, key symbols, and relationships — not full file contents.
+    ---
+
+    You are an exploration subagent for the current codebase. Return
+    a focused summary: file paths, key symbols, relationships — not
+    full file contents. The parent agent will read specific files
+    itself.
+
+    <!-- ast-outline:start -->
+    {paste the fresh canonical captured in Step 2.1 verbatim here}
+    <!-- ast-outline:end -->
+
+    Falls back to native Read / Grep / Glob when `ast-outline` is
+    unavailable (`command not found`).
+
+Skip this sub-step entirely if the user does not use Claude Code,
+or if a shadow already exists (in which case it falls under the
+diff-aware patch logic above, not this create-from-scratch flow).
 
 ### Step 4 — Confirm
 

@@ -7,6 +7,55 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.7.7] — 2026-05-06
+
+### Added
+
+- **Setup-prompt — Claude-Code-only Explore-shadow sub-step.**
+  Claude Code's built-in `Explore` subagent runs in an isolated
+  context — it does not inherit `CLAUDE.md` / `AGENTS.md`, so the
+  snippet written in Step 2 of `setup-prompt` does not reach
+  `Explore` invocations on its own. Setup-prompt now detects when
+  the user has Claude Code (`~/.claude/` exists) AND no
+  `.claude/agents/Explore.md` shadow file exists yet, and asks
+  once whether to create the shadow. If approved, writes a
+  ready-to-go `Explore` definition that **embeds the full fresh
+  canonical** from Step 2.1 verbatim (not a short pointer — the
+  shadow is a brand-new file and embedding avoids forcing every
+  `Explore` invocation to re-run `ast-outline prompt`), wrapped
+  in the standard `<!-- ast-outline:start -->` /
+  `<!-- ast-outline:end -->` markers; offers project-local
+  (`.claude/agents/Explore.md`) vs global
+  (`~/.claude/agents/Explore.md`) scope. On future re-runs the
+  shadow falls under the diff-aware patch flow and gets refreshed
+  on `ast-outline` upgrades. Codex and Gemini subagents are
+  user-defined files only — they fall under the existing
+  diff-aware patch logic, no shadow concept needed. Skipped in
+  headless mode and when a shadow already exists. Closes the gap
+  where ast-outline integration via AGENTS.md silently failed to
+  reach the most-used Claude Code subagent.
+
+### Changed
+
+- **Setup-prompt — Step 2 detects user-written ast-outline content
+  outside markers.** Previously the "markers absent" branch
+  silently appended a fresh marker block at the end of an existing
+  AGENTS.md / CLAUDE.md / GEMINI.md. If the user had hand-written
+  ast-outline content (perhaps from an old `ast-outline prompt >>
+  AGENTS.md` run that they later edited, or notes in their own
+  words), this left two competing references in the same file.
+  Setup-prompt now scans for `ast-outline` mentions in the target
+  file before any write. If found outside markers, it shows the
+  user the offending lines and asks which path to take: (1) wrap
+  the existing content in markers verbatim — leaves text exactly
+  as written, future re-runs fall under the diff-aware branch;
+  (2) replace the hand-written block with the fresh canonical;
+  (3) append the fresh canonical anyway, accepting the
+  duplication; (4) skip Step 2 entirely. Default is to **ask**;
+  silent append on top of existing user content is no longer
+  reachable. Protects manual customizations across CLI upgrades
+  even when the user never used the `setup-prompt` flow before.
+
 ## [0.7.6] — 2026-05-06
 
 ### Added
