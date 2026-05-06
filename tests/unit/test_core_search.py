@@ -11,6 +11,7 @@ from ast_outline.adapters.markdown import MarkdownAdapter
 from ast_outline.adapters.python import PythonAdapter
 from ast_outline.adapters.rust import RustAdapter
 from ast_outline.adapters.scala import ScalaAdapter
+from ast_outline.adapters.sql import SqlAdapter
 from ast_outline.adapters.typescript import TypeScriptAdapter
 from ast_outline.core import find_symbols
 
@@ -157,6 +158,17 @@ _WHOLE_TYPE_CASES = [
         "### Second Point",
         "Details of the third point.",
         id="markdown",
+    ),
+    pytest.param(
+        # SQL tables are the closest analog to a "type with members" —
+        # the body covers from the leading doc-comment through the
+        # closing paren of the column list. The trailing `;` belongs
+        # to the statement wrapper, not the table body.
+        SqlAdapter, "sql/schema.sql", "users", "table",
+        "CREATE TABLE users",
+        "email TEXT NOT NULL UNIQUE",
+        "updated_at TIMESTAMP",
+        id="sql",
     ),
 ]
 

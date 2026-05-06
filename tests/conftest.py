@@ -82,3 +82,8 @@ def css_dir() -> Path:
 @pytest.fixture(scope="session")
 def scss_dir() -> Path:
     return FIXTURES_DIR / "scss"
+
+
+@pytest.fixture(scope="session")
+def sql_dir() -> Path:
+    return FIXTURES_DIR / "sql"

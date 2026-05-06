@@ -345,3 +345,61 @@ def test_line_comments_above_function_captured_as_docs(fixtures_dir):
     fn = _find(r.declarations, kind=KIND_FUNCTION, name="wrapBody")
     assert fn.docs
     assert any("plain helper" in d for d in fn.docs)
+
+
+# --- Conditional imports counter (dynamic `import('...')`) ---------------
+#
+# Adapter-level integration check that `parse()` actually wires the
+# counter into `ParseResult`. Cross-language semantic coverage (what
+# does and doesn't count, edge cases per scope kind) lives in
+# `test_imports.py`. Mirrors `test_php_adapter::
+# test_conditional_imports_count_set_for_skipped_includes`.
+
+
+def test_conditional_imports_count_set_for_dynamic_imports(tmp_path):
+    p = tmp_path / "lazy.ts"
+    p.write_text(
+        "import { foo } from './a';\n"
+        "async function loadOne() {\n"
+        "  return import('./one');\n"
+        "}\n"
+        "class Service {\n"
+        "  async loadTwo() {\n"
+        "    return import('./two');\n"
+        "  }\n"
+        "}\n"
+        "if (cond) {\n"
+        "  const three = await import('./three');\n"
+        "}\n"
+    )
+    r = TypeScriptAdapter().parse(p)
+    assert r.imports == ["import { foo } from './a'"]
+    assert r.conditional_imports_count == 3
+
+
+def test_conditional_imports_count_zero_for_only_static_top_level(tmp_path):
+    p = tmp_path / "static.ts"
+    p.write_text(
+        "import { foo } from './a';\n"
+        "import bar from './b';\n"
+        "export const x = 1;\n"
+    )
+    r = TypeScriptAdapter().parse(p)
+    assert r.conditional_imports_count == 0
+
+
+def test_conditional_imports_count_works_for_plain_js_extension(tmp_path):
+    """The adapter handles `.js` / `.mjs` / `.cjs` with the TypeScript
+    grammar (TS is a JS superset). Dynamic `import('...')` is native
+    ES2020+, so JS files must get the same counter treatment as `.ts`."""
+    p = tmp_path / "lazy.mjs"
+    p.write_text(
+        "import { foo } from './a.js';\n"
+        "export async function loadPlugin() {\n"
+        "  const mod = await import('./plugin.js');\n"
+        "  return mod;\n"
+        "}\n"
+    )
+    r = TypeScriptAdapter().parse(p)
+    assert r.imports == ["import { foo } from './a.js'"]
+    assert r.conditional_imports_count == 1

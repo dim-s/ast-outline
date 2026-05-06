@@ -407,9 +407,10 @@ def test_empty_imports_for_file_with_none(tmp_path: Path) -> None:
         r = adapter.parse(p)
         assert r.imports == [], f"{adapter.language_name} expected empty imports"
         # Default for the conditional-imports counter is 0. PHP, Python,
-        # Rust and Scala populate it for non-top-level imports; Java,
-        # Go, Kotlin, C# and TypeScript leave it at 0 (their imports
-        # are top-level by spec). On a no-imports source, every adapter
+        # Ruby, Rust, Scala and TypeScript populate it for non-top-level
+        # imports / dynamic `import('...')` calls; Java, Go, Kotlin and
+        # C# leave it at 0 (their imports are top-level by spec, no
+        # runtime form exists). On a no-imports source, every adapter
         # must report 0 — a non-zero value would indicate a spurious
         # conditional dependency flag on a file that has none.
         assert r.conditional_imports_count == 0, (
@@ -452,10 +453,12 @@ def test_each_adapter_wires_collect_imports_into_parse_result(tmp_path: Path) ->
 # lets the renderer emit `[+ N conditional includes]` so an agent isn't
 # misled into thinking the file has no further dependencies.
 #
-# Languages that DO support locally-scoped imports populate the counter
-# (Python, Rust, Scala, PHP). Languages whose imports are top-level by
-# spec (Java, Go, Kotlin, TypeScript ES, C#) leave it at 0 — covered by
-# `test_empty_imports_for_file_with_none` above.
+# Languages that DO support locally-scoped imports / runtime-form
+# imports populate the counter (Python, Rust, Scala, PHP, Ruby,
+# TypeScript — TS for dynamic `import('...')` inside functions /
+# methods / control-flow). Languages whose imports are top-level by
+# spec with no runtime form (Java, Go, Kotlin, C#) leave it at 0 —
+# covered by `test_empty_imports_for_file_with_none` above.
 
 
 def test_python_counts_imports_inside_function_class_method(tmp_path: Path) -> None:
@@ -560,6 +563,104 @@ def test_scala_counter_zero_when_only_top_level(tmp_path: Path) -> None:
     ))
     r = ScalaAdapter().parse(p)
     assert r.conditional_imports_count == 0
+
+
+def test_typescript_counts_dynamic_imports_in_function_method_block(
+    tmp_path: Path,
+) -> None:
+    """TS dynamic `import('...')` inside a function / method / control-
+    flow scope counts as a conditional dependency. The static
+    `import` statement at the top stays in `r.imports`; the dynamic
+    forms are intentionally NOT listed (they're runtime, not
+    declarative) but must contribute to the counter."""
+    p = _write(tmp_path, "m.ts", (
+        "import { foo } from './a';\n"
+        "async function lazy() {\n"
+        "  const x = await import('./inside_fn');\n"
+        "  if (cond) {\n"
+        "    const y = await import('./inside_fn_if');\n"
+        "  }\n"
+        "}\n"
+        "class K {\n"
+        "  async load() {\n"
+        "    return import('./inside_method');\n"
+        "  }\n"
+        "}\n"
+        "try {\n"
+        "  const z = await import('./inside_try');\n"
+        "} catch (e) {\n"
+        "  const w = await import('./inside_catch');\n"
+        "}\n"
+    ))
+    r = TypeScriptAdapter().parse(p)
+    assert r.imports == ["import { foo } from './a'"]
+    # 5 conditional: inside_fn, inside_fn_if, inside_method, inside_try,
+    # inside_catch. None of the dynamic imports leak into r.imports.
+    assert r.conditional_imports_count == 5
+
+
+def test_typescript_counter_zero_when_only_static_and_top_level(
+    tmp_path: Path,
+) -> None:
+    """Top-level dynamic `await import('./x')` runs unconditionally on
+    module load — it's NOT counted (mirror PHP's top-level
+    assignment-wrapped-include rule). Only static `import` statements
+    plus a top-level dynamic import → counter stays at 0."""
+    p = _write(tmp_path, "m.ts", (
+        "import { foo } from './a';\n"
+        "import bar from './b';\n"
+        "const top = await import('./top');\n"
+    ))
+    r = TypeScriptAdapter().parse(p)
+    assert r.imports == [
+        "import { foo } from './a'",
+        "import bar from './b'",
+    ]
+    assert r.conditional_imports_count == 0
+
+
+def test_typescript_counter_ignores_require_calls(tmp_path: Path) -> None:
+    """`require(...)` is a name-pattern call with no dedicated AST
+    node — pattern-matching by callee identifier is fragile, so the
+    adapter deliberately neither lists nor counts these. This test
+    pins that decision: putting `require` calls inside a function
+    body must NOT bump the counter."""
+    p = _write(tmp_path, "m.cjs", (
+        "function load() {\n"
+        "  const a = require('./a');\n"
+        "  const b = require('./b');\n"
+        "  return [a, b];\n"
+        "}\n"
+    ))
+    r = TypeScriptAdapter().parse(p)
+    assert r.imports == []
+    assert r.conditional_imports_count == 0
+
+
+def test_typescript_counts_dynamic_imports_in_arrow_and_loops(
+    tmp_path: Path,
+) -> None:
+    """Pin every scope-kind in `_TS_CONDITIONAL_OR_RUNTIME_SCOPES`
+    against an explicit test case — removing any one entry from the
+    frozenset (arrow_function, switch_statement, for..of, while_statement)
+    must break a test, not pass silently. Function/class/if/try are
+    already covered by `test_typescript_counts_dynamic_imports_in_function_method_block`."""
+    p = _write(tmp_path, "m.ts", (
+        "const arrow = async () => import('./inside_arrow');\n"
+        "switch (x) {\n"
+        "  case 1: { const a = await import('./inside_switch'); break; }\n"
+        "  default: break;\n"
+        "}\n"
+        "for (const m of mods) {\n"
+        "  const b = await import(m);\n"  # path is a runtime expression — still a dynamic import
+        "}\n"
+        "while (cond) {\n"
+        "  const c = await import('./inside_while');\n"
+        "}\n"
+    ))
+    r = TypeScriptAdapter().parse(p)
+    # 4 conditional: inside_arrow, inside_switch, the for..of import, inside_while.
+    assert r.conditional_imports_count == 4
 
 
 # --- Conditional-counter edge cases (per language) ----------------------

@@ -107,6 +107,7 @@ MCP shim wrapping the same calls.
 | Ruby       | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile` *(incl. Rails)* |
 | CSS        | `.css` |
 | SCSS       | `.scss` *(mixins, functions, variables, placeholders; `&` resolves against parent)* |
+| SQL        | `.sql` *(tables w/ columns, views, types, enums, functions, procedures, triggers, indexes, sequences, schemas, domains; PostgreSQL primary, MySQL/SQLite usable)* |
 | Markdown   | `.md`, `.markdown`, `.mdx`, `.mdown` |
 | YAML       | `.yaml`, `.yml` |
 
@@ -123,6 +124,7 @@ MCP shim wrapping the same calls.
 - **Ruby** — modules (with `module Foo::Bar` qualified form + old-style nested-module collapse to `A::B::C`), classes with `< Super` superclass + `include` / `extend` / `prepend` mixins surfaced on the type header, methods, `def self.foo` singleton methods (marked `[static]`), `class << self` block (unwraps flat with `[static]` markers), operators (`+`, `<=>`, `[]`, `[]=`, `-@`, `+@`, `==`, `!`, …), `attr_accessor` / `attr_reader` / `attr_writer` (one field per symbol with marker), `alias` / `alias_method`. Visibility tracked as a state machine — bare `private` / `public` / `protected` flips subsequent decls; `private :foo, :bar` / `private_class_method :baz` retroactively mark named methods. **Rails associations recognised by default** (`has_many` / `has_one` / `belongs_to` / `has_and_belongs_to_many` surface as fields with marker). Convention-named `Rakefile` / `Gemfile` resolve via basename match. `require` / `require_relative` / `load` / `autoload` collected as imports; lazy loads inside method bodies counted into `[+ N conditional includes]`.
 - **CSS** — rules (`.foo, .bar { ... }`), at-rules (`@media`, `@supports`, `@layer`, `@keyframes`, `@container`, `@font-face`), CSS native nesting with `&`. Each rule carries the bare simple-selector tokens it styles, so `find_symbols(".btn-primary")` returns every cascade-relevant definition (top-level, inside `@media`, themed, descendant in `.modal`) with the wrapping at-rule visible in the breadcrumb. Pseudo-classes and attribute filters stripped for matching — `.btn-primary:hover` and `.btn-primary[disabled]` both match `.btn-primary`. `:is(.a, .b)` / `:where(.a, .b)` recurse (additive); `:not(...)` / `:has(...)` don't. `@import` collected as imports.
 - **SCSS** — full CSS coverage plus `@mixin name($args)` (callable, gets `()` in digest), `@function name($args)`, top-level `$variable: value` (with `!default`), `%placeholder` extend-only selectors. Sass privacy convention applied — names with leading `_` / `-` marked private and hidden under `--include-private=False`, mirroring what Sass itself doesn't export via `@use`. Nested rules with `&` resolve against each parent simple selector — `.card { &__header { } }` is findable as `.card__header`; multi-selector parents propagate (`a, .link { &:hover { } }` is findable as both `a` and `.link`). `@use`, `@forward`, and legacy `@import` collected as imports.
+- **SQL** — DDL-focused: `CREATE TABLE` (with each column emitted as a `KIND_FIELD` child carrying the source-true column line — `id INTEGER PRIMARY KEY`, `email TEXT NOT NULL UNIQUE`); `CREATE VIEW` and `CREATE MATERIALIZED VIEW` distinguished via `native_kind`; `CREATE TYPE foo AS (...)` (composite → `KIND_RECORD` with field children); `CREATE TYPE foo AS ENUM (...)` (enum with member children); `CREATE FUNCTION` with full parameter list + return type; `CREATE TRIGGER` (`native_kind="trigger"`); `CREATE INDEX` and `CREATE SEQUENCE` (`KIND_FIELD` + `native_kind`); `CREATE SCHEMA` (`KIND_NAMESPACE`). `--` line and `/* … */` block comments preceding a statement attach as `docs`. `CREATE EXTENSION` collected as imports. PL/pgSQL function bodies parse as opaque `$$ … $$` strings — the header extracts cleanly, and parse errors inside bodies are excluded from `error_count`. **Regex fallback** recovers four constructs the upstream grammar can't parse: `CREATE [OR REPLACE] PROCEDURE` (`KIND_FUNCTION` + `native_kind="procedure"`), `CREATE DOMAIN` (`KIND_FIELD` + `native_kind="domain"`), `LOAD 'lib'` and `IMPORT FOREIGN SCHEMA …` (both into imports). The fallback is line-anchored and gated by AST-derived skip ranges (`comment` / `marginalia` / `literal` / `block` subtrees) — red herrings like `CREATE PROCEDURE` text inside a comment, string literal, or an outer function body don't produce spurious declarations. Dialect coverage: **PostgreSQL** is the primary target (every modern construct works); **MySQL** and **SQLite** schemas extract tables / columns / indexes / views cleanly with some `error_count > 0` noise on dialect-specific syntax (`ENGINE=InnoDB`, `AUTOINCREMENT`, inline `KEY` constraints); **MSSQL / T-SQL**, **Oracle PL/SQL**, and **BigQuery** have partial coverage — bracketed identifiers, `GO` separators, `VARCHAR2`, and `STRUCT<>` / backtick names degrade. Powered by `tree-sitter-sql` (DerekStride).
 - **Markdown** — heading TOC + fenced code blocks.
 - **YAML** — key hierarchy with line ranges, `[i]` sequence paths, multi-document separators, format-detect for Kubernetes / OpenAPI / GitHub Actions in the header.
 
@@ -235,7 +237,7 @@ ast-outline prompt | pbcopy   # macOS clipboard
 For `.cs`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hh`, `.py`, `.pyi`,
 `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`, `.scala`, `.sc`,
 `.go`, `.rs`, `.php`, `.phtml`, `.rb`, `.rake`, `.gemspec`, `.css`,
-`.scss`, `.md`, and `.yaml`/`.yml` files, read structure with
+`.scss`, `.sql`, `.md`, and `.yaml`/`.yml` files, read structure with
 `ast-outline` before opening full contents.
 
 Pick the smallest of these that answers your question — they're a
@@ -269,6 +271,9 @@ you already know the symbol:
    `$var`) — pseudos and attribute filters are stripped, so
    `.btn-primary` finds the rule even when it carries `:hover` or
    nests in `.modal`.
+   For sql, the symbol is a table or column name (`users`,
+   `users.email`) — `show users` returns the table definition,
+   `show users.email` returns one column line.
    Add `--signature` to any of the above to return header only
    (docs + attrs + signature, no body) — useful after `digest`, when
    you have the name and want the contract, not the implementation.
@@ -609,7 +614,7 @@ uv pip install -e ".[dev]"
 ```
 
 The suite covers every adapter (C#, C++, Python, TypeScript/JS, Java,
-Kotlin, Scala, Go, Rust, PHP, Ruby, CSS, SCSS, Markdown, YAML), the language-agnostic
+Kotlin, Scala, Go, Rust, PHP, Ruby, CSS, SCSS, SQL, Markdown, YAML), the language-agnostic
 renderers, symbol search, and the CLI end-to-end. Fixtures live under `tests/fixtures/`;
 tests never reach outside that directory.
 New behaviour should come with a test; new languages should ship with a

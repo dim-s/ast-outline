@@ -7,6 +7,87 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.7.5] — 2026-05-06
+
+### Added
+
+- **SQL adapter** — parses `.sql`, powered by DerekStride's
+  `tree-sitter-sql` plus a regex fallback for grammar-unsupported
+  constructs. Targets DDL: every `CREATE TABLE` is a `KIND_TABLE`
+  whose columns surface as `KIND_FIELD` children with the full
+  source-true column line as signature
+  (`email TEXT NOT NULL UNIQUE`). Run `outline schema.sql` and an
+  agent reading a multi-thousand-line `pg_dump` artefact gets the
+  entire schema shape — table list + column types + inline
+  constraints — without loading the file; `digest` shows the table
+  list plus a column count per file (use `--include-fields` to see
+  the columns themselves). `CREATE VIEW` and
+  `CREATE MATERIALIZED VIEW` → `KIND_VIEW` (distinguished via
+  `native_kind`); `CREATE TYPE foo AS (…)` → `KIND_RECORD` with
+  field children; `CREATE TYPE foo AS ENUM (…)` → `KIND_ENUM` with
+  member children; `CREATE FUNCTION` and `CREATE TRIGGER` →
+  `KIND_FUNCTION` (triggers carry `native_kind="trigger"`);
+  `CREATE INDEX` and `CREATE SEQUENCE` → `KIND_FIELD` +
+  `native_kind`; `CREATE SCHEMA` → `KIND_NAMESPACE`.
+  `CREATE EXTENSION` collected into imports. `--` line and
+  `/* … */` block comments immediately preceding a statement
+  attach as `docs` (multi-line block comments preserve source
+  line order). PL/pgSQL bodies inside `AS $$ … $$` parse as
+  opaque dollar-quoted strings — the function header (name,
+  parameters, return type) extracts cleanly, and parse errors
+  inside function bodies are excluded from `error_count` so a file
+  using `:=` assignment or `IF…THEN…END IF` doesn't get
+  mis-reported as broken. **Regex fallback** recovers six constructs
+  the upstream grammar can't parse:
+  `CREATE [OR REPLACE] PROCEDURE` → `KIND_FUNCTION` +
+  `native_kind="procedure"`; `CREATE DOMAIN` → `KIND_FIELD` +
+  `native_kind="domain"`; `CREATE TABLE … PARTITION OF parent` →
+  `KIND_TABLE` (modern PG declarative partitioning; the parent's
+  columns are inherited so child decls have no `children`);
+  `CREATE FUNCTION … SECURITY DEFINER` and similar exotic modifier
+  orderings the grammar errors on → `KIND_FUNCTION`, with a
+  byte-range guard so cleanly-parsed functions aren't
+  double-extracted; `LOAD 'lib'` and
+  `IMPORT FOREIGN SCHEMA … FROM SERVER … INTO …` → imports list.
+  The fallback is line-anchored, gated by AST-derived skip ranges
+  (`comment` / `marginalia` / `literal` / `block` subtrees) — red
+  herrings like `CREATE PROCEDURE` text inside a comment, a string
+  literal, or an outer function's PL/pgSQL body don't surface as
+  spurious declarations — and short-circuited by a bytes-level
+  fingerprint check, so the typical schema-dump file with no
+  fallback constructs pays nothing. Verified working end-to-end:
+  `CREATE TABLE IF NOT EXISTS / TEMP / UNLOGGED`,
+  `CREATE TABLE AS SELECT`, generated columns
+  (`GENERATED ALWAYS AS … STORED`), identity columns, indexes with
+  `USING gin / gist`, partial indexes (`WHERE …`), expression
+  indexes, `CREATE OR REPLACE FUNCTION`, `RETURNS TABLE(…)` /
+  `RETURNS SETOF`, function modifiers (`IMMUTABLE` / `STABLE` /
+  `VOLATILE` / `SECURITY DEFINER`), reserved-word and Unicode
+  quoted identifiers (`"user"`, `"Пользователи"`), CRLF line
+  endings, files with no trailing semicolon, empty files, and
+  comment-only files. Dialect coverage: PostgreSQL is the primary
+  target (every modern construct works); MySQL and SQLite schemas
+  extract tables / columns / indexes / views cleanly with some
+  `error_count > 0` noise on dialect-specific table options
+  (`ENGINE=InnoDB`, foreign-key clauses, `AUTOINCREMENT`); MSSQL,
+  T-SQL, Oracle PL/SQL, and BigQuery have partial coverage —
+  bracketed identifiers, `GO` separators, Oracle types like
+  `VARCHAR2`, and BigQuery `STRUCT<>` / backtick names degrade.
+- **TypeScript / JavaScript adapter** — dynamic `import('...')` calls
+  inside a function, method, control-flow block (`if` / `switch` /
+  `try` / loops) or class body now contribute to
+  `ParseResult.conditional_imports_count`, rendered as
+  `[+ N conditional includes]` next to the imports line in outline /
+  digest. Brings TS/JS in line with Python, Ruby and PHP — an agent
+  reading the outline of a file with lazy module loading no longer
+  treats it as dependency-closed by its top-level `import` statements.
+  Top-level `await import('./x')` is NOT counted (it executes
+  unconditionally on module load, mirroring PHP's rule for top-level
+  assignment-wrapped includes). `require(...)` calls remain
+  deliberately out of scope (no dedicated AST node — pattern-matching
+  by callee identifier is fragile). Applies to `.ts`, `.tsx`, `.js`,
+  `.jsx`, `.mjs`, `.cjs`.
+
 ## [0.7.4] — 2026-05-06
 
 ### Added

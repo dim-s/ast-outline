@@ -32,7 +32,7 @@ AGENT_PROMPT = """## Code exploration — prefer `ast-outline` over full reads
 For `.cs`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hh`, `.py`, `.pyi`,
 `.ts`, `.tsx`, `.js`, `.jsx`, `.java`, `.kt`, `.kts`, `.scala`, `.sc`,
 `.go`, `.rs`, `.php`, `.phtml`, `.rb`, `.rake`, `.gemspec`, `.css`,
-`.scss`, `.md`, and `.yaml`/`.yml` files, read structure with
+`.scss`, `.sql`, `.md`, and `.yaml`/`.yml` files, read structure with
 `ast-outline` before opening full contents.
 
 Pick the smallest of these that answers your question — they're a
@@ -66,6 +66,9 @@ you already know the symbol:
    `$var`) — pseudos and attribute filters are stripped, so
    `.btn-primary` finds the rule even when it carries `:hover` or
    nests in `.modal`.
+   For sql, the symbol is a table or column name (`users`,
+   `users.email`) — `show users` returns the table definition,
+   `show users.email` returns one column line.
    Add `--signature` to any of the above to return header only
    (docs + attrs + signature, no body) — useful after `digest`, when
    you have the name and want the contract, not the implementation.

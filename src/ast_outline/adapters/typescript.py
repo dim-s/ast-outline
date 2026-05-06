@@ -76,6 +76,16 @@ class TypeScriptAdapter:
         _walk_module(tree.root_node, src, decls)
         imports: list[str] = []
         _collect_imports(tree.root_node, src, imports)
+        # Count dynamic `import('...')` calls that live inside a
+        # function / method / control-flow scope — i.e. NOT module-
+        # level. Reported as `conditional_imports_count` so renderers
+        # can append `[+ N conditional includes]` to the imports line
+        # and the agent isn't misled into thinking the file's deps end
+        # at its static `import` statements. Top-level dynamic imports
+        # (e.g. `const x = await import('./a')` at module scope) execute
+        # unconditionally on module load, so they're not counted — the
+        # same way PHP skips top-level `$x = require 'a';`.
+        conditional_count = _count_conditional_imports(tree.root_node)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -84,6 +94,7 @@ class TypeScriptAdapter:
             declarations=decls,
             error_count=count_parse_errors(tree.root_node),
             imports=imports,
+            conditional_imports_count=conditional_count,
         )
 
 
@@ -95,13 +106,24 @@ class TypeScriptAdapter:
 # → one line), and strip the trailing semicolon. Source-true output is
 # what any LLM agent already knows how to read; no synthetic format.
 #
-# Out of scope for `--imports`:
-# - `require(...)` calls in .js/.cjs (a runtime function, not an import
-#   statement; pattern-matching the LHS = .name and RHS = call form is
-#   fragile and noisy)
-# - `import('...')` dynamic expressions (runtime, not declarative)
-# - `export ... from '...'` re-exports (separate concern, would need a
-#   sibling --exports flag)
+# Not listed in `--imports` (but counted, see below):
+# - `import('...')` dynamic expressions inside functions / methods /
+#   control-flow blocks. Runtime, not declarative — listing them as
+#   static imports would mislead an agent into thinking they always
+#   load. We *count* them in `conditional_imports_count` instead, so
+#   the renderer can emit `[+ N conditional includes]` next to the
+#   imports line. Top-level dynamic imports (rare; `const x = await
+#   import('./a')` at module scope) execute unconditionally on module
+#   load and are not counted, matching PHP's rule for top-level
+#   assignment-wrapped includes.
+#
+# Out of scope entirely:
+# - `require(...)` calls in .js/.cjs — a runtime function with no
+#   dedicated AST node (just a `call_expression` whose callee is the
+#   identifier "require"); pattern-matching by name is fragile and
+#   noisy, so we neither list nor count these.
+# - `export ... from '...'` re-exports — separate concern, would need a
+#   sibling `--exports` flag.
 
 
 def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
@@ -110,6 +132,72 @@ def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
             text = _collapse_ws(_text(child, src)).rstrip(";").strip()
             if text:
                 out.append(text)
+
+
+# AST node types that take a dynamic `import(...)` out of "module-level
+# unconditional" status. Mirrors PHP's `_CONDITIONAL_OR_RUNTIME_SCOPES`
+# semantics: once the walk enters any of these on the parent chain,
+# every dynamic import below counts no matter how deep nested.
+# Sub-clauses like `else_clause`, `catch_clause`, `finally_clause`,
+# `switch_case`, `switch_default` are all reachable only via their
+# parent statement (which is already in this set), so listing the
+# parent is enough.
+_TS_CONDITIONAL_OR_RUNTIME_SCOPES = frozenset({
+    # Function-like scopes (any import inside is per-call, not per-load)
+    "function_declaration",
+    "function_expression",
+    "arrow_function",
+    "generator_function_declaration",
+    "generator_function",
+    "method_definition",
+    # Class body — instance field initializers run per-construction;
+    # `static` field initializers run at class-evaluation time (which
+    # for a top-level class IS module load), but they're class-scoped
+    # not module-scoped. We count both conservatively rather than try
+    # to distinguish — a `static` field still represents a dependency
+    # the agent should know about even though it loads unconditionally.
+    "class_body",
+    # Control flow. `for_in_statement` covers BOTH `for..in` and
+    # `for..of` — tree-sitter-typescript reuses one node type for both.
+    "if_statement",
+    "switch_statement",
+    "try_statement",
+    "for_statement",
+    "for_in_statement",
+    "while_statement",
+    "do_statement",
+})
+
+
+def _count_conditional_imports(root: Node) -> int:
+    """Count dynamic `import('...')` call expressions that live inside
+    a function / method / class / control-flow scope.
+
+    A dynamic import in tree-sitter-typescript is a `call_expression`
+    whose `function` field is the special `import` node (not an
+    `identifier` named "import" — the grammar emits a dedicated keyword
+    node). This is the same shape for plain `import('./x')`,
+    `await import('./x')`, and `import('./x').then(...)`.
+
+    Iterative `(node, in_scope)` walk so deeply nested .ts files stay
+    well within Python recursion limits.
+    """
+    count = 0
+    stack: list[tuple[Node, bool]] = [(root, False)]
+    while stack:
+        node, in_scope = stack.pop()
+        if node.type == "call_expression":
+            fn = node.child_by_field_name("function")
+            if fn is not None and fn.type == "import":
+                if in_scope:
+                    count += 1
+                # The argument list of an `import(...)` is a path
+                # expression, not another import — skip its subtree.
+                continue
+        new_in_scope = in_scope or node.type in _TS_CONDITIONAL_OR_RUNTIME_SCOPES
+        for c in node.children:
+            stack.append((c, new_in_scope))
+    return count
 
 
 # --- Walk -----------------------------------------------------------------

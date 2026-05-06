@@ -103,6 +103,7 @@ embeddings 的 MCP 服务器）相反。现代 LLM Agent 足够聪明，能将
 | Ruby       | `.rb`、`.rake`、`.gemspec`、`.ru`、`Rakefile`、`Gemfile` *（含 Rails）* |
 | CSS        | `.css` |
 | SCSS       | `.scss` *（mixin、function、变量、placeholder；`&` 对父级解析）* |
+| SQL        | `.sql` *（带列的表、视图、类型、枚举、函数、过程、触发器、索引、序列、模式、domain；PostgreSQL 为主，MySQL/SQLite 可用）* |
 | Markdown   | `.md`、`.markdown`、`.mdx`、`.mdown` |
 | YAML       | `.yaml`、`.yml` |
 
@@ -117,6 +118,7 @@ embeddings 的 MCP 服务器）相反。现代 LLM Agent 足够聪明，能将
 - **Ruby** —— 模块（支持 `module Foo::Bar` 限定形式 + 嵌套模块折叠为 `A::B::C`）、带 `< Super` 父类与 `include` / `extend` / `prepend` 混入的类（混入显示在类型头部）、方法、`def self.foo` 单例方法与 `class << self` 块（均标记 `[static]`）、运算符（`+` / `<=>` / `[]` / `[]=` / `-@` / `+@` / `==` / `!` / …）、`attr_accessor` / `attr_reader` / `attr_writer`（每个符号一条字段并附带标记）、`alias` / `alias_method`、可见性状态机（`private` / `protected` / `public` 切换；`private :foo` 点对点）。**默认识别 Rails 关联**（`has_many` / `has_one` / `belongs_to` / `has_and_belongs_to_many`）。无扩展名的 `Rakefile` / `Gemfile` 通过 basename 匹配。`require` / `require_relative` / `load` / `autoload` 收集为 imports。
 - **CSS** —— 规则（`.foo, .bar { ... }`）、at-rule（`@media`、`@supports`、`@layer`、`@keyframes`、`@container`、`@font-face`）、原生 CSS 嵌套与 `&`。每个规则携带它所定义的 simple-selector token，所以 `find_symbols(".btn-primary")` 返回所有级联相关定义（顶层、`@media` 内、主题化、嵌套于 `.modal`），breadcrumb 中可见包裹的 at-rule。匹配时会剥离伪类与属性过滤 —— `.btn-primary:hover` 与 `.btn-primary[disabled]` 都匹配 `.btn-primary`。`:is(.a, .b)` / `:where(.a, .b)` 递归（additive）；`:not(...)` / `:has(...)` 不递归。`@import` 收集为 imports。
 - **SCSS** —— 完整 CSS 覆盖再加 `@mixin name($args)`（callable，digest 中带 `()`）、`@function name($args)`、顶层 `$variable: value`（含 `!default`）、`%placeholder`。应用 Sass 私有性约定 —— 名字以 `_` / `-` 起头标记为 private，在 `--include-private=False` 下被隐藏（与 Sass 自身 `@use` 不导出对应）。带 `&` 的嵌套规则对每个父级 simple selector 解析 —— `.card { &__header { } }` 可作为 `.card__header` 查找；多选择器父级会传播（`a, .link { &:hover { } }` 既可作为 `a` 又可作为 `.link` 查找）。`@use`、`@forward`、legacy `@import` 收集为 imports。
+- **SQL** —— 聚焦 DDL：`CREATE TABLE` 把每个列当作一个 `KIND_FIELD` 子项，签名保留源文本（`id INTEGER PRIMARY KEY`、`email TEXT NOT NULL UNIQUE`）；`CREATE VIEW` 与 `CREATE MATERIALIZED VIEW` 通过 `native_kind` 区分；`CREATE TYPE foo AS (...)`（复合 → `KIND_RECORD`）；`CREATE TYPE foo AS ENUM (...)`（带成员子项）；`CREATE FUNCTION` 的签名包含完整参数列表与返回类型；`CREATE TRIGGER`（`native_kind="trigger"`）；`CREATE INDEX`、`CREATE SEQUENCE`（`KIND_FIELD` + `native_kind`）；`CREATE SCHEMA`（`KIND_NAMESPACE`）。`--` 行注释和 `/* … */` 块注释紧贴 statement 时附加为 `docs`。`CREATE EXTENSION` 收集为 imports。`AS $$ … $$` 中的 PL/pgSQL 函数体作为不透明 dollar-quoted 字符串解析 —— 函数头仍能干净抽取，函数体内部的解析错误从 `error_count` 中排除。**正则回退**恢复了上游语法无法解析的四种结构：`CREATE [OR REPLACE] PROCEDURE`（`KIND_FUNCTION` + `native_kind="procedure"`）、`CREATE DOMAIN`（`KIND_FIELD` + `native_kind="domain"`）、`LOAD 'lib'` 和 `IMPORT FOREIGN SCHEMA …`（后两者收集为 imports）。回退是行锚定的，并通过 AST 派生的跳过区域（`comment` / `marginalia` / `literal` / `block` 子树）保护 —— 注释、字符串字面量或外层函数体内的 `CREATE PROCEDURE` 假象不会产生虚假声明。方言覆盖：**PostgreSQL** 为主（所有现代结构均工作）；**MySQL** 和 **SQLite** 模式可干净地抽取表 / 列 / 索引 / 视图，方言特定语法（`ENGINE=InnoDB`、`AUTOINCREMENT`、内联 `KEY`）会带来 `error_count > 0` 噪声；**MSSQL / T-SQL**、**Oracle PL/SQL**、**BigQuery** 部分覆盖 —— 方括号标识符、`GO` 分隔符、`VARCHAR2`、`STRUCT<>` / 反引号名会降级。底层使用 `tree-sitter-sql`（DerekStride）。
 - **Markdown** —— 标题目录 + 代码块。
 - **YAML** —— 键层级（含行范围）、`[i]` 序列索引路径、多文档分隔符、Kubernetes / OpenAPI / GitHub Actions 头部格式自动识别。
 
@@ -546,7 +548,7 @@ uv pip install -e ".[dev]"
 ```
 
 套件（1000+ 个测试）覆盖全部适配器（C#、C++、Python、TypeScript/JS、Java、
-Kotlin、Scala、Go、Rust、PHP、Ruby、CSS、SCSS、Markdown、YAML）、与语言无关的渲染器、符号搜索
+Kotlin、Scala、Go、Rust、PHP、Ruby、CSS、SCSS、SQL、Markdown、YAML）、与语言无关的渲染器、符号搜索
 以及端到端的 CLI。Fixture 放在 `tests/fixtures/`，测试不会越出该目录。任何新行为都
 应带上测试；新增语言时也应附带独立的 fixture 目录和一份
 `tests/unit/test_<lang>_adapter.py`。

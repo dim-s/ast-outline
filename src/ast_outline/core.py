@@ -58,6 +58,18 @@ KIND_MIXIN = "mixin"
 KIND_VARIABLE = "variable"
 KIND_PLACEHOLDER = "placeholder"
 
+# SQL kinds. Only TABLE and VIEW need their own canonical kind — the
+# rest of SQL maps onto existing kinds via ``native_kind``: schemas
+# reuse ``KIND_NAMESPACE``, composite types reuse ``KIND_RECORD``,
+# enums reuse ``KIND_ENUM``, functions/procedures/triggers all reuse
+# ``KIND_FUNCTION`` (already in ``CALLABLE_KINDS`` so digest gets
+# ``()`` automatically), indexes/sequences reuse ``KIND_FIELD``.
+# Tables and views stay separate because they're the dominant SQL
+# constructs and an agent reading a schema dump wants distinct
+# counters and digest tags for them.
+KIND_TABLE = "table"
+KIND_VIEW = "view"
+
 TYPE_KINDS = {KIND_CLASS, KIND_STRUCT, KIND_INTERFACE, KIND_RECORD, KIND_ENUM}
 CALLABLE_KINDS = {KIND_METHOD, KIND_FUNCTION, KIND_CTOR, KIND_DTOR, KIND_OPERATOR, KIND_MIXIN}
 
@@ -424,7 +436,15 @@ def _format_error_warning(result: ParseResult) -> Optional[str]:
     )
 
 
-_TYPE_COUNT_KINDS = TYPE_KINDS
+# Tables and views count as "types" for digest header / member
+# extraction / counter purposes, but stay OUT of ``TYPE_KINDS`` itself
+# — that set drives qualified-name prefixing for class-like containers
+# (``namespace.Class.member``), and SQL agents query column names
+# unqualified (``email``, not ``public.users.email``). The
+# ``_DIGEST_TYPE_KINDS`` superset is used wherever digest needs a
+# "type-like container with members" predicate.
+_DIGEST_TYPE_KINDS = TYPE_KINDS | {KIND_TABLE, KIND_VIEW}
+_TYPE_COUNT_KINDS = _DIGEST_TYPE_KINDS
 _METHOD_COUNT_KINDS = CALLABLE_KINDS
 _FIELD_COUNT_KINDS = {KIND_FIELD, KIND_PROPERTY, KIND_EVENT, KIND_INDEXER}
 
@@ -1314,7 +1334,7 @@ def _flatten_free_functions(decls: list[Declaration], opts: DigestOptions) -> li
     for d in decls:
         if d.kind == KIND_NAMESPACE:
             out.extend(_flatten_free_functions(d.children, opts))
-        elif d.kind in TYPE_KINDS:
+        elif d.kind in _DIGEST_TYPE_KINDS:
             continue
         else:
             if d.kind == KIND_FIELD and not opts.include_fields:
@@ -1326,12 +1346,20 @@ def _flatten_free_functions(decls: list[Declaration], opts: DigestOptions) -> li
 
 
 def _flatten_types(decls: list[Declaration], prefix: str = "") -> list[Declaration]:
-    """Dive through namespaces to collect types with qualified names."""
+    """Dive through namespaces to collect types with qualified names.
+
+    Tables and views are included in the digest "types" section even
+    though they're not in ``TYPE_KINDS`` — they're type-like containers
+    (named bag of fields) for digest-rendering purposes. The qualified
+    -name prefix only chains through namespaces and through *true* type
+    nesting (class-in-class), not through tables — SQL doesn't nest
+    tables, and agents query column names unqualified.
+    """
     out: list[Declaration] = []
     for d in decls:
         if d.kind == KIND_NAMESPACE:
             out.extend(_flatten_types(d.children, prefix=(prefix + d.name + "." if prefix else d.name + ".")))
-        elif d.kind in TYPE_KINDS:
+        elif d.kind in _DIGEST_TYPE_KINDS:
             qualified = Declaration(
                 kind=d.kind,
                 name=(prefix + d.name) if prefix else d.name,
@@ -1350,15 +1378,18 @@ def _flatten_types(decls: list[Declaration], prefix: str = "") -> list[Declarati
                 match_names=d.match_names,
             )
             out.append(qualified)
-            # Also flatten nested types (they appear as their own rows)
-            out.extend(_flatten_types(d.children, prefix=qualified.name + "."))
+            # Also flatten nested types (they appear as their own rows).
+            # Skip nested-type recursion for tables/views — their
+            # children are columns, not types-within-types.
+            if d.kind in TYPE_KINDS:
+                out.extend(_flatten_types(d.children, prefix=qualified.name + "."))
     return out
 
 
 def _digest_members(type_decl: Declaration, opts: DigestOptions) -> list[Declaration]:
     members: list[Declaration] = []
     for c in type_decl.children:
-        if c.kind in TYPE_KINDS or c.kind == KIND_NAMESPACE:
+        if c.kind in _DIGEST_TYPE_KINDS or c.kind == KIND_NAMESPACE:
             continue
         if c.kind == KIND_ENUM_MEMBER:
             continue
