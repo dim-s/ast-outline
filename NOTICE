@@ -10,12 +10,6 @@ First public commit: 2026-04-22 (as `code-outline`; renamed to
 `dim-s/ast-outline` to the `ast-outline` GitHub Organization on
 2026-05-03).
 
-"ast-outline" is an unregistered trademark (™) of Dmitrii Zaitsev.
-The Apache License does not grant rights to use this trademark —
-see Section 6 of the License. Forks, ports to other languages, and
-rebranded derivative works must use a different project name to
-avoid user confusion.
-
 Versions through 0.5.3 were released under the MIT License. From
 v0.6.0 onward this project is licensed under the Apache License,
 Version 2.0 (see LICENSE). The MIT text is retained in LICENSE-MIT

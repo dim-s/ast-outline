@@ -17,7 +17,7 @@
 
 📖 **Documentation:** <https://ast-outline.github.io/> · **Site source:** [ast-outline/ast-outline.github.io](https://github.com/ast-outline/ast-outline.github.io)
 
-> **ast-outline™** by Dmitrii Zaitsev (dim-s) — original project at
+> **ast-outline** by Dmitrii Zaitsev (dim-s) — original project at
 > <https://github.com/ast-outline/ast-outline> (created 2026-04-22). Code under
 > **Apache 2.0** (v0.6.0+; v0.5.x and earlier remain available under MIT),
 > documentation under **CC BY 4.0** — reuse of this README's prose requires
@@ -776,9 +776,3 @@ If your project copies non-trivial portions of this documentation — paragraphs
 > Based on [ast-outline](https://github.com/ast-outline/ast-outline) by Dmitrii Zaitsev (dim-s), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 Place it where users will see it (typically the README of your derivative work).
-
-### Trademark
-
-**ast-outline™** is an unregistered trademark of Dmitrii Zaitsev (dim-s), used to identify the original project at <https://github.com/ast-outline/ast-outline>. Apache License 2.0 §6 explicitly excludes any grant of trademark rights. **Forks, language ports, and rebranded distributions must use a different name** to avoid user confusion. "Inspired by ast-outline" or "based on ast-outline" wording in your README is fine and encouraged; using `ast-outline` itself as your project / package / binary name is not.
-
-If you maintain a published package called `ast-outline` on any registry (crates.io, npm, PyPI, Homebrew, etc.) that is not the project at the URL above, please rename it.

@@ -17,7 +17,7 @@
 
 📖 **Документация:** <https://ast-outline.github.io/> · **Исходник сайта:** [ast-outline/ast-outline.github.io](https://github.com/ast-outline/ast-outline.github.io)
 
-> **ast-outline™** — Dmitrii Zaitsev (dim-s). Оригинальный проект:
+> **ast-outline** — Dmitrii Zaitsev (dim-s). Оригинальный проект:
 > <https://github.com/ast-outline/ast-outline> (создан 2026-04-22). Код под
 > **Apache 2.0** (с v0.6.0; v0.5.x и более ранние остаются под MIT),
 > документация под **CC BY 4.0** — переиспользование текста этого README
@@ -666,9 +666,3 @@ Copyright © 2026 **Dmitrii Zaitsev** (GitHub: [dim-s](https://github.com/dim-s)
 > Based on [ast-outline](https://github.com/ast-outline/ast-outline) by Dmitrii Zaitsev (dim-s), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 Размещайте там, где это увидят пользователи (обычно — README производного проекта).
-
-### Торговая марка
-
-**ast-outline™** — незарегистрированная торговая марка Dmitrii Zaitsev (dim-s), используется для идентификации оригинального проекта по адресу <https://github.com/ast-outline/ast-outline>. Apache License 2.0 §6 явно исключает любой грант на торговые марки. **Форки, языковые порты и ребрендинговые дистрибутивы должны использовать другое имя** во избежание путаницы у пользователей. Формулировки «inspired by ast-outline» или «based on ast-outline» в README — допустимы и приветствуются; использование самого имени `ast-outline` для своего проекта / пакета / бинарника — нет.
-
-Если вы поддерживаете публичный пакет с именем `ast-outline` на любом реестре (crates.io, npm, PyPI, Homebrew и т.д.), который **не является** проектом по ссылке выше — пожалуйста, переименуйте его.

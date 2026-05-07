@@ -17,7 +17,7 @@
 
 📖 **文档:** <https://ast-outline.github.io/> · **站点源码:** [ast-outline/ast-outline.github.io](https://github.com/ast-outline/ast-outline.github.io)
 
-> **ast-outline™** —— Dmitrii Zaitsev（dim-s）。原始项目：
+> **ast-outline** —— Dmitrii Zaitsev（dim-s）。原始项目：
 > <https://github.com/ast-outline/ast-outline>（创建于 2026-04-22）。代码采用
 > **Apache 2.0** 许可（v0.6.0 起；v0.5.x 及更早版本仍可在 MIT 下使用），
 > 文档采用 **CC BY 4.0** —— 复用本 README 的文字内容须显式署名。
@@ -627,9 +627,3 @@ Copyright © 2026 **Dmitrii Zaitsev**（GitHub: [dim-s](https://github.com/dim-s
 > Based on [ast-outline](https://github.com/ast-outline/ast-outline) by Dmitrii Zaitsev (dim-s), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 请放在用户能看到的位置（通常是衍生项目的 README）。
-
-### 商标
-
-**ast-outline™** 是 Dmitrii Zaitsev（dim-s）的未注册商标，用于指代位于 <https://github.com/ast-outline/ast-outline> 的原始项目。Apache License 2.0 §6 明确不授予任何商标权利。**Fork、语言移植和重新命名的发行版必须使用不同的项目名称**，以避免对用户造成混淆。在 README 中使用「inspired by ast-outline」或「based on ast-outline」之类的措辞是允许且鼓励的；但将 `ast-outline` 本身用作你自己的项目名／包名／二进制名是不允许的。
-
-如果你在任何包注册表（crates.io、npm、PyPI、Homebrew 等）维护着名为 `ast-outline` 但 **并非** 上述链接所指项目的发布包，请考虑改名。
