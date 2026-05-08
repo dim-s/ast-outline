@@ -1,7 +1,7 @@
 [project]
 name = "ast-outline"
 version = "0.8.0"
-description = "AST-based structural outline for source files (C#, C++, Python, TypeScript/JavaScript, Java, Kotlin, Scala, Go, Rust, PHP, Ruby, CSS, SCSS, SQL, Markdown, YAML) — tree-sitter-powered, LLM-agent-first. Complement to ast-grep: ast-grep searches, ast-outline overviews."
+description = "AST-based structural outline for source files (C#, C++, Python, TypeScript/JavaScript, Java, Kotlin, Scala, Go, Rust, PHP, Ruby, CSS, SCSS, SQL, Markdown, YAML) — tree-sitter-powered, LLM-agent-first. Outlines, digests, and structural code-grep with scope+kind annotations."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }

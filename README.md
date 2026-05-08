@@ -3,11 +3,14 @@
 **English** · [Русский](./README.ru.md) · [简体中文](./README.zh-CN.md)
 
 > Fast, AST-based **structural outline** for source files — classes, methods,
-> signatures with line numbers, but **no method bodies**. Built for LLM coding
-> agents that should read the *shape* of a file before reading the whole thing.
+> signatures with line numbers, but **no method bodies**. Plus structural
+> code-grep with scope and kind annotations. Built for LLM coding agents
+> that should read the *shape* of a file before reading the whole thing.
 >
-> Sibling to [ast-grep](https://github.com/ast-grep/ast-grep) in the `ast-*`
-> family: **`ast-grep` searches** code structurally, **`ast-outline` overviews** it.
+> Naming inspired by [ast-grep](https://github.com/ast-grep/ast-grep) — both
+> tools build on tree-sitter, but they answer different questions: ast-grep
+> rewrites code with structural patterns, ast-outline maps and searches it
+> for human / agent reading.
 
 [![Code: Apache 2.0](https://img.shields.io/badge/code-Apache%202.0-blue.svg)](./LICENSE)
 [![Docs: CC BY 4.0](https://img.shields.io/badge/docs-CC%20BY%204.0-lightgrey.svg)](./LICENSE-DOCS)

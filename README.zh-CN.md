@@ -3,11 +3,13 @@
 [English](./README.md) · [Русский](./README.ru.md) · **简体中文**
 
 > 基于 AST 的快速源码**结构化大纲**工具 —— 输出类、方法和签名及其行号范围，
-> **不包含方法体**。专为大模型编码代理（LLM coding agents）设计：先看清文件
+> **不包含方法体**。同时提供带作用域 (scope) 与类别 (kind) 注解的结构化
+> code-grep。专为大模型编码代理（LLM coding agents）设计：先看清文件
 > 的"骨架"，再决定要不要读完整内容。
 >
-> 与 [ast-grep](https://github.com/ast-grep/ast-grep) 同属 `ast-*` 家族：
-> **`ast-grep` 用于结构化*搜索*** 代码，**`ast-outline` 用于结构化*概览*** 代码。
+> 命名灵感来自 [`ast-grep`](https://github.com/ast-grep/ast-grep) —— 两者
+> 都基于 tree-sitter，但解决不同的问题：ast-grep 用结构化模式重写代码，
+> ast-outline 在符号层面对代码进行概览和搜索，方便人或代理阅读。
 
 [![Code: Apache 2.0](https://img.shields.io/badge/code-Apache%202.0-blue.svg)](./LICENSE)
 [![Docs: CC BY 4.0](https://img.shields.io/badge/docs-CC%20BY%204.0-lightgrey.svg)](./LICENSE-DOCS)
