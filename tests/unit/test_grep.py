@@ -2180,3 +2180,132 @@ def test_kind_markdown_no_comment_no_import(tmp_path: Path) -> None:
     kinds = _kinds_only(matches)
     assert KIND_COMMENT not in kinds
     assert KIND_IMPORT not in kinds
+
+
+# --- POSIX-style `-e PATTERN PATHS...` (no positional pattern) -----------
+#
+# `grep -e PAT PATH` and `rg -e PAT PATH` are valid shapes; ast-outline
+# now accepts them too via a pre-argparse rewrite that promotes the
+# first -e value into the positional slot. These tests pin the
+# acceptance and verify the existing call shapes still parse.
+
+
+def test_cli_grep_dash_e_only_no_positional_pattern(tmp_path: Path) -> None:
+    """``grep -e PAT PATH`` (no positional pattern) must work — that
+    was the original POSIX shape that argparse couldn't accept on its
+    own. Regression guard for the user-reported error
+    'the following arguments are required: paths'."""
+    src = tmp_path / "mod.py"
+    src.write_text("def TryStartClosingIfFull(): pass\n")
+    output = _run_cli("grep", "-e", "TryStartClosingIfFull", str(tmp_path))
+    assert "# note:" not in output
+    assert "TryStartClosingIfFull" in output
+
+
+def test_cli_grep_dash_e_only_with_flag_after_path(tmp_path: Path) -> None:
+    """The exact shape from the bug report — ``-e PAT PATH -m N`` —
+    where a value-taking flag (``-m``) comes after the path. The arg
+    rewriter must skip ``-m N`` correctly when scanning for free
+    positionals."""
+    src = tmp_path / "mod.py"
+    src.write_text("def save(): pass\nsave()\nsave()\n")
+    output = _run_cli("grep", "-e", "save", str(tmp_path), "-m", "1")
+    assert "# note:" not in output
+    assert "save" in output
+
+
+def test_cli_grep_long_expression_form(tmp_path: Path) -> None:
+    """Long-form ``--expression PAT PATH`` is the POSIX-spelled
+    equivalent of ``-e``."""
+    src = tmp_path / "mod.py"
+    src.write_text("def widget(): pass\n")
+    output = _run_cli("grep", "--expression", "widget", str(tmp_path))
+    assert "# note:" not in output
+    assert "widget" in output
+
+
+def test_cli_grep_expression_equals_form(tmp_path: Path) -> None:
+    """``--expression=PAT`` (equals form) — argparse accepts it; the
+    rewriter must split on ``=`` to recover the pattern value."""
+    src = tmp_path / "mod.py"
+    src.write_text("def gadget(): pass\n")
+    output = _run_cli("grep", "--expression=gadget", str(tmp_path))
+    assert "# note:" not in output
+    assert "gadget" in output
+
+
+def test_cli_grep_multiple_dash_e_no_positional(tmp_path: Path) -> None:
+    """Multiple ``-e`` patterns with no positional — first promotes to
+    pattern, the rest stay as extra_patterns."""
+    src = tmp_path / "mod.py"
+    src.write_text("def alpha(): pass\ndef beta(): pass\n")
+    output = _run_cli("grep", "-e", "alpha", "-e", "beta", str(tmp_path))
+    assert "# note:" not in output
+    assert "alpha" in output
+    assert "beta" in output
+
+
+def test_cli_grep_positional_then_dash_e_unchanged(tmp_path: Path) -> None:
+    """Existing shape ``grep PAT -e PAT2 PATH`` (positional + extra)
+    must keep current semantics — no rewrite when a positional pattern
+    is already present before the first ``-e``."""
+    src = tmp_path / "mod.py"
+    src.write_text("def alpha(): pass\ndef beta(): pass\n")
+    output = _run_cli("grep", "alpha", "-e", "beta", str(tmp_path))
+    assert "# note:" not in output
+    assert "alpha" in output
+    assert "beta" in output
+
+
+def test_cli_grep_plain_positional_unchanged(tmp_path: Path) -> None:
+    """``grep PAT PATH`` (no -e at all) must behave exactly as before —
+    the rewriter is a no-op for this shape."""
+    src = tmp_path / "mod.py"
+    src.write_text("def widget(): pass\n")
+    output = _run_cli("grep", "widget", str(tmp_path))
+    assert "# note:" not in output
+    assert "widget" in output
+
+
+def test_normalize_grep_argv_unit() -> None:
+    """Unit-test the rewriter directly — covers branches that are awkward
+    to hit through the CLI surface (no-op cases, ``--`` separator,
+    short bool flags between -e and the path)."""
+    from ast_outline.cli import _normalize_grep_argv
+
+    # POSIX-style: -e PAT PATH → PAT PATH
+    assert _normalize_grep_argv(["grep", "-e", "foo", "src"]) == [
+        "grep", "foo", "src"
+    ]
+    # Multiple -e: only the first is promoted; the rest stay as -e.
+    assert _normalize_grep_argv(["grep", "-e", "foo", "-e", "bar", "src"]) == [
+        "grep", "foo", "-e", "bar", "src"
+    ]
+    # Existing positional comes before -e → no-op.
+    assert _normalize_grep_argv(["grep", "foo", "-e", "bar", "src"]) == [
+        "grep", "foo", "-e", "bar", "src"
+    ]
+    # No -e → no-op.
+    assert _normalize_grep_argv(["grep", "foo", "src"]) == ["grep", "foo", "src"]
+    # Equals form.
+    assert _normalize_grep_argv(["grep", "--expression=foo", "src"]) == [
+        "grep", "foo", "src"
+    ]
+    # Long form.
+    assert _normalize_grep_argv(["grep", "--expression", "foo", "src"]) == [
+        "grep", "foo", "src"
+    ]
+    # Bool flag between -e and path — flag should not be mistaken for a
+    # value, and not for a free positional.
+    assert _normalize_grep_argv(["grep", "-e", "foo", "-i", "src"]) == [
+        "grep", "foo", "-i", "src"
+    ]
+    # Value-taking flag (``-m N``) after the path — its value (``2``)
+    # must not be treated as a free positional.
+    assert _normalize_grep_argv(["grep", "-e", "foo", "src", "-m", "2"]) == [
+        "grep", "foo", "src", "-m", "2"
+    ]
+    # Non-grep subcommand → unchanged.
+    assert _normalize_grep_argv(["outline", "src"]) == ["outline", "src"]
+    # Empty / missing → unchanged.
+    assert _normalize_grep_argv([]) == []

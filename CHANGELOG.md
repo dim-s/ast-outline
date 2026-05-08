@@ -7,6 +7,24 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.1] — 2026-05-08
+
+Patch release — usability fix for the `grep` subcommand.
+
+### Fixed
+
+- **`ast-outline grep -e PATTERN PATHS...` now works** without a
+  separate positional pattern, matching POSIX `grep -e` and `rg -e`
+  conventions. Previously the command failed with
+  `the following arguments are required: paths` because argparse
+  couldn't disambiguate the trailing string. Implemented as a
+  pre-argparse rewrite: when no positional pattern appears before the
+  first `-e`, the first `-e PATTERN` value is promoted into the
+  positional slot. All existing call shapes (`grep PAT PATH`,
+  `grep PAT -e PAT2 PATH`) keep their current semantics. Long-form
+  `--expression PAT` and equals-form `--expression=PAT` are accepted
+  the same way.
+
 ## [0.8.0] — 2026-05-08
 
 Minor version bump — adds the `grep` subcommand (a structural,

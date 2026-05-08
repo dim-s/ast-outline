@@ -62,6 +62,97 @@ class _ArgParseFail(Exception):
     """Raised by _LLMArgumentParser instead of sys.exit on bad args."""
 
 
+# Grep flags that consume a value as the next argv token. Used by
+# ``_normalize_grep_argv`` to skip values when scanning for free
+# positionals. Kept in lockstep with the ``p_grep.add_argument`` calls
+# below — if a new value-taking flag is added there, add it here.
+_GREP_VALUE_FLAGS = frozenset({
+    "-e", "--expression",
+    "-m", "--max-count",
+    "--kind",
+})
+
+
+def _normalize_grep_argv(argv: list[str]) -> list[str]:
+    """Promote the first ``-e PAT`` value into the positional pattern
+    slot when the user didn't supply a positional pattern.
+
+    This makes ``ast-outline grep -e PAT PATHS...`` work the same as
+    ``ast-outline grep PAT PATHS...`` — matching POSIX ``grep -e`` and
+    ``rg -e`` conventions. Argparse can't express this on its own
+    because the positional ``pattern`` (nargs=1) plus ``paths``
+    (nargs="+") plus repeatable ``-e`` (action="append") together would
+    become ambiguous if ``pattern`` were optional.
+
+    The rewrite only fires when:
+      * ``-e``/``--expression`` is present, AND
+      * no free positional appears before the first ``-e`` value.
+    Otherwise argv is returned unchanged so existing call shapes — both
+    the canonical ``grep PAT PATH`` and the multi-pattern
+    ``grep PAT -e PAT2 PATH`` — keep their current semantics.
+    """
+    if not argv or argv[0] != "grep":
+        return argv
+
+    rest = argv[1:]
+    first_e_flag_idx: int | None = None
+    first_e_value_idx: int | None = None  # equal to flag idx for --expression=PAT form
+    promoted_value: str | None = None
+    has_positional_before_e = False
+
+    i = 0
+    while i < len(rest):
+        a = rest[i]
+        if a == "--":
+            # Everything after `--` is positional — argparse handles it
+            # natively, and any pattern positional must come before it.
+            break
+        # Long-form ``--expression=PAT`` (and `-e=PAT`, which argparse
+        # also accepts for short opts via `=`).
+        if a.startswith("--expression=") or a.startswith("-e="):
+            if first_e_flag_idx is None:
+                first_e_flag_idx = i
+                first_e_value_idx = i
+                promoted_value = a.split("=", 1)[1]
+            i += 1
+            continue
+        if a in ("-e", "--expression"):
+            if first_e_flag_idx is None and i + 1 < len(rest):
+                first_e_flag_idx = i
+                first_e_value_idx = i + 1
+                promoted_value = rest[i + 1]
+            i += 2
+            continue
+        if a in _GREP_VALUE_FLAGS:
+            # Skip the flag and its value so the value isn't mistaken
+            # for a free positional.
+            i += 2
+            continue
+        if a.startswith("--") and "=" in a:
+            i += 1
+            continue
+        if a.startswith("-") and len(a) > 1:
+            # Short bool flag (or combined like ``-li``) — none of the
+            # value-taking short flags above are bool-combinable.
+            i += 1
+            continue
+        # Free positional.
+        if first_e_flag_idx is None:
+            has_positional_before_e = True
+        i += 1
+
+    if first_e_flag_idx is None or has_positional_before_e or promoted_value is None:
+        return argv
+
+    if first_e_value_idx == first_e_flag_idx:
+        # ``--expression=PAT`` — drop the single token.
+        new_rest = rest[:first_e_flag_idx] + rest[first_e_flag_idx + 1:]
+    else:
+        # Separate ``-e PAT`` — drop both tokens.
+        new_rest = rest[:first_e_flag_idx] + rest[first_e_flag_idx + 2:]
+    return [argv[0], promoted_value, *new_rest]
+
+
 def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
@@ -76,6 +167,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_version(None)
     if argv[0] not in SUBCOMMANDS and not argv[0].startswith("-"):
         argv = ["outline", *argv]
+    if argv and argv[0] == "grep":
+        argv = _normalize_grep_argv(argv)
 
     parser = _LLMArgumentParser(
         # `prog` is intentionally left unset so argparse picks up the actual
@@ -160,11 +253,12 @@ def main(argv: list[str] | None = None) -> int:
         "grep",
         help="Find pattern in code with scope and kind annotations (def/call/ref/import)",
     )
-    # Positional pattern is required because making it optional
-    # (nargs="?") interacts badly with paths (nargs="+") and the -e
-    # flag — argparse can't disambiguate which trailing string is a
-    # path vs a stray positional. Multi-pattern users put the first
-    # one positional, rest via -e.
+    # Positional pattern is required at the argparse layer (nargs="?"
+    # collides with paths=nargs="+" — argparse can't disambiguate a
+    # trailing string as path vs stray positional). The POSIX-style
+    # `grep -e PAT PATHS...` form (no positional pattern) is supported
+    # via a pre-argparse rewrite in ``_normalize_grep_argv`` that
+    # promotes the first -e value into the positional slot.
     p_grep.add_argument(
         "pattern",
         help="Primary pattern (literal substring by default; combine with -e for more)",
