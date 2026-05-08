@@ -34,16 +34,18 @@ answers with less drift.
 **Before:**
 
 ```
-Agent: Read Player.cs            # 1200 lines
-Agent: Read Enemy.cs             #  800 lines
-Agent: Read DamageSystem.cs      #  400 lines
+Agent: Read Player.cs              # 1200 lines, just to see what's here
+Agent: Read Enemy.cs               #  800 lines, just to see what's here
+Agent: grep -rn TakeDamage src/    # flat hits → open each file for scope
+Agent: Read DamageSystem.cs        #  400 lines, all to read one method
 ```
 
 **With `ast-outline`:**
 
 ```
-Agent: ast-outline digest src/Combat         # whole module, ~100 lines
-Agent: ast-outline Player.cs                 # signatures only, 2–10× smaller
+Agent: ast-outline digest src/Combat         # whole module map, ~100 lines
+Agent: ast-outline Player.cs                 # one file's shape, 2–10× smaller
+Agent: ast-outline grep TakeDamage src/      # uses + scope, one call (no follow-ups)
 Agent: ast-outline show Player.cs TakeDamage # just that one method body
 ```
 

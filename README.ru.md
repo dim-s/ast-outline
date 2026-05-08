@@ -35,17 +35,19 @@ Copilot Chat) исследуют код **читая файлы напрямую
 **Без `ast-outline`:**
 
 ```
-Агент: Read Player.cs            # 1200 строк
-Агент: Read Enemy.cs             #  800 строк
-Агент: Read DamageSystem.cs      #  400 строк
+Агент: Read Player.cs              # 1200 строк, просто посмотреть что внутри
+Агент: Read Enemy.cs               #  800 строк, просто посмотреть что внутри
+Агент: grep -rn TakeDamage src/    # плоские хиты → каждый файл открывать ради scope
+Агент: Read DamageSystem.cs        #  400 строк, всё ради одного метода
 ```
 
 **С `ast-outline`:**
 
 ```
-Агент: ast-outline digest src/Combat         # весь модуль, ~100 строк
-Агент: ast-outline Player.cs                 # только сигнатуры, в 2–10× меньше
-Агент: ast-outline show Player.cs TakeDamage # только нужный метод
+Агент: ast-outline digest src/Combat         # карта модуля, ~100 строк
+Агент: ast-outline Player.cs                 # форма одного файла, в 2–10× меньше
+Агент: ast-outline grep TakeDamage src/      # вхождения + scope, один вызов (без follow-up)
+Агент: ast-outline show Player.cs TakeDamage # только тело нужного метода
 ```
 
 Понимание острее (шума меньше), токенов в разы меньше, раундов в разы меньше.
