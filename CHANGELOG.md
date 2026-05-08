@@ -7,6 +7,119 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.0] — 2026-05-08
+
+Minor version bump — adds the `grep` subcommand (a structural,
+AST-aware code search), plus the `--kind` filter and several
+smaller flags. The `grep` command is now stable; all behavior
+documented below is part of the public surface.
+
+### Added
+
+- **`ast-outline grep` — AST-aware structural search.**
+  New subcommand returning matches grouped by
+  enclosing class/function. Tagged kinds: `[def]` (definitions),
+  `[import]` (import statements); calls and refs render untagged
+  (inferable from `(` after symbol). `[comment]` / `[string]`
+  surface only via `--include-noise`. Output line shape:
+  `> L<n>: <code>[ <tag>]` (mirrors `grep -n` / compiler-error
+  convention). Designed for "where is X defined / called / used"
+  agent workflows — one structured call replaces the typical
+  grep + multiple file-reads chain. Substring pre-filter via
+  `bytes.find()` skips parse for files with no positional match;
+  tree-sitter walks `string` / `comment` nodes (Python adapter;
+  others fall back to per-line heuristics) so docstring matches
+  are filtered. Generic-call-aware classification handles
+  `genericCall<T>()`, turbofish `::<T>()`, optional chain
+  `?.()`, TS non-null `!()`. Typical perf: ~120ms per project,
+  ~250ms on 800+ file monorepos.
+
+- **POSIX-style flags** — `grep`/`rg` muscle memory:
+  `-e/--expression PATTERN` (repeatable, multi-pattern via
+  alternation — one walk for N symbols), `-w/--word`
+  (whole-word `\b...\b` — eliminates `save_user`/`unsave` noise),
+  `-l/--files-with-matches` (paths only, for exists-checks),
+  `-c/--count` (`path:N`, skips zero-count files),
+  `-m/--max-count NUM` (per-file cap; emits explicit
+  `# truncated — N more...` footer so partial results are never
+  silent — `-c` reports the capped count, matching POSIX),
+  `-i/--case-insensitive`, `--regex`, `--include-noise`,
+  `--no-ignore`. All operate on the AST-aware base, so counts
+  and file lists exclude docstring noise.
+
+- **`--kind` filter** — narrow matches by classification:
+  `def | call | ref | import | comment | string`. Accepts
+  repeated (`--kind def --kind call`) or comma-separated
+  (`--kind def,call`) forms. Auto-enables `--include-noise`
+  when the filter contains `comment`/`string` (the noise filter
+  would otherwise zero them out before the kind filter sees
+  them). Composes naturally with `-c` (capped counts) and `-l`
+  (only files with matching kinds). Eliminates the most common
+  agent post-filter step ("show me only definitions of X" /
+  "only call sites").
+
+- **Regex auto-detect.** Patterns with unambiguous regex syntax
+  (`\|`, `\d`, `\w`, `\s`, `\b`, `(?:`, bare `|`) auto-promote
+  with a `# note:` documenting the promotion; `\|` is normalized
+  to `|` before compile (BRE→ERE — Python's `re` reads `\|` as
+  literal pipe, opposite of grep). Ambiguous metachars (`.`,
+  `*`, `+`, `?`, `[`, `^`, `$`) never auto-promote — they have
+  legitimate literal interpretations in code — but emit a
+  `# hint:` on zero matches suggesting `--regex` retry.
+
+- **`ParseResult.noise_regions`** — optional adapter-populated
+  `(start_byte, end_byte, kind)` tuples for multi-line strings
+  and block comments. Used by `grep` to reliably filter
+  docstring matches (a regex pre-pass gets confused by code
+  containing `('"""', "'''")`-style triple-quote literals).
+  Python adapter populates; others opt in over time.
+
+- **`ParseResult.import_regions`** — adapter-populated
+  `(start_byte, end_byte)` byte ranges of import declarations.
+  Lets `grep` classify inner symbols inside multi-line / block-
+  form imports as `[import]` instead of `[ref]`/`[string]` —
+  fixes Go `import (\n  "fmt"\n)`, Python `from X import (\n A,\n)`,
+  TS `import {\n  A,\n} from 'y'`, Rust `use foo::{\n  Bar,\n}`,
+  PHP `use App\{\n  Foo,\n}`. Tree-sitter is the authoritative
+  source — line-prefix heuristic only saw the opening line and
+  classified inner package names as strings/refs, semantically
+  wrong for any reader. Adapters populating: Python, TS, Go,
+  Rust, PHP, C++ (`using namespace` / `using X::Y` — but NOT
+  `using A = B;` type aliases). Single-line-only languages
+  (Java/Kotlin/Scala) work unchanged via the line-prefix path.
+  **Zero-cost:** byte ranges piggyback on the existing
+  `_collect_imports` walk (one tree traversal, two outputs) —
+  no separate pass, no measurable overhead vs not collecting
+  them at all.
+
+- **C# `global using`** — modern .NET 6+ file-scoped using
+  directive (`global using System;`) now classifies as
+  `[import]`. Line stripped starts with `global ` not `using `,
+  so a separate `"global using "` prefix entry was added to the
+  csharp import dict.
+
+- **C++ `using namespace` / `using X::Y`** — bring-into-scope
+  directives now classify as `[import]`. AST-level distinction
+  via tree-sitter (`using_directive` / `using_declaration` vs
+  `alias_declaration`) means type aliases (`using my_int = int;`)
+  stay correctly classified as declarations, not misread as
+  imports.
+
+- **Scala multi-line braced imports** — `import foo.{\n  Bar,\n}`
+  now classifies inner symbols as `[import]`. Scala adapter
+  joins the import_regions populating set via piggyback on
+  the existing `_collect_imports` walk.
+
+- **Python lazy imports inside function / class bodies** —
+  multi-line `def foo(): from x import (\n  a,\n  b,\n)` now
+  classifies inner symbols as `[import]`. Achieved by extending
+  `_count_conditional_imports` (which already walks the whole
+  tree to count scoped imports) to ALSO collect their byte
+  ranges in the same pass — zero extra traversal cost.
+
+- **Agent-facing prompt snippet** updated with `grep` as the
+  fourth menu option, with `-e` example for batched lookups.
+
 ## [0.7.7] — 2026-05-06
 
 ### Added

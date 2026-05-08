@@ -73,6 +73,21 @@ you already know the symbol:
    (docs + attrs + signature, no body) — useful after `digest`, when
    you have the name and want the contract, not the implementation.
 
+4. **Where a symbol appears** —
+   `ast-outline grep <pattern> <paths…>`: matches grouped by enclosing
+   class/function. Definitions are tagged `[def]`, imports `[import]`;
+   calls and refs carry no tag (inferable from `(` after symbol).
+   Use for "where is X defined", "who calls Y", "is Z dead code" —
+   scope in the output spares follow-up reads. Comments and strings
+   filtered. Batch via repeatable `-e`:
+   `ast-outline grep User.save -e User.load -e User.delete src/`.
+   Narrow by classification with `--kind def|call|ref|import` (also
+   accepts `--kind def,call`) — drops the post-filter step when you
+   only want definitions, only call sites, etc.
+   POSIX flags `-w` (whole word), `-l` (paths only), `-c` (counts),
+   `-m N` (cap per file) work as in `grep` / `rg`. For non-symbol
+   patterns use your default search strategy.
+
 `outline` and `digest` accept multiple paths in one call (files and
 directories, mixed languages OK) — batch instead of looping. Type
 headers in both renderers carry inheritance as `: Base, Trait`, so the

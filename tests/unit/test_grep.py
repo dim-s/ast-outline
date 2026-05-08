@@ -1,0 +1,2182 @@
+"""Tests for the experimental ast-outline grep command.
+
+Covers the `ast_outline.grep` module — substring/regex search with
+scope discovery and kind classification. Marked experimental in the
+CLI; tests pin current behavior so future changes are intentional.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from ast_outline.grep import (
+    KIND_CALL,
+    KIND_COMMENT,
+    KIND_DEF,
+    KIND_IMPORT,
+    KIND_REF,
+    KIND_STRING,
+    grep,
+    render_grep,
+)
+
+
+# --- helpers --------------------------------------------------------------
+
+
+def _kinds(file_results) -> list[str]:
+    return [m.kind for fr in file_results for m in fr.matches]
+
+
+def _scopes(file_results) -> list[list[str]]:
+    return [
+        [d.name for d in m.enclosing_path]
+        for fr in file_results
+        for m in fr.matches
+    ]
+
+
+# --- substring search & kind classification ------------------------------
+
+
+def test_grep_finds_definition_and_call(tmp_path: Path) -> None:
+    """A definition match annotates with [def]; a call match with [call]."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save():\n"
+        "    pass\n"
+        "\n"
+        "def caller():\n"
+        "    save()\n"
+    )
+    results, _ = grep("save", [src])
+    assert len(results) == 1
+    kinds = _kinds(results)
+    assert KIND_DEF in kinds
+    assert KIND_CALL in kinds
+
+
+def test_grep_distinguishes_call_from_ref(tmp_path: Path) -> None:
+    """Call requires `(` after the match; otherwise it's a ref."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def use():\n"
+        "    handler = save\n"      # ref — no parentheses
+        "    save()\n"               # call
+        "\n"
+        "def save():\n"              # def
+        "    pass\n"
+    )
+    results, _ = grep("save", [src])
+    kinds = _kinds(results)
+    assert KIND_REF in kinds
+    assert KIND_CALL in kinds
+    assert KIND_DEF in kinds
+
+
+def test_grep_filters_string_literals_by_default(tmp_path: Path) -> None:
+    """Matches inside string literals are filtered, counted, and not returned."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        'def use():\n'
+        '    label = "save"\n'       # filtered — inside string
+        '    save()\n'                # call — visible
+        '\n'
+        'def save():\n'
+        '    pass\n'
+    )
+    results, _ = grep("save", [src])
+    assert len(results) == 1
+    fr = results[0]
+    assert fr.filtered_count == 1
+    visible_kinds = [m.kind for m in fr.matches]
+    assert KIND_STRING not in visible_kinds
+    assert KIND_CALL in visible_kinds
+    assert KIND_DEF in visible_kinds
+
+
+def test_grep_filters_comments_by_default(tmp_path: Path) -> None:
+    """Matches inside comments are filtered, counted, not returned."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "# call save here\n"
+        "def caller():\n"
+        "    x = 1  # save matters\n"
+        "    save()\n"
+        "\n"
+        "def save():\n"
+        "    pass\n"
+    )
+    results, _ = grep("save", [src])
+    fr = results[0]
+    # 2 comments filtered (one whole-line, one trailing).
+    assert fr.filtered_count == 2
+    visible_kinds = [m.kind for m in fr.matches]
+    assert KIND_COMMENT not in visible_kinds
+
+
+def test_grep_include_noise_surfaces_filtered(tmp_path: Path) -> None:
+    """--include-noise returns the comment/string matches with their kinds."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        '# uses save\n'
+        'def caller():\n'
+        '    label = "save"\n'
+        '    save()\n'
+    )
+    results, _ = grep("save", [src], include_noise=True)
+    fr = results[0]
+    assert fr.filtered_count == 0
+    kinds = _kinds(results)
+    assert KIND_COMMENT in kinds
+    assert KIND_STRING in kinds
+    assert KIND_CALL in kinds
+
+
+def test_grep_classifies_import_lines(tmp_path: Path) -> None:
+    """Lines starting with `from`/`import` get [import] kind."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "from .models import User\n"
+        "import User as U\n"          # not real code but tests prefix
+        "\n"
+        "def use():\n"
+        "    User()\n"
+    )
+    results, _ = grep("User", [src])
+    kinds = _kinds(results)
+    assert kinds.count(KIND_IMPORT) == 2
+    assert KIND_CALL in kinds
+
+
+# --- enclosing scope discovery -------------------------------------------
+
+
+def test_grep_discovers_class_method_scope(tmp_path: Path) -> None:
+    """Match inside a method body reports [class, method] as enclosing scope."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "class UserHandler:\n"
+        "    def update(self, u):\n"
+        "        u.save()\n"
+    )
+    results, _ = grep("save", [src])
+    scopes = _scopes(results)
+    assert scopes == [["UserHandler", "update"]]
+
+
+def test_grep_top_level_match_has_empty_scope(tmp_path: Path) -> None:
+    """Module-level statements report no enclosing scope."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "from .models import User\n"
+        "\n"
+        "MAX = 10\n"
+    )
+    results, _ = grep("User", [src])
+    scopes = _scopes(results)
+    assert scopes == [[]]
+
+
+# --- def-detection precision ----------------------------------------------
+
+
+def test_grep_does_not_call_typeref_a_def(tmp_path: Path) -> None:
+    """A type used in a function signature is [ref], not [def] of that function."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "class Handler:\n"
+        "    pass\n"
+        "\n"
+        "def run(h: Handler) -> None:\n"
+        "    pass\n"
+    )
+    results, _ = grep("Handler", [src])
+    kinds = _kinds(results)
+    # One [def] for the class itself, one [ref] for the type annotation.
+    assert kinds.count(KIND_DEF) == 1
+    assert kinds.count(KIND_REF) == 1
+
+
+def test_grep_substring_inside_name_still_def(tmp_path: Path) -> None:
+    """A search for `save` matches the def line of `save`, not `save_user`."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save_user():\n"
+        "    pass\n"
+        "\n"
+        "def save():\n"               # only this should match as [def]
+        "    pass\n"
+    )
+    # Use exact pattern to constrain. Both contain `save` substring; here
+    # we test that the match column inside `save_user` is recognized as
+    # the DEF of `save_user` (since it falls in its name token).
+    results, _ = grep("save", [src])
+    kinds = _kinds(results)
+    # Both definitions named with `save` in their identifier — both [def].
+    assert kinds.count(KIND_DEF) == 2
+
+
+# --- regex and case-insensitive ------------------------------------------
+
+
+def test_grep_regex_mode(tmp_path: Path) -> None:
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save_user():\n"
+        "    pass\n"
+        "\n"
+        "def save_admin():\n"
+        "    pass\n"
+    )
+    results, _ = grep(r"save_\w+", [src], is_regex=True)
+    assert len(results) == 1
+    assert len(results[0].matches) == 2
+    assert all(m.kind == KIND_DEF for m in results[0].matches)
+
+
+def test_grep_case_insensitive_literal(tmp_path: Path) -> None:
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "USER = 1\n"
+        "user = 2\n"
+        "User = 3\n"
+    )
+    results, _ = grep("user", [src], case_insensitive=True)
+    assert len(results[0].matches) == 3
+
+
+# --- rendering ------------------------------------------------------------
+
+
+def test_render_grep_shows_imports_section(tmp_path: Path) -> None:
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "from .models import User\n"
+        "\n"
+        "def use():\n"
+        "    User()\n"
+    )
+    results, _ = grep("User", [src])
+    output = render_grep(results)
+    assert "## imports" in output
+    assert "## matches" in output
+    assert "[import]" in output
+    # [call] is intentionally NOT in output — call/ref tags were
+    # dropped because agents trivially infer them from line shape
+    # (identifier + `(` = call). The match line for `User()` carries
+    # only `> L<n>: User()` with no trailing tag.
+    assert "User()" in output
+    assert "[call]" not in output
+
+
+def test_render_grep_omits_imports_section_when_empty(tmp_path: Path) -> None:
+    """No `## imports` header if the only matches are inside the code body."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def caller():\n"
+        "    save()\n"
+        "\n"
+        "def save():\n"
+        "    pass\n"
+    )
+    results, _ = grep("save", [src])
+    output = render_grep(results)
+    assert "## imports" not in output
+    assert "## matches" in output
+
+
+def test_render_grep_includes_match_count_in_header(tmp_path: Path) -> None:
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save():\n"
+        "    save()\n"
+        "    save()\n"
+    )
+    results, _ = grep("save", [src])
+    output = render_grep(results)
+    assert "(3 matches)" in output
+
+
+def test_render_grep_filtered_footer(tmp_path: Path) -> None:
+    src = tmp_path / "mod.py"
+    src.write_text(
+        '# save here\n'
+        'def use():\n'
+        '    save()\n'
+        'def save():\n'
+        '    pass\n'
+    )
+    results, _ = grep("save", [src])
+    output = render_grep(results)
+    assert "1 matches in comments/strings hidden" in output
+    assert "--include-noise" in output
+
+
+def test_render_grep_arrow_marker_on_match_lines(tmp_path: Path) -> None:
+    """Match lines inside scope use the `> L<n>` marker."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "class C:\n"
+        "    def m(self):\n"
+        "        target()\n"
+        "\n"
+        "def target():\n"
+        "    pass\n"
+    )
+    results, _ = grep("target", [src])
+    output = render_grep(results)
+    assert "> L3: target()" in output
+
+
+# --- typescript adapter (cross-language smoke) ----------------------------
+
+
+def test_grep_typescript_call_classification(tmp_path: Path) -> None:
+    src = tmp_path / "app.ts"
+    src.write_text(
+        "import { User } from './models';\n"
+        "\n"
+        "function use(u: User): void {\n"
+        "  u.save();\n"
+        "}\n"
+    )
+    results, _ = grep("User", [src])
+    kinds = _kinds(results)
+    assert KIND_IMPORT in kinds
+    assert KIND_REF in kinds
+
+
+# --- generic call / turbofish / optional chain ---------------------------
+
+
+def test_grep_generic_call_classified_as_call(tmp_path: Path) -> None:
+    """``foo<T>()`` should be [call], not [ref] — was a real v1 bug."""
+    src = tmp_path / "app.ts"
+    src.write_text(
+        "function genericCall<T>(): T {\n"
+        "  return null as T;\n"
+        "}\n"
+        "\n"
+        "function caller() {\n"
+        "  return genericCall<string>();\n"
+        "}\n"
+    )
+    results, _ = grep("genericCall", [src])
+    kinds = _kinds(results)
+    # Definition + call — both should be present, not two refs.
+    assert kinds.count(KIND_DEF) == 1
+    assert kinds.count(KIND_CALL) == 1
+
+
+def test_grep_optional_chain_call_classified_as_call(tmp_path: Path) -> None:
+    """``foo?.()`` (TypeScript optional chain call) is a call."""
+    src = tmp_path / "app.ts"
+    src.write_text(
+        "function maybeRun(fn?: () => void) {\n"
+        "  fn?.();\n"                  # optional chain call — should be [call]
+        "}\n"
+    )
+    results, _ = grep("fn", [src])
+    kinds = _kinds(results)
+    assert KIND_CALL in kinds
+
+
+def test_grep_non_null_assertion_call(tmp_path: Path) -> None:
+    """``foo!()`` (TS non-null assertion + call) is a call."""
+    src = tmp_path / "app.ts"
+    src.write_text(
+        "function maybeRun(fn: (() => void) | null) {\n"
+        "  fn!();\n"                   # non-null assertion call — [call]
+        "}\n"
+    )
+    results, _ = grep("fn", [src])
+    kinds = _kinds(results)
+    assert KIND_CALL in kinds
+
+
+def test_grep_indexed_array_is_ref_not_call(tmp_path: Path) -> None:
+    """``[fn]`` (array literal) should NOT be classified as a call."""
+    src = tmp_path / "app.ts"
+    src.write_text(
+        "const fns = [genericCall];\n"     # plain ref inside array literal
+    )
+    results, _ = grep("genericCall", [src])
+    kinds = _kinds(results)
+    assert KIND_REF in kinds
+    assert KIND_CALL not in kinds
+
+
+# --- multi-line string filtering (Python docstrings) ---------------------
+
+
+def test_grep_filters_python_docstring_matches(tmp_path: Path) -> None:
+    """Matches inside a triple-quoted Python docstring are filtered.
+
+    Single-line quote-counting heuristics can't see across line
+    boundaries; this test pins the tree-sitter-backed filtering that
+    Python adapter populates via ``ParseResult.noise_regions``.
+    """
+    src = tmp_path / "mod.py"
+    src.write_text(
+        'def use():\n'
+        '    """\n'
+        '    Calls save() to persist.\n'   # filtered — inside docstring
+        '    Mentions save in prose.\n'    # filtered
+        '    """\n'
+        '    save()\n'                      # visible — real call
+        '\n'
+        'def save():\n'
+        '    pass\n'
+    )
+    results, _ = grep("save", [src])
+    fr = results[0]
+    # Two matches inside the docstring should be filtered.
+    assert fr.filtered_count == 2
+    visible_kinds = [m.kind for m in fr.matches]
+    assert KIND_STRING not in visible_kinds
+    assert KIND_CALL in visible_kinds
+    assert KIND_DEF in visible_kinds
+
+
+def test_grep_module_docstring_doesnt_pollute_results(tmp_path: Path) -> None:
+    """A module-level docstring referencing the symbol shouldn't surface."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        '"""Module that uses User everywhere."""\n'
+        'from .models import User\n'
+        '\n'
+        'def use():\n'
+        '    User()\n'
+    )
+    results, _ = grep("User", [src])
+    fr = results[0]
+    assert fr.filtered_count == 1
+    visible_kinds = [m.kind for m in fr.matches]
+    assert KIND_IMPORT in visible_kinds
+    assert KIND_CALL in visible_kinds
+
+
+def test_grep_triple_quote_in_code_doesnt_break_filtering(tmp_path: Path) -> None:
+    """Code that mentions ``\"\"\"`` as a literal shouldn't confuse the filter.
+
+    Regex-based pre-scan would pair the string literal containing the
+    triple-quote with a later docstring's opening ``\"\"\"`` and
+    misclassify regions. Tree-sitter walks correctly because it
+    distinguishes string nodes from string contents.
+    """
+    src = tmp_path / "mod.py"
+    src.write_text(
+        'TRIPLE = \'"""\'\n'                # code with triple-quote as data
+        '\n'
+        'def docstring_user():\n'
+        '    """Calls save here."""\n'      # filtered docstring
+        '    save()\n'                       # visible call
+        '\n'
+        'def save():\n'
+        '    pass\n'
+    )
+    results, _ = grep("save", [src])
+    fr = results[0]
+    # The match inside the docstring is filtered, save() and def save remain.
+    assert fr.filtered_count == 1
+    kinds = [m.kind for m in fr.matches]
+    assert KIND_CALL in kinds
+    assert KIND_DEF in kinds
+
+
+def test_grep_include_noise_surfaces_docstring_matches(tmp_path: Path) -> None:
+    """--include-noise returns docstring matches with [string] kind."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        'def use():\n'
+        '    """Calls save() here."""\n'
+        '    pass\n'
+    )
+    results, _ = grep("save", [src], include_noise=True)
+    fr = results[0]
+    assert fr.filtered_count == 0
+    kinds = [m.kind for m in fr.matches]
+    assert KIND_STRING in kinds
+
+
+# --- gitignore integration -----------------------------------------------
+
+
+def test_grep_respects_gitignore(tmp_path: Path) -> None:
+    """`.gitignore` is honored unless --no-ignore is passed."""
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".gitignore").write_text("ignored.py\n")
+    (tmp_path / "kept.py").write_text("def save(): pass\n")
+    (tmp_path / "ignored.py").write_text("def save(): pass\n")
+
+    results, _ = grep("save", [tmp_path])
+    paths = [str(fr.path) for fr in results]
+    assert any("kept.py" in p for p in paths)
+    assert not any("ignored.py" in p for p in paths)
+
+    # --no-ignore disables filtering.
+    results_all, _ = grep("save", [tmp_path], no_ignore=True)
+    paths_all = [str(fr.path) for fr in results_all]
+    assert any("ignored.py" in p for p in paths_all)
+
+
+# --- edge cases -----------------------------------------------------------
+
+
+def test_grep_unsupported_extension_skipped(tmp_path: Path) -> None:
+    """Files whose extension no adapter claims are skipped silently."""
+    (tmp_path / "data.bin").write_text("save save save\n")
+    (tmp_path / "code.py").write_text("def save(): pass\n")
+    results, _ = grep("save", [tmp_path])
+    paths = [str(fr.path) for fr in results]
+    assert all("code.py" in p for p in paths)
+
+
+def test_grep_nonexistent_path_returns_empty(tmp_path: Path) -> None:
+    """A missing path is silently skipped (CLI surfaces it via --path-not-found)."""
+    results, _ = grep("anything", [tmp_path / "does-not-exist"])
+    assert results == []
+
+
+def test_grep_no_matches_returns_empty(tmp_path: Path) -> None:
+    src = tmp_path / "mod.py"
+    src.write_text("def foo(): pass\n")
+    results, _ = grep("nonexistent_symbol", [src])
+    assert results == []
+
+
+def test_grep_empty_pattern_returns_empty(tmp_path: Path) -> None:
+    """Empty pattern would match every byte position via `bytes.find(b'')` —
+    explicitly rejected so callers never get the file-flooded surprise."""
+    src = tmp_path / "mod.py"
+    src.write_text("def foo(): pass\n")
+    results, _ = grep("", [src])
+    assert results == []
+
+
+# --- multi-pattern search ------------------------------------------------
+
+
+def test_grep_accepts_list_of_patterns(tmp_path: Path) -> None:
+    """``patterns=[a, b]`` finds matches for both, combined into one walk."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save(): pass\n"
+        "def load(): pass\n"
+        "def update(): pass\n"
+    )
+    results, _ = grep(["save", "load"], [src])
+    fr = results[0]
+    # Three lines of code; "save" matches one def, "load" matches one def,
+    # and "update" is not in the pattern list — should NOT match.
+    assert len(fr.matches) == 2
+    kinds = sorted(m.kind for m in fr.matches)
+    assert kinds == [KIND_DEF, KIND_DEF]
+    contents = sorted(m.line_content.strip() for m in fr.matches)
+    assert "def save(): pass" in contents
+    assert "def load(): pass" in contents
+
+
+def test_grep_multi_pattern_preserves_classification(tmp_path: Path) -> None:
+    """Each pattern's matches go through the same classification pipeline."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save(): pass\n"
+        "def load(): pass\n"
+        "\n"
+        "def use():\n"
+        "    save()\n"     # call to save
+        "    load()\n"     # call to load
+        "    other = save\n"  # ref to save
+    )
+    results, _ = grep(["save", "load"], [src])
+    kinds = _kinds(results)
+    assert kinds.count(KIND_DEF) == 2
+    assert kinds.count(KIND_CALL) == 2
+    assert kinds.count(KIND_REF) == 1
+
+
+def test_grep_multi_pattern_string_back_compat(tmp_path: Path) -> None:
+    """Single-string ``patterns`` still works (back-compat for old callers)."""
+    src = tmp_path / "mod.py"
+    src.write_text("def save(): pass\n")
+    # Both call shapes return the same result.
+    results_str, _ = grep("save", [src])
+    results_list, _ = grep(["save"], [src])
+    assert len(results_str) == len(results_list) == 1
+    assert results_str[0].matches[0].kind == results_list[0].matches[0].kind
+
+
+def test_grep_multi_pattern_filters_empty_strings(tmp_path: Path) -> None:
+    """Empty pattern strings are silently dropped; non-empty ones still run."""
+    src = tmp_path / "mod.py"
+    src.write_text("def save(): pass\n")
+    results, _ = grep(["", "save", ""], [src])
+    assert len(results[0].matches) == 1
+
+
+def test_grep_multi_pattern_all_empty_returns_empty(tmp_path: Path) -> None:
+    """If every pattern is empty/dropped, the call returns no results."""
+    src = tmp_path / "mod.py"
+    src.write_text("def save(): pass\n")
+    results, _ = grep(["", "", ""], [src])
+    assert results == []
+
+
+def test_grep_multi_pattern_with_regex(tmp_path: Path) -> None:
+    """``is_regex=True`` applies to every pattern in the list."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save_user(): pass\n"
+        "def load_admin(): pass\n"
+        "def other(): pass\n"
+    )
+    results, _ = grep([r"save_\w+", r"load_\w+"], [src], is_regex=True)
+    fr = results[0]
+    assert len(fr.matches) == 2
+
+
+def test_grep_multi_pattern_with_case_insensitive(tmp_path: Path) -> None:
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "USER = 1\n"
+        "Admin = 2\n"
+        "guest = 3\n"
+    )
+    results, _ = grep(["user", "admin"], [src], case_insensitive=True)
+    assert len(results[0].matches) == 2
+
+
+# --- regex auto-detection ------------------------------------------------
+
+
+def test_looks_like_regex_detects_bre_alternation() -> None:
+    """``\\|`` is the BRE alternation form — agents fluent in basic
+    grep type ``Magnet\\|Container`` and expect OR-matching."""
+    from ast_outline.grep import _looks_like_regex
+    assert _looks_like_regex(r"Magnet\|Container")
+
+
+def test_looks_like_regex_detects_bare_pipe() -> None:
+    from ast_outline.grep import _looks_like_regex
+    assert _looks_like_regex("save|load")
+
+
+def test_looks_like_regex_detects_char_classes() -> None:
+    from ast_outline.grep import _looks_like_regex
+    assert _looks_like_regex(r"v\d+")
+    assert _looks_like_regex(r"\w+_test")
+    assert _looks_like_regex(r"\bword\b")
+
+
+def test_looks_like_regex_detects_grouping() -> None:
+    from ast_outline.grep import _looks_like_regex
+    assert _looks_like_regex(r"(?:save|load)")
+    assert _looks_like_regex(r"(?P<name>\w+)")
+
+
+def test_looks_like_regex_skips_literal_code_constructs() -> None:
+    """Literal code constructs that look slightly regex-like must NOT
+    auto-promote — Java arrays, qualified names with dots, etc."""
+    from ast_outline.grep import _looks_like_regex
+    assert not _looks_like_regex("string[]")          # Java array
+    assert not _looks_like_regex("User.save")          # qualified name
+    assert not _looks_like_regex("count++")            # increment
+    assert not _looks_like_regex("count?")             # ternary / optional
+    assert not _looks_like_regex("a*b")                # multiplication
+    assert not _looks_like_regex("$variable")          # PHP / shell var
+    assert not _looks_like_regex("^header")            # leading caret OK
+
+
+def test_looks_like_regex_treats_double_escaped_pipe_as_literal() -> None:
+    """``\\\\|`` (escaped backslash + pipe) is genuinely literal — user
+    wants to find a literal backslash-pipe sequence, not alternation."""
+    from ast_outline.grep import _looks_like_regex
+    # Pattern: literal `\` followed by literal `|`. Looks like regex
+    # alternation but with the backslash escaped — we treat as bare
+    # `|` after the escaped backslash. Conservative: still promote
+    # (the pipe is unescaped from the regex's perspective). Edge case
+    # documented; users who genuinely want literal `\|` use --regex
+    # with their own escaping.
+    assert _looks_like_regex(r"\\|")  # \\ then | — pipe is unescaped
+
+
+def test_looks_like_ambiguous_regex_catches_escaped_metachars() -> None:
+    """Escaped metachars like ``\\.``, ``\\(`` are regex-only intent —
+    used by the warn-on-no-match safety net."""
+    from ast_outline.grep import looks_like_ambiguous_regex
+    assert looks_like_ambiguous_regex(r"save\.method")
+    assert looks_like_ambiguous_regex(r"User\(")
+    assert looks_like_ambiguous_regex(r"arr\[0\]")
+
+
+def test_looks_like_ambiguous_regex_catches_quantifiers() -> None:
+    """Quantifiers attached to identifiers (``foo+``, ``bar*``) signal
+    likely-regex intent."""
+    from ast_outline.grep import looks_like_ambiguous_regex
+    assert looks_like_ambiguous_regex("foo+")
+    assert looks_like_ambiguous_regex("bar*")
+    assert looks_like_ambiguous_regex("baz?")
+
+
+def test_looks_like_ambiguous_regex_catches_line_anchors() -> None:
+    """``^`` and ``$`` at the edges of the pattern are likely regex
+    anchors."""
+    from ast_outline.grep import looks_like_ambiguous_regex
+    assert looks_like_ambiguous_regex("^class")
+    assert looks_like_ambiguous_regex("trailing$")
+
+
+def test_looks_like_ambiguous_regex_skips_plain_literals() -> None:
+    """Plain symbol-style literals never trigger the warn-on-no-match
+    hint — would be noise in normal "symbol not found" cases."""
+    from ast_outline.grep import looks_like_ambiguous_regex
+    assert not looks_like_ambiguous_regex("User.save")
+    assert not looks_like_ambiguous_regex("compute_total")
+    assert not looks_like_ambiguous_regex("MAX_RETRIES")
+    # `string[]` ends with `]` not preceded by quantifier — not
+    # caught by the quantifier-after-name pattern.
+    assert not looks_like_ambiguous_regex("string[]")
+
+
+# --- -w / --word ---------------------------------------------------------
+
+
+def test_grep_word_match_filters_substring_noise(tmp_path: Path) -> None:
+    """``-w save`` finds whole-word ``save`` only, not ``save_user``,
+    ``unsave``, ``saved``, etc."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save(): pass\n"
+        "def save_user(): pass\n"
+        "def unsave(): pass\n"
+        "def saved(): pass\n"
+        "\n"
+        "def caller():\n"
+        "    save()\n"
+        "    save_user()\n"
+    )
+    results, _ = grep("save", [src], word_match=True)
+    fr = results[0]
+    # 1 def of `save` + 1 call of `save()` — only whole-word matches.
+    # `save_user`, `unsave`, `saved` are all substrings, not whole words.
+    assert len(fr.matches) == 2
+    kinds = sorted(m.kind for m in fr.matches)
+    assert kinds == [KIND_CALL, KIND_DEF]
+
+
+def test_grep_word_match_with_regex(tmp_path: Path) -> None:
+    """``-w`` over regex wraps the whole regex in word boundaries."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save_user(): pass\n"
+        "def save_admin(): pass\n"
+        "\n"
+        "def use():\n"
+        "    save_user()\n"
+        "    notsave_user()\n"          # has `save_user` substring; -w should reject
+    )
+    results, _ = grep(r"save_\w+", [src], is_regex=True, word_match=True)
+    fr = results[0]
+    # 2 defs + 1 call (the `notsave_user` is a substring within a longer
+    # identifier, so word-boundary fails).
+    assert len(fr.matches) == 3
+
+
+def test_grep_word_match_escapes_literal_metachars(tmp_path: Path) -> None:
+    """``-w User.save`` (literal) treats the dot as literal, not regex
+    'any char' — and still applies word boundaries."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        '"User.save"\n'                  # in string — filtered
+        'def caller():\n'
+        '    User.save()\n'              # whole literal match
+        '    UserXsave()\n'              # would match if `.` were regex
+    )
+    results, _ = grep("User.save", [src], word_match=True)
+    fr = results[0]
+    visible = [m for m in fr.matches if m.kind != KIND_STRING]
+    # The `User.save()` call matches; `UserXsave` does NOT (because
+    # `.` is escaped by re.escape before wrapping in \b).
+    assert len(visible) == 1
+    assert visible[0].kind == KIND_CALL
+
+
+# --- CLI smoke tests for -l / -c -----------------------------------------
+#
+# These hit the CLI dispatch layer (``_cmd_grep``) since the grep()
+# function itself doesn't know about output modes — those are pure
+# rendering concerns. We use subprocess rather than click-runner-style
+# invocation so the test exercises the same path real agents do.
+
+
+def _run_cli(*args: str) -> str:
+    """Invoke the CLI's ``main`` and return stdout. We call in-process
+    rather than spawning a subprocess so the test stays fast and free
+    of any binary-installation dependency.
+    """
+    import io
+    import contextlib
+    from ast_outline.cli import main
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        main(list(args))
+    return buf.getvalue()
+
+
+def test_cli_files_only_output(tmp_path: Path) -> None:
+    """``-l`` outputs just file paths, no scope-trees."""
+    src1 = tmp_path / "a.py"
+    src1.write_text("def save(): pass\n")
+    src2 = tmp_path / "b.py"
+    src2.write_text("def save(): pass\n")
+    src3 = tmp_path / "c.py"
+    src3.write_text("def other(): pass\n")
+    output = _run_cli("grep", "-l", "save", str(tmp_path))
+    lines = [ln for ln in output.splitlines() if ln.strip() and not ln.startswith("#")]
+    # Only files containing 'save' should be listed; c.py absent.
+    paths = set(lines)
+    assert str(src1) in paths
+    assert str(src2) in paths
+    assert str(src3) not in paths
+    # No scope-tree leakage — output must not contain `## matches` or `>`.
+    assert "## matches" not in output
+    assert "> L" not in output
+
+
+def test_cli_count_output(tmp_path: Path) -> None:
+    """``-c`` outputs ``path:N`` per file, skipping zero-count files."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save(): pass\n"
+        "def use():\n"
+        "    save()\n"
+        "    save()\n"
+    )
+    output = _run_cli("grep", "-c", "save", str(tmp_path))
+    lines = [ln for ln in output.splitlines() if ln.strip() and not ln.startswith("#")]
+    assert len(lines) == 1
+    assert lines[0] == f"{src}:3"
+
+
+def test_cli_files_only_and_count_are_mutex(tmp_path: Path) -> None:
+    """``-l`` and ``-c`` together are an argparse error — surfaced
+    on stdout as ``# note:`` per CLI contract."""
+    src = tmp_path / "mod.py"
+    src.write_text("def save(): pass\n")
+    output = _run_cli("grep", "-l", "-c", "save", str(tmp_path))
+    assert "# note:" in output
+    assert "not allowed" in output
+
+
+# --- --max-count / -m ----------------------------------------------------
+#
+# Per-file cap, POSIX `grep -m` semantics. Truncation is surfaced
+# explicitly so an LLM consumer can never silently mistake a partial
+# result for an exhaustive one.
+
+
+def test_grep_max_count_caps_per_file_matches(tmp_path: Path) -> None:
+    """``max_count=2`` keeps two matches and records the rest as truncated."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def use():\n"
+        "    save(); save(); save(); save(); save()\n"
+    )
+    results, _ = grep("save", [src], max_count=2)
+    assert len(results) == 1
+    fr = results[0]
+    assert len(fr.matches) == 2
+    assert fr.truncated_count == 3
+
+
+def test_grep_max_count_no_op_when_under_cap(tmp_path: Path) -> None:
+    """File with fewer matches than the cap is unaffected."""
+    src = tmp_path / "mod.py"
+    src.write_text("def save(): pass\nsave()\n")
+    results, _ = grep("save", [src], max_count=10)
+    fr = results[0]
+    assert len(fr.matches) == 2
+    assert fr.truncated_count == 0
+
+
+def test_grep_max_count_applies_after_noise_filter(tmp_path: Path) -> None:
+    """Cap counts visible matches, not pre-filtered noise.
+
+    The 4 string matches are filtered first; cap=2 then keeps both real
+    matches without truncation. Critical for LLMs — otherwise ``-m 2``
+    on a docstring-heavy file might silently return 0 visible matches
+    while reporting "2 cap reached".
+    """
+    src = tmp_path / "mod.py"
+    src.write_text(
+        '"""mentions save save save save in docstring"""\n'
+        "def use():\n"
+        "    save()\n"
+        "    save()\n"
+    )
+    results, _ = grep("save", [src], max_count=2)
+    fr = results[0]
+    assert len(fr.matches) == 2
+    assert fr.truncated_count == 0
+
+
+def test_render_includes_truncation_footer(tmp_path: Path) -> None:
+    """Rendered output carries an explicit truncation note so the agent
+    knows results are partial — silent truncation is the failure mode
+    we're guarding against."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def use():\n"
+        "    save(); save(); save(); save(); save()\n"
+    )
+    results, _ = grep("save", [src], max_count=2)
+    rendered = render_grep(results)
+    assert "truncated" in rendered
+    assert "3 more" in rendered
+    assert "--max-count" in rendered
+
+
+def test_render_truncation_footer_singular(tmp_path: Path) -> None:
+    """Singular form ``1 more match`` (not ``1 more matches``) — small
+    polish, but agent-facing output should read naturally."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def use():\n"
+        "    save(); save(); save()\n"
+    )
+    results, _ = grep("save", [src], max_count=2)
+    rendered = render_grep(results)
+    assert "1 more match" in rendered
+    assert "1 more matches" not in rendered
+
+
+def test_cli_max_count_caps_output(tmp_path: Path) -> None:
+    """``ast-outline grep -m 2`` caps and emits truncation footer."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def use():\n"
+        "    save(); save(); save(); save()\n"
+    )
+    output = _run_cli("grep", "-m", "2", "save", str(src))
+    # Two visible match lines (`> L...`)
+    match_lines = [ln for ln in output.splitlines() if ln.lstrip().startswith("> L")]
+    assert len(match_lines) == 2
+    assert "truncated" in output
+    assert "2 more" in output
+
+
+def test_cli_max_count_with_count_mode_reflects_cap(tmp_path: Path) -> None:
+    """``-c`` with ``-m`` reports the capped count, matching POSIX grep."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def use():\n"
+        "    save(); save(); save(); save(); save()\n"
+    )
+    output = _run_cli("grep", "-c", "-m", "2", "save", str(src))
+    lines = [ln for ln in output.splitlines() if ln.strip() and not ln.startswith("#")]
+    assert lines == [f"{src}:2"]
+
+
+def test_cli_max_count_with_files_only_lists_capped_file(tmp_path: Path) -> None:
+    """``-l`` lists files with any visible match — the cap doesn't
+    change ``did this file match``; just the per-file detail."""
+    src1 = tmp_path / "a.py"
+    src1.write_text("def use():\n    save(); save(); save()\n")
+    src2 = tmp_path / "b.py"
+    src2.write_text("def other(): pass\n")
+    output = _run_cli("grep", "-l", "-m", "1", "save", str(tmp_path))
+    lines = [ln for ln in output.splitlines() if ln.strip() and not ln.startswith("#")]
+    assert str(src1) in lines
+    assert str(src2) not in lines
+
+
+def test_cli_max_count_rejects_zero_and_negative(tmp_path: Path) -> None:
+    """``-m 0`` and ``-m -1`` are rejected with a ``# note:`` line —
+    consistent with the no-non-zero-exit-code contract."""
+    src = tmp_path / "mod.py"
+    src.write_text("def save(): pass\n")
+    output = _run_cli("grep", "-m", "0", "save", str(src))
+    assert "# note:" in output
+    assert "must be" in output
+
+    output = _run_cli("grep", "--max-count=-1", "save", str(src))
+    assert "# note:" in output
+    assert "must be" in output
+
+
+# --- --kind ---------------------------------------------------------------
+#
+# Filter by classification. The most frequent post-filter agents do
+# manually today — "show me only definitions" / "only calls" — collapsed
+# into a single flag.
+
+
+def test_grep_kind_filter_def_only(tmp_path: Path) -> None:
+    """``kind_filter={'def'}`` returns only definition matches."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save():\n"
+        "    pass\n"
+        "\n"
+        "def caller():\n"
+        "    save()\n"
+        "    handler = save\n"
+    )
+    results, _ = grep("save", [src], kind_filter={KIND_DEF})
+    kinds = _kinds(results)
+    assert kinds == [KIND_DEF]
+    assert KIND_CALL not in kinds
+    assert KIND_REF not in kinds
+
+
+def test_grep_kind_filter_call_excludes_def_and_ref(tmp_path: Path) -> None:
+    """``kind_filter={'call'}`` keeps calls only."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save():\n"
+        "    pass\n"
+        "\n"
+        "def caller():\n"
+        "    save()\n"
+        "    handler = save\n"
+    )
+    results, _ = grep("save", [src], kind_filter={KIND_CALL})
+    kinds = _kinds(results)
+    assert kinds == [KIND_CALL]
+
+
+def test_grep_kind_filter_multiple_kinds(tmp_path: Path) -> None:
+    """Filter accepts a set — multiple kinds keep all of them."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save():\n"
+        "    pass\n"
+        "\n"
+        "def caller():\n"
+        "    save()\n"
+        "    handler = save\n"
+    )
+    results, _ = grep("save", [src], kind_filter={KIND_CALL, KIND_REF})
+    kinds = sorted(set(_kinds(results)))
+    assert kinds == sorted([KIND_CALL, KIND_REF])
+    assert KIND_DEF not in _kinds(results)
+
+
+def test_grep_kind_filter_import_only(tmp_path: Path) -> None:
+    """``kind_filter={'import'}`` isolates import matches."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "from models import User\n"
+        "\n"
+        "def use():\n"
+        "    return User()\n"
+    )
+    results, _ = grep("User", [src], kind_filter={KIND_IMPORT})
+    kinds = _kinds(results)
+    assert kinds == [KIND_IMPORT]
+
+
+def test_grep_kind_filter_skips_dont_count_as_noise(tmp_path: Path) -> None:
+    """``--kind`` skips are explicit user narrowing — they should NOT
+    bump ``filtered_count`` (which is reserved for the noise filter that
+    the user can opt back in via ``--include-noise``)."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save():\n"
+        "    pass\n"
+        "\n"
+        "def caller():\n"
+        "    save()\n"
+        "    handler = save\n"
+    )
+    results, _ = grep("save", [src], kind_filter={KIND_DEF})
+    fr = results[0]
+    # Two matches dropped (call + ref) but they are not "hidden noise"
+    # — the user explicitly asked for defs only, so no opt-in footer.
+    assert fr.filtered_count == 0
+
+
+def test_grep_kind_filter_suppresses_noise_footer_when_irrelevant(
+    tmp_path: Path,
+) -> None:
+    """When ``kind_filter`` excludes comment/string, the noise footer
+    must not surface — ``--include-noise`` wouldn't help (those matches
+    would still be dropped by the kind filter) so the hint would mislead."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        '"""docstring with save save save"""\n'
+        "# comment with save\n"
+        "from models import save\n"
+        "def use():\n"
+        "    save()\n"
+    )
+    # Filter to imports only — comment + docstring matches are noise that
+    # the user has implicitly opted out of by narrowing scope.
+    results, _ = grep("save", [src], kind_filter={KIND_IMPORT})
+    fr = results[0]
+    assert fr.filtered_count == 0  # footer wouldn't render — accurate
+    # Sanity: without kind filter, the same file would surface noise.
+    results_no_filter, _ = grep("save", [src])
+    assert results_no_filter[0].filtered_count > 0
+
+
+def test_grep_kind_filter_comment_requires_include_noise(tmp_path: Path) -> None:
+    """``kind_filter={'comment'}`` without ``include_noise=True`` returns
+    empty — the noise filter runs first. Caller (CLI) is responsible for
+    auto-enabling include_noise; the library itself stays composable."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "# call save here\n"
+        "def use():\n"
+        "    pass\n"
+    )
+    # Without include_noise: noise filter eats the comment match first;
+    # file is still in results (filtered_count > 0) but matches list empty.
+    results, _ = grep("save", [src], kind_filter={KIND_COMMENT})
+    assert all(fr.matches == [] for fr in results)
+    # With include_noise: comment match surfaces.
+    results, _ = grep(
+        "save", [src], kind_filter={KIND_COMMENT}, include_noise=True
+    )
+    kinds = _kinds(results)
+    assert kinds == [KIND_COMMENT]
+
+
+# --- CLI: --kind ----------------------------------------------------------
+
+
+def test_cli_kind_filter_single_value(tmp_path: Path) -> None:
+    """``--kind def`` returns only definitions in CLI output."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save():\n"
+        "    pass\n"
+        "\n"
+        "def caller():\n"
+        "    save()\n"
+    )
+    output = _run_cli("grep", "--kind", "def", "save", str(src))
+    # Only one match line; `[def]` tag visible.
+    match_lines = [ln for ln in output.splitlines() if ln.lstrip().startswith(("def ", "> L"))]
+    assert any("[def]" in ln for ln in match_lines)
+    # `save()` call line shouldn't appear as a `> L`-prefixed match.
+    assert not any("save()" in ln and ln.lstrip().startswith("> L") for ln in match_lines)
+
+
+def test_cli_kind_filter_comma_separated(tmp_path: Path) -> None:
+    """``--kind def,call`` (rg-style) accepts both kinds in one flag."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save():\n"
+        "    pass\n"
+        "\n"
+        "def caller():\n"
+        "    save()\n"
+        "    handler = save\n"
+    )
+    output = _run_cli("grep", "--kind", "def,call", "save", str(src))
+    # def + call should be present; ref (handler = save) should not.
+    assert "[def]" in output
+    assert "save()" in output
+    # ref line `handler = save` would appear without the `(` after save —
+    # absence of `handler = save` means ref was filtered.
+    assert "handler = save" not in output
+
+
+def test_cli_kind_filter_repeated_flag(tmp_path: Path) -> None:
+    """``--kind def --kind call`` (POSIX-repeatable style) equivalent
+    to comma-separated form."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save():\n"
+        "    pass\n"
+        "\n"
+        "def caller():\n"
+        "    save()\n"
+        "    handler = save\n"
+    )
+    output = _run_cli(
+        "grep", "--kind", "def", "--kind", "call", "save", str(src)
+    )
+    assert "[def]" in output
+    assert "save()" in output
+    assert "handler = save" not in output
+
+
+def test_cli_kind_filter_invalid_value(tmp_path: Path) -> None:
+    """Invalid kind name surfaces ``# note:`` and exits cleanly."""
+    src = tmp_path / "mod.py"
+    src.write_text("def save(): pass\n")
+    output = _run_cli("grep", "--kind", "definition", "save", str(src))
+    assert "# note:" in output
+    assert "invalid --kind" in output
+    assert "definition" in output
+
+
+def test_cli_kind_filter_comment_auto_enables_noise(tmp_path: Path) -> None:
+    """``--kind comment`` should auto-enable ``--include-noise`` so the
+    user gets results without remembering a second flag."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "# call save here\n"
+        "def use():\n"
+        "    pass\n"
+    )
+    output = _run_cli("grep", "--kind", "comment", "save", str(src))
+    # The comment match should surface because include_noise was auto-set.
+    assert "[comment]" in output
+
+
+def test_cli_kind_filter_empty_normalizes(tmp_path: Path) -> None:
+    """``--kind def,,call`` (stray comma) normalizes to {def, call} —
+    not an error. Defensive against agent typos."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save(): pass\n"
+        "def caller(): save()\n"
+    )
+    output = _run_cli("grep", "--kind", "def,,call", "save", str(src))
+    assert "[def]" in output
+    assert "save()" in output
+
+
+def test_cli_kind_filter_combines_with_count(tmp_path: Path) -> None:
+    """``-c --kind def`` reports counts after kind filtering — same as
+    POSIX grep + flag composition: each filter applies independently."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def save(): pass\n"
+        "def caller():\n"
+        "    save()\n"
+        "    save()\n"
+    )
+    # 1 def + 2 calls = 3 total. With --kind def, count should be 1.
+    output = _run_cli("grep", "-c", "--kind", "def", "save", str(src))
+    lines = [ln for ln in output.splitlines() if ln.strip() and not ln.startswith("#")]
+    assert lines == [f"{src}:1"]
+
+
+def test_cli_kind_filter_excludes_files_with_no_matching_kind(
+    tmp_path: Path,
+) -> None:
+    """``-l --kind def`` excludes files where the symbol exists only as
+    calls — they have no matching kind, so file isn't listed."""
+    src1 = tmp_path / "with_def.py"
+    src1.write_text("def save(): pass\n")
+    src2 = tmp_path / "calls_only.py"
+    src2.write_text("def use():\n    save()\n    save()\n")
+    output = _run_cli("grep", "-l", "--kind", "def", "save", str(tmp_path))
+    lines = [ln for ln in output.splitlines() if ln.strip() and not ln.startswith("#")]
+    assert str(src1) in lines
+    assert str(src2) not in lines
+
+
+# --- Per-language KIND classification matrix -----------------------------
+#
+# Each language adapter must classify matches consistently for `--kind`
+# filtering to be trustworthy. Python and TypeScript already have
+# scattered tests above; this section is the systematic per-adapter
+# coverage for the remaining 14 supported languages.
+#
+# Each test exercises:
+#   - def detection (match on a declaration's own name)
+#   - call detection (name followed by `(` after stripping generics/etc.)
+#   - ref detection (name not followed by `(`)
+#   - import detection (line starts with import-style prefix)
+#   - comment detection (line starts with comment marker)
+#   - string detection (match inside a string literal)
+#
+# Where a language doesn't natively have a kind (no imports in SQL,
+# no def/call distinction in YAML), the test omits that case rather
+# than asserting weakly.
+#
+# The classifier lives in ``src/ast_outline/grep.py``:
+#   - ``_COMMENT_PREFIXES_BY_LANG`` — comment markers
+#   - ``_IMPORT_PREFIXES_BY_LANG`` — import-line prefixes
+#   - ``_classify_match`` — per-line dispatch
+#   - ``_next_call_paren_after`` — call vs ref (handles generics,
+#     turbofish, optional chain, non-null assertion)
+
+
+def _kinds_for_pattern(
+    tmp_path: Path, ext: str, source: str, pattern: str, **kwargs
+) -> list[tuple[int, str, str]]:
+    """Run ``grep`` on a file with given extension/source, return
+    ``[(line, kind, content), ...]`` tuples for every match.
+
+    Helper for per-language kind tests — keeps each test focused on the
+    classification claim rather than file plumbing.
+    """
+    src = tmp_path / f"sample.{ext}"
+    src.write_text(source)
+    results, _ = grep(pattern, [src], **kwargs)
+    if not results:
+        return []
+    return [(m.line, m.kind, m.line_content.strip()) for m in results[0].matches]
+
+
+def _kinds_only(matches: list[tuple[int, str, str]]) -> set[str]:
+    """Set of distinct kinds seen across matches — for "is X present" checks."""
+    return {kind for _, kind, _ in matches}
+
+
+# --- C# ------------------------------------------------------------------
+
+
+def test_kind_csharp(tmp_path: Path) -> None:
+    """C# def + call + ref + import + comment + string."""
+    src = (
+        "using System.Text;\n"            # L1: import
+        "namespace App {\n"
+        "    public class Player {\n"
+        "        public void Save() { }\n"     # L4: def
+        "    }\n"
+        "    public class Caller {\n"
+        "        public void Run() {\n"
+        "            var p = new Player();\n"  # L8: ref to Player (constructor uses `new`, also a call to Player ctor)
+        "            p.Save();\n"               # L9: call to Save
+        "            // call Save here\n"        # L10: comment containing Save
+        "            var msg = \"call Save here\";\n"  # L11: string containing Save
+        "        }\n"
+        "    }\n"
+        "}\n"
+    )
+    matches = _kinds_for_pattern(
+        tmp_path, "cs", src, "Save", include_noise=True
+    )
+    by_line = {line: kind for line, kind, _ in matches}
+    # L4 — Save is the method's own name on its declaration line
+    assert by_line.get(4) == KIND_DEF, f"expected def at L4, got {by_line}"
+    # L9 — p.Save() is a call (paren follows)
+    assert by_line.get(9) == KIND_CALL, f"expected call at L9, got {by_line}"
+    # L10 — comment line
+    assert by_line.get(10) == KIND_COMMENT
+    # L11 — string literal
+    assert by_line.get(11) == KIND_STRING
+
+    using_matches = _kinds_for_pattern(tmp_path, "cs", src, "System")
+    assert any(k == KIND_IMPORT for _, k, _ in using_matches), (
+        "C# `using` line should classify as import"
+    )
+
+
+# --- Java ----------------------------------------------------------------
+
+
+def test_kind_java(tmp_path: Path) -> None:
+    """Java def + call + ref + import + comment + string."""
+    src = (
+        "import java.util.List;\n"            # L1: import
+        "public class Player {\n"
+        "    public void save() { }\n"            # L3: def
+        "}\n"
+        "class Caller {\n"
+        "    void run() {\n"
+        "        Player p = new Player();\n"      # L7: ref + call to Player
+        "        p.save();\n"                     # L8: call to save
+        "        // save here\n"                   # L9: comment
+        "        String msg = \"save here\";\n"   # L10: string
+        "    }\n"
+        "}\n"
+    )
+    matches = _kinds_for_pattern(
+        tmp_path, "java", src, "save", include_noise=True
+    )
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(3) == KIND_DEF
+    assert by_line.get(8) == KIND_CALL
+    assert by_line.get(9) == KIND_COMMENT
+    assert by_line.get(10) == KIND_STRING
+
+    import_matches = _kinds_for_pattern(tmp_path, "java", src, "java.util")
+    assert any(k == KIND_IMPORT for _, k, _ in import_matches)
+
+
+# --- Kotlin --------------------------------------------------------------
+
+
+def test_kind_kotlin(tmp_path: Path) -> None:
+    """Kotlin def + call + ref + import + comment + string. Kotlin allows
+    `import foo.*` star imports — same prefix detection."""
+    src = (
+        "import kotlin.system.exitProcess\n"   # L1: import
+        "class Player {\n"
+        "    fun save() { }\n"                       # L3: def
+        "}\n"
+        "fun run() {\n"
+        "    val p = Player()\n"                     # L6
+        "    p.save()\n"                             # L7: call
+        "    // save here\n"                          # L8: comment
+        "    val msg = \"save here\"\n"              # L9: string
+        "}\n"
+    )
+    matches = _kinds_for_pattern(
+        tmp_path, "kt", src, "save", include_noise=True
+    )
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(3) == KIND_DEF
+    assert by_line.get(7) == KIND_CALL
+    assert by_line.get(8) == KIND_COMMENT
+    assert by_line.get(9) == KIND_STRING
+
+    import_matches = _kinds_for_pattern(tmp_path, "kt", src, "kotlin")
+    assert any(k == KIND_IMPORT for _, k, _ in import_matches)
+
+
+# --- Scala ---------------------------------------------------------------
+
+
+def test_kind_scala(tmp_path: Path) -> None:
+    """Scala def + call + import + comment + string."""
+    src = (
+        "import scala.collection.mutable\n"    # L1: import
+        "class Player {\n"
+        "  def save(): Unit = { }\n"                  # L3: def
+        "}\n"
+        "object Caller {\n"
+        "  def run(): Unit = {\n"
+        "    val p = new Player()\n"                  # L7
+        "    p.save()\n"                              # L8: call
+        "    // save here\n"                           # L9: comment
+        "    val msg = \"save here\"\n"               # L10: string
+        "  }\n"
+        "}\n"
+    )
+    matches = _kinds_for_pattern(
+        tmp_path, "scala", src, "save", include_noise=True
+    )
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(3) == KIND_DEF
+    assert by_line.get(8) == KIND_CALL
+    assert by_line.get(9) == KIND_COMMENT
+    assert by_line.get(10) == KIND_STRING
+
+    import_matches = _kinds_for_pattern(tmp_path, "scala", src, "scala")
+    assert any(k == KIND_IMPORT for _, k, _ in import_matches)
+
+
+# --- Go ------------------------------------------------------------------
+
+
+def test_kind_go(tmp_path: Path) -> None:
+    """Go def + call + import + comment + string. Go's `import (...)`
+    block is a real risk — the prefix check sees only `import ` on
+    the opening line, NOT on the indented per-package lines inside
+    the block. We assert what we DO support and document the gap."""
+    src = (
+        'import "fmt"\n'                       # L1: single-line import
+        "type Player struct{}\n"
+        "func (p *Player) Save() {}\n"          # L3: def
+        "func run() {\n"
+        "    p := &Player{}\n"                  # L5
+        "    p.Save()\n"                        # L6: call
+        "    // call Save here\n"                # L7: comment
+        "    msg := \"call Save here\"\n"       # L8: string
+        "    _ = fmt.Println(msg)\n"
+        "}\n"
+    )
+    matches = _kinds_for_pattern(
+        tmp_path, "go", src, "Save", include_noise=True
+    )
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(3) == KIND_DEF, f"go def detection failed: {by_line}"
+    assert by_line.get(6) == KIND_CALL
+    assert by_line.get(7) == KIND_COMMENT
+    assert by_line.get(8) == KIND_STRING
+
+    import_matches = _kinds_for_pattern(tmp_path, "go", src, "fmt")
+    # The single-line `import "fmt"` should classify as import.
+    assert any(k == KIND_IMPORT for _, k, _ in import_matches), (
+        "Go single-line `import \"X\"` should classify as import"
+    )
+
+
+def test_kind_go_import_block_inner_lines_classify_as_import(
+    tmp_path: Path,
+) -> None:
+    """Go's parenthesized import block: inner package paths MUST
+    classify as ``[import]``, not ``[string]``. The Go adapter
+    populates ``import_regions`` from the tree-sitter
+    ``import_declaration`` node, which spans the whole ``import (...)``
+    block — so every byte position inside is recognized as import
+    context regardless of the line's surface syntax.
+
+    Without this, agents searching ``ast-outline grep --kind import
+    fmt`` on a Go file would silently miss imports inside blocks —
+    semantically wrong since a human/LLM reader trivially recognizes
+    those lines as imports. Was a pinned limitation in 0.7.7; fixed
+    in 0.7.8."""
+    src = (
+        "import (\n"             # L1
+        '    "fmt"\n'            # L2: inside block
+        '    "strings"\n'        # L3: inside block
+        ")\n"
+        "func use() { _ = strings.Split() }\n"  # L5: real call site
+    )
+    matches = _kinds_for_pattern(tmp_path, "go", src, "strings")
+    by_line = {line: kind for line, kind, _ in matches}
+    # L3 inside the block — now correctly classified as import.
+    assert by_line.get(3) == KIND_IMPORT, (
+        f"Go import-block inner line should classify as [import], "
+        f"got {by_line}"
+    )
+    # L5 — `strings.Split()` matched on `strings` is still a ref (the
+    # package, followed by `.`, not `(`). Outside the import region.
+    assert by_line.get(5) == KIND_REF
+
+
+def test_kind_go_single_line_import_still_classifies_as_import(
+    tmp_path: Path,
+) -> None:
+    """Sanity: the single-line ``import "fmt"`` form (covered by both
+    the line-prefix heuristic AND the new import_regions) must still
+    classify as ``[import]``. Both detection paths overlap here —
+    pin that they don't fight each other."""
+    src = (
+        'import "fmt"\n'        # L1: single-line import
+        "func use() { _ = fmt.Println }\n"  # L2: ref to fmt
+    )
+    matches = _kinds_for_pattern(tmp_path, "go", src, "fmt")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(1) == KIND_IMPORT
+
+
+def test_kind_python_multiline_from_import(tmp_path: Path) -> None:
+    """Python parenthesized multi-line imports: each inner symbol
+    must classify as ``[import]``. Was broken before import_regions
+    — symbols on indented lines had no ``import ``/``from `` prefix
+    and would classify as ``[ref]`` (or filtered if the classifier
+    saw them as code). Python adapter now populates import_regions
+    via tree-sitter walk of ``import_from_statement`` nodes."""
+    src = (
+        "from foo import (\n"   # L1
+        "    Bar,\n"            # L2: inner — symbol Bar
+        "    Baz,\n"            # L3: inner — symbol Baz
+        ")\n"
+    )
+    bar_matches = _kinds_for_pattern(tmp_path, "py", src, "Bar")
+    by_line = {line: kind for line, kind, _ in bar_matches}
+    assert by_line.get(2) == KIND_IMPORT, (
+        f"Python multi-line import inner symbol should be [import], "
+        f"got {by_line}"
+    )
+    baz_matches = _kinds_for_pattern(tmp_path, "py", src, "Baz")
+    by_line = {line: kind for line, kind, _ in baz_matches}
+    assert by_line.get(3) == KIND_IMPORT
+
+
+def test_kind_typescript_multiline_import(tmp_path: Path) -> None:
+    """TypeScript multi-line ``import { A, B } from '...'``: inner
+    identifiers on their own lines must classify as ``[import]``.
+    Without import_regions they'd classify as ``[ref]`` because the
+    inner lines carry no ``import `` prefix."""
+    src = (
+        "import {\n"            # L1
+        "    foo,\n"            # L2
+        "    bar,\n"            # L3
+        "} from './module';\n"  # L4
+    )
+    foo_matches = _kinds_for_pattern(tmp_path, "ts", src, "foo")
+    by_line = {line: kind for line, kind, _ in foo_matches}
+    assert by_line.get(2) == KIND_IMPORT, (
+        f"TS multi-line import inner symbol should be [import], "
+        f"got {by_line}"
+    )
+
+
+def test_kind_rust_use_group_inner_classifies_as_import(tmp_path: Path) -> None:
+    """Rust ``use foo::{...}`` group form: inner identifiers on their
+    own lines must classify as ``[import]``. Without import_regions
+    they'd classify as ``[ref]``."""
+    src = (
+        "use std::collections::{\n"   # L1
+        "    HashMap,\n"              # L2
+        "    BTreeMap,\n"             # L3
+        "};\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "rs", src, "HashMap")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(2) == KIND_IMPORT, (
+        f"Rust use-group inner symbol should be [import], got {by_line}"
+    )
+
+
+def test_kind_php_use_group_inner_classifies_as_import(tmp_path: Path) -> None:
+    """PHP ``use App\\{...}`` group form: inner class names on their
+    own lines must classify as ``[import]``."""
+    src = (
+        "<?php\n"
+        "use App\\{\n"          # L2
+        "    Foo,\n"            # L3
+        "    Bar,\n"            # L4
+        "};\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "php", src, "Foo")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(3) == KIND_IMPORT, (
+        f"PHP use-group inner symbol should be [import], got {by_line}"
+    )
+
+
+# --- C++ using directives + declarations (not type aliases) ---------------
+
+
+def test_kind_cpp_using_namespace_classifies_as_import(tmp_path: Path) -> None:
+    """``using namespace std;`` brings names from a namespace into scope.
+    Semantically an import — agents searching ``--kind import std`` on
+    C++ code should find it. The C++ adapter populates import_regions
+    via tree-sitter ``using_directive`` nodes."""
+    src = (
+        "#include <vector>\n"
+        "using namespace std;\n"          # L2: directive
+        "void use() { vector<int> v; }\n"  # L3: actual use
+    )
+    matches = _kinds_for_pattern(tmp_path, "cpp", src, "std")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(2) == KIND_IMPORT, (
+        f"`using namespace std;` should be [import], got {by_line}"
+    )
+
+
+def test_kind_cpp_using_declaration_classifies_as_import(tmp_path: Path) -> None:
+    """``using std::vector;`` brings a single symbol into scope —
+    semantically an import (different AST node from `using namespace`,
+    same import semantics)."""
+    src = (
+        "#include <vector>\n"
+        "using std::vector;\n"            # L2: declaration
+        "void use() { vector<int> v; }\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "cpp", src, "vector")
+    by_line = {line: kind for line, kind, _ in matches}
+    # L1 is #include line — also import via line-prefix
+    assert by_line.get(1) == KIND_IMPORT
+    # L2 is using-declaration — import via piggyback
+    assert by_line.get(2) == KIND_IMPORT, (
+        f"`using std::vector;` should be [import], got {by_line}"
+    )
+
+
+def test_kind_cpp_alias_declaration_NOT_import(tmp_path: Path) -> None:
+    """``using my_int = int;`` is a type alias, NOT an import — even
+    though the line starts with ``using ``. The C++ adapter relies on
+    AST node distinction (``alias_declaration`` vs ``using_directive``/
+    ``using_declaration``) to discriminate; a naive line-prefix would
+    misclassify aliases as imports. Pin this so a switch to line-prefix
+    detection later doesn't silently break."""
+    src = (
+        "using my_int = int;\n"          # L1: type alias — NOT import
+        "my_int x = 42;\n"                # L2: use site
+    )
+    matches = _kinds_for_pattern(tmp_path, "cpp", src, "my_int")
+    by_line = {line: kind for line, kind, _ in matches}
+    # Should classify as def (it's the alias's own declaration line) or
+    # ref — but NOT import. The key invariant: not [import].
+    assert by_line.get(1) != KIND_IMPORT, (
+        f"`using A = B;` is type alias, must NOT be [import]. Got {by_line}"
+    )
+
+
+# --- C# global using (C# 10+ / .NET 6+) ----------------------------------
+
+
+def test_kind_csharp_global_using_classifies_as_import(tmp_path: Path) -> None:
+    """``global using System;`` is the modern .NET 6+ file-scoped
+    using directive. Line stripped starts with ``global``, not
+    ``using``, so the existing ``"using "`` prefix doesn't catch it.
+    A separate ``"global using "`` prefix in the dict handles it."""
+    src = (
+        "global using System;\n"           # L1: global using
+        "using System.Text;\n"             # L2: regular using
+        "namespace App {\n"
+        "    class Foo { void use(StringBuilder s) {} }\n"
+        "}\n"
+    )
+    # Both kinds of using should classify as import.
+    sys_matches = _kinds_for_pattern(tmp_path, "cs", src, "System")
+    by_line = {line: kind for line, kind, _ in sys_matches}
+    assert by_line.get(1) == KIND_IMPORT, (
+        f"`global using System;` should be [import], got {by_line}"
+    )
+    assert by_line.get(2) == KIND_IMPORT, (
+        f"regular `using System.Text;` should still be [import], got {by_line}"
+    )
+
+
+# --- Documented known gaps (pinned for visibility) -----------------------
+#
+# These pin CURRENT behavior on edge cases we deliberately don't fix
+# yet (low frequency, or fix cost > benefit). When/if any of these get
+# proper handling, flip the assertion intentionally rather than
+# discover the change accidentally.
+
+
+def test_kind_scala_multiline_braced_inner_lines(tmp_path: Path) -> None:
+    """Scala ``import foo.{\\n  Bar,\\n  Baz,\\n}`` multi-line braced
+    form: inner symbols on their own indented lines must classify as
+    ``[import]``. The Scala adapter populates ``import_regions`` via
+    tree-sitter ``import_declaration`` nodes (which span the entire
+    multi-line group), so inner lines are recognized regardless of
+    their lack of a ``import`` prefix. Was a pinned gap in 0.7.7."""
+    src = (
+        "import foo.{\n"           # L1: opening — line-prefix
+        "    Bar,\n"               # L2: inner — must be [import]
+        "    Baz,\n"               # L3: inner — must be [import]
+        "}\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "scala", src, "Bar")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(2) == KIND_IMPORT, (
+        f"Scala multi-line braced inner symbol should be [import], "
+        f"got {by_line}"
+    )
+    matches = _kinds_for_pattern(tmp_path, "scala", src, "Baz")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(3) == KIND_IMPORT
+
+
+def test_typescript_reexport_intentionally_not_import(tmp_path: Path) -> None:
+    """TS re-exports ``export { X } from './mod'`` are EXPORTS, not
+    imports — and not a gap to fix. Per ESM spec, the re-exported
+    binding does NOT enter the current module's local scope: writing
+    ``new User()`` below an ``export { User } from './user'`` would
+    error with ``User is not defined``. So classifying re-exports as
+    ``[import]`` would mislead an agent into thinking ``User`` is
+    available locally for use.
+
+    The re-export IS a module dependency (``./user`` is loaded), but
+    that's covered by the ``--imports`` listing, not by grep
+    classification. For ``--kind import`` queries, agents want
+    "where is X bound in this file for local use" — and re-exports
+    don't bind anything locally.
+
+    Pinned so a well-meaning future change ("re-exports look like
+    imports, let's catch them") doesn't silently regress this
+    deliberate distinction.
+    """
+    src = (
+        "export { User } from './user';\n"   # L1: re-export — NOT import (by design)
+        "export class Other {}\n"             # L2: declaration, NOT import
+    )
+    matches = _kinds_for_pattern(tmp_path, "ts", src, "User")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(1) != KIND_IMPORT, (
+        f"TS re-export `export {{ X }} from '...'` must NOT classify "
+        f"as [import] — User isn't bound in local scope per ESM spec. "
+        f"Got {by_line}"
+    )
+
+
+def test_known_gap_ruby_autoload(tmp_path: Path) -> None:
+    """Ruby ``autoload :Foo, 'foo.rb'`` is semantically a lazy import.
+    Not in our import-prefix dict for Ruby — currently classifies as
+    a call. Niche, deferred."""
+    src = "autoload :Foo, 'foo.rb'\n"
+    matches = _kinds_for_pattern(tmp_path, "rb", src, "autoload")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(1) != KIND_IMPORT, (
+        f"Pinned known gap: Ruby `autoload` not yet [import]. "
+        f"Got {by_line}"
+    )
+
+
+def test_known_gap_php_assignment_wrapped_require(tmp_path: Path) -> None:
+    """PHP ``$x = require 'a.php';`` (assignment-wrapped) is excluded
+    from the imports list by design (it's an assignment, not a
+    declarative include). For grep classification: line stripped
+    starts with ``$x``, not ``require ``, so line-prefix doesn't
+    catch it either. ``require`` matches as ref/call. Niche."""
+    src = (
+        "<?php\n"
+        "$x = require 'config.php';\n"   # L2: wrapped
+    )
+    matches = _kinds_for_pattern(tmp_path, "php", src, "require")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(2) != KIND_IMPORT, (
+        f"Pinned known gap: PHP `$x = require ...;` not [import]. "
+        f"Got {by_line}"
+    )
+
+
+def test_kind_python_lazy_multiline_in_function_body(tmp_path: Path) -> None:
+    """Python ``def foo(): from x import (\\n a,\\n)`` — multi-line
+    lazy import inside a function body. Inner symbols must classify
+    as ``[import]``. Was a pinned gap; now covered by extending
+    ``_count_conditional_imports`` to also collect byte ranges in
+    the same tree walk it already does for counting (zero-cost
+    piggyback — no extra traversal)."""
+    src = (
+        "def lazy():\n"
+        "    from collections import (\n"   # L2: opening
+        "        OrderedDict,\n"             # L3: inner — must be [import]
+        "        defaultdict,\n"             # L4: inner — must be [import]
+        "    )\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "py", src, "OrderedDict")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(3) == KIND_IMPORT, (
+        f"Python lazy multi-line import inner line should be "
+        f"[import], got {by_line}"
+    )
+    matches = _kinds_for_pattern(tmp_path, "py", src, "defaultdict")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(4) == KIND_IMPORT
+
+
+def test_kind_python_lazy_import_inside_class_body(tmp_path: Path) -> None:
+    """Python class-body lazy import — same coverage as function-body.
+    Class bodies are also in ``_PY_RUNTIME_OR_SCOPED`` so the
+    conditional walker catches imports inside them."""
+    src = (
+        "class Manager:\n"
+        "    from typing import (\n"     # L2
+        "        Dict,\n"                # L3: inner
+        "    )\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "py", src, "Dict")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(3) == KIND_IMPORT
+
+
+def test_kind_classification_priority_comment_beats_import(
+    tmp_path: Path,
+) -> None:
+    """Priority order: a comment INSIDE an import block stays
+    ``[comment]``, not ``[import]``. Agents searching for ``[comment]``
+    matches should find them regardless of containing context."""
+    src = (
+        "import (\n"
+        '    // mention strings here\n'   # L2: comment inside import block
+        '    "fmt"\n'
+        ")\n"
+    )
+    matches = _kinds_for_pattern(
+        tmp_path, "go", src, "strings", include_noise=True
+    )
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(2) == KIND_COMMENT, (
+        f"comment inside import block should stay [comment], got {by_line}"
+    )
+
+
+# --- Rust ----------------------------------------------------------------
+
+
+def test_kind_rust(tmp_path: Path) -> None:
+    """Rust def + call + import + comment + string. Rust's import is
+    `use foo::Bar` — the `use ` prefix is in the dictionary."""
+    src = (
+        "use std::collections::HashMap;\n"     # L1: import
+        "pub struct Player;\n"
+        "impl Player {\n"
+        "    pub fn save(&self) {}\n"                 # L4: def
+        "}\n"
+        "fn run() {\n"
+        "    let p = Player;\n"                       # L7
+        "    p.save();\n"                             # L8: call
+        "    // call save here\n"                      # L9: comment
+        "    let msg = \"call save here\";\n"         # L10: string
+        "}\n"
+    )
+    matches = _kinds_for_pattern(
+        tmp_path, "rs", src, "save", include_noise=True
+    )
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(4) == KIND_DEF
+    assert by_line.get(8) == KIND_CALL
+    assert by_line.get(9) == KIND_COMMENT
+    assert by_line.get(10) == KIND_STRING
+
+    import_matches = _kinds_for_pattern(tmp_path, "rs", src, "HashMap")
+    assert any(k == KIND_IMPORT for _, k, _ in import_matches)
+
+
+def test_kind_rust_turbofish_classifies_as_call(tmp_path: Path) -> None:
+    """Rust's turbofish `foo::<T>()` — the call detector must skip the
+    turbofish and find the trailing `(`. Without this, every generic
+    call would misclassify as ref. Critical for Rust idiomatic code."""
+    src = (
+        "fn run() {\n"
+        '    let v = parse::<i32>("42");\n'   # L2: turbofish call
+        "}\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "rs", src, "parse")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(2) == KIND_CALL, (
+        f"turbofish `parse::<i32>()` should classify as call, got {by_line}"
+    )
+
+
+# --- C++ -----------------------------------------------------------------
+
+
+def test_kind_cpp(tmp_path: Path) -> None:
+    """C++ def + call + import + comment + string. C++ imports use the
+    preprocessor `#include` (both `<...>` and `"..."` forms)."""
+    src = (
+        "#include <string>\n"                  # L1: import
+        "#include \"player.h\"\n"              # L2: import
+        "class Player {\n"
+        "public:\n"
+        "    void save();\n"                         # L5: declaration
+        "};\n"
+        "void Player::save() { }\n"                  # L7: def
+        "void run() {\n"
+        "    Player p;\n"                            # L9
+        "    p.save();\n"                            # L10: call
+        "    // call save here\n"                     # L11: comment
+        "    const char* msg = \"call save here\";\n"# L12: string
+        "}\n"
+    )
+    matches = _kinds_for_pattern(
+        tmp_path, "cpp", src, "save", include_noise=True
+    )
+    by_line = {line: kind for line, kind, _ in matches}
+    # L7 is the actual definition (with body); L5 is just declaration
+    # — adapter behavior may vary on which it considers the "real" def.
+    assert KIND_DEF in by_line.values(), f"no def detected: {by_line}"
+    assert by_line.get(10) == KIND_CALL
+    assert by_line.get(11) == KIND_COMMENT
+    assert by_line.get(12) == KIND_STRING
+
+    import_matches = _kinds_for_pattern(tmp_path, "cpp", src, "string")
+    assert any(k == KIND_IMPORT for _, k, _ in import_matches), (
+        "C++ `#include <string>` should classify as import"
+    )
+
+
+# --- PHP -----------------------------------------------------------------
+
+
+def test_kind_php(tmp_path: Path) -> None:
+    """PHP def + call + import + comment + string. PHP has TWO comment
+    prefixes (`//` and `#`) — both must work. Imports include `use`,
+    `require`, `include`, and their `_once` variants."""
+    src = (
+        "<?php\n"
+        "use App\\Models\\Player;\n"           # L2: import (use)
+        "require_once 'config.php';\n"          # L3: import (require_once)
+        "class Caller {\n"
+        "    public function save(): void {}\n"      # L5: def
+        "    public function run(): void {\n"
+        "        $p = new Player();\n"               # L7
+        "        $this->save();\n"                   # L8: call
+        "        // call save here\n"                 # L9: // comment
+        "        # call save here too\n"              # L10: # comment (PHP-specific!)
+        "        $msg = \"call save here\";\n"       # L11: string
+        "    }\n"
+        "}\n"
+    )
+    matches = _kinds_for_pattern(
+        tmp_path, "php", src, "save", include_noise=True
+    )
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(5) == KIND_DEF
+    assert by_line.get(8) == KIND_CALL
+    # Both comment styles should be recognized
+    assert by_line.get(9) == KIND_COMMENT, f"// comment failed: {by_line}"
+    assert by_line.get(10) == KIND_COMMENT, f"# comment failed: {by_line}"
+    assert by_line.get(11) == KIND_STRING
+
+    use_matches = _kinds_for_pattern(tmp_path, "php", src, "App")
+    assert any(k == KIND_IMPORT for _, k, _ in use_matches), (
+        "PHP `use App\\...` should classify as import"
+    )
+
+    require_matches = _kinds_for_pattern(tmp_path, "php", src, "config")
+    assert any(k == KIND_IMPORT for _, k, _ in require_matches), (
+        "PHP `require_once '...'` should classify as import"
+    )
+
+
+# --- Ruby ----------------------------------------------------------------
+
+
+def test_kind_ruby(tmp_path: Path) -> None:
+    """Ruby def + call + import + comment + string. Ruby imports are
+    `require` / `require_relative` / `load`. Ruby has optional parens
+    on calls (`save` vs `save()`); the call-with-parens form is what
+    the classifier reliably catches — without parens it's ambiguous
+    with ref."""
+    src = (
+        "require 'json'\n"                     # L1: import
+        "require_relative './player'\n"         # L2: import
+        "class Player\n"
+        "  def save\n"                                # L4: def (no parens)
+        "  end\n"
+        "end\n"
+        "class Caller\n"
+        "  def run\n"
+        "    p = Player.new\n"                        # L9
+        "    p.save()\n"                              # L10: call (explicit parens)
+        "    # call save here\n"                       # L11: comment
+        "    msg = \"call save here\"\n"              # L12: string
+        "  end\n"
+        "end\n"
+    )
+    matches = _kinds_for_pattern(
+        tmp_path, "rb", src, "save", include_noise=True
+    )
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(4) == KIND_DEF, f"Ruby `def save` failed: {by_line}"
+    assert by_line.get(10) == KIND_CALL
+    assert by_line.get(11) == KIND_COMMENT
+    assert by_line.get(12) == KIND_STRING
+
+    json_matches = _kinds_for_pattern(tmp_path, "rb", src, "json")
+    assert any(k == KIND_IMPORT for _, k, _ in json_matches)
+    rel_matches = _kinds_for_pattern(tmp_path, "rb", src, "player")
+    assert any(k == KIND_IMPORT for _, k, _ in rel_matches), (
+        "Ruby `require_relative` should classify as import"
+    )
+
+
+# --- TypeScript: missing kinds (comment, string) -------------------------
+#
+# TS already has def/call/ref/import covered above; fill the gap.
+
+
+def test_kind_javascript_uses_ts_adapter(tmp_path: Path) -> None:
+    """``.js`` files are handled by the TypeScript adapter (same
+    grammar, language tag = ``typescript``). All TS classification
+    rules apply — pin this so a future split into a separate JS
+    adapter doesn't silently drop classification rules."""
+    src = (
+        "import { foo } from './bar';\n"      # L1: ES import
+        "function save() { }\n"                  # L2: def
+        "function run() {\n"
+        "    save();\n"                          # L4: call
+        "}\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "js", src, "save")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(2) == KIND_DEF
+    assert by_line.get(4) == KIND_CALL
+
+
+def test_kind_javascript_require_is_not_import(tmp_path: Path) -> None:
+    """CommonJS ``require()`` is a runtime function call, not a
+    statement-level import — classifies as KIND_CALL on ``require``,
+    NOT KIND_IMPORT. ES ``import`` statements are the only thing
+    we treat as imports in JS/TS. Pin this so the boundary stays
+    explicit (and so users understand why ``--kind import`` doesn't
+    surface ``require()`` calls)."""
+    src = (
+        "const foo = require('./bar');\n"     # L1: require call
+        "import { baz } from './baz';\n"       # L2: real import
+    )
+    require_matches = _kinds_for_pattern(tmp_path, "js", src, "require")
+    by_line = {line: kind for line, kind, _ in require_matches}
+    assert by_line.get(1) == KIND_CALL, (
+        f"`require('...')` should classify as call, not import: {by_line}"
+    )
+    baz_matches = _kinds_for_pattern(tmp_path, "js", src, "baz")
+    baz_by_line = {line: kind for line, kind, _ in baz_matches}
+    assert baz_by_line.get(2) == KIND_IMPORT, (
+        f"ES `import` should still classify as import: {baz_by_line}"
+    )
+
+
+def test_kind_typescript_comment_and_string(tmp_path: Path) -> None:
+    """TypeScript comment + string detection — the gap left by earlier
+    TS tests above."""
+    src = (
+        "function run() {\n"
+        "    // call save here\n"                  # L2: comment
+        '    const msg = "call save here";\n'      # L3: string
+        "}\n"
+    )
+    matches = _kinds_for_pattern(
+        tmp_path, "ts", src, "save", include_noise=True
+    )
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(2) == KIND_COMMENT
+    assert by_line.get(3) == KIND_STRING
+
+
+# --- Format languages — only the kinds that make sense -------------------
+
+
+def test_kind_css_import_and_comment(tmp_path: Path) -> None:
+    """CSS supports `@import` (treated as import) and `/* */` comments
+    (NOT in our prefix dict — only `//` is, which is SCSS-only).
+    Plain CSS comments use `/* */` and we currently don't detect those
+    via prefix. We assert imports work and document the comment gap."""
+    src = (
+        "@import url('reset.css');\n"          # L1: import
+        ".btn-primary { color: red; }\n"        # L2: ref
+    )
+    import_matches = _kinds_for_pattern(tmp_path, "css", src, "reset")
+    assert any(k == KIND_IMPORT for _, k, _ in import_matches), (
+        "CSS `@import url(...)` should classify as import"
+    )
+
+
+def test_kind_scss_import_variants(tmp_path: Path) -> None:
+    """SCSS has `@import`, `@use`, AND `@forward` — all three should
+    classify as import. SCSS `// ...` comments work via the dict."""
+    src = (
+        "@use 'sass:math';\n"                  # L1: @use
+        "@forward 'helpers';\n"                 # L2: @forward
+        "@import 'reset';\n"                    # L3: @import
+        ".btn { color: red; }  // call here\n"  # L4: trailing comment
+    )
+    use_matches = _kinds_for_pattern(tmp_path, "scss", src, "math")
+    assert any(k == KIND_IMPORT for _, k, _ in use_matches), (
+        "SCSS `@use` should classify as import"
+    )
+    forward_matches = _kinds_for_pattern(tmp_path, "scss", src, "helpers")
+    assert any(k == KIND_IMPORT for _, k, _ in forward_matches), (
+        "SCSS `@forward` should classify as import"
+    )
+    import_matches = _kinds_for_pattern(tmp_path, "scss", src, "reset")
+    assert any(k == KIND_IMPORT for _, k, _ in import_matches), (
+        "SCSS `@import` should classify as import"
+    )
+
+
+def test_kind_sql_comment(tmp_path: Path) -> None:
+    """SQL uses `--` for line comments. Verify the classifier picks
+    that up (the prefix is in our dict)."""
+    src = (
+        "-- find users by name\n"              # L1: comment
+        "SELECT * FROM users;\n"                # L2: ref to users
+    )
+    matches = _kinds_for_pattern(
+        tmp_path, "sql", src, "users", include_noise=True
+    )
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(1) == KIND_COMMENT, f"SQL `--` comment failed: {by_line}"
+
+
+def test_kind_yaml_comment(tmp_path: Path) -> None:
+    """YAML uses `#` for line comments — same as Python."""
+    src = (
+        "# database settings\n"                # L1: comment
+        "database:\n"
+        "  host: localhost\n"
+    )
+    matches = _kinds_for_pattern(
+        tmp_path, "yaml", src, "database", include_noise=True
+    )
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(1) == KIND_COMMENT, f"YAML `#` comment failed: {by_line}"
+
+
+def test_kind_markdown_no_comment_no_import(tmp_path: Path) -> None:
+    """Markdown has no comment syntax we recognize and no import concept
+    — every match should classify as ref by default. This pins the
+    expected behavior so adding markdown comment support later is a
+    deliberate choice, not silent drift."""
+    src = (
+        "# Heading about save\n"                  # L1: heading mentioning save
+        "Some prose about save here.\n"            # L2: prose mentioning save
+    )
+    matches = _kinds_for_pattern(tmp_path, "md", src, "save")
+    # Markdown has no comment / import prefixes, so neither kind should appear.
+    kinds = _kinds_only(matches)
+    assert KIND_COMMENT not in kinds
+    assert KIND_IMPORT not in kinds

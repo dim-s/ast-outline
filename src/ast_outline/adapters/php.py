@@ -174,7 +174,10 @@ class PhpAdapter:
         declarations: list[Declaration] = []
         _walk_top(tree.root_node, src, declarations)
         imports: list[str] = []
-        _collect_imports(tree.root_node, src, imports)
+        # Piggyback byte-range collection for grep's import classifier.
+        import_regions: list[tuple[int, int]] = []
+        _collect_imports(tree.root_node, src, imports, import_regions)
+        import_regions.sort()
         # Count include/require nodes that live OUTSIDE the file's
         # static top level — i.e. inside a control-flow block (if/try/
         # switch/match/loop) or inside a function/method/closure body.
@@ -194,6 +197,7 @@ class PhpAdapter:
             error_count=count_parse_errors(tree.root_node),
             imports=imports,
             conditional_imports_count=conditional_includes,
+            import_regions=import_regions,
         )
 
 
@@ -209,7 +213,12 @@ _INCLUDE_EXPR_NODES = frozenset({
 })
 
 
-def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+def _collect_imports(
+    root: Node,
+    src: bytes,
+    out: list[str],
+    regions: list[tuple[int, int]] | None = None,
+) -> None:
     r"""Emit `use` declarations and top-level `include` / `require`
     expressions, in source order.
 
@@ -222,13 +231,20 @@ def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
     other adapters. Single-pass over `program` so a file that
     interleaves bracketed namespaces with outer top-level imports
     keeps source order intact.
+
+    If ``regions`` is supplied, also appends each import declaration's
+    byte range — covers ``use`` (single-line + group form) AND
+    include/require expressions in all four flavours, for grep's
+    classifier.
     """
     for child in root.named_children:
         t = child.type
         if t == "namespace_use_declaration":
             out.extend(_expand_use_declaration(child, src))
+            if regions is not None:
+                regions.append((child.start_byte, child.end_byte))
         elif t == "expression_statement":
-            _maybe_emit_include(child, src, out)
+            _maybe_emit_include(child, src, out, regions)
         elif t == "namespace_definition":
             # Bracketed `namespace Foo { ... }` — descend into the body
             # at the same emit level. File-scoped `namespace Foo;` has
@@ -241,15 +257,25 @@ def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
                         ct = ccc.type
                         if ct == "namespace_use_declaration":
                             out.extend(_expand_use_declaration(ccc, src))
+                            if regions is not None:
+                                regions.append((ccc.start_byte, ccc.end_byte))
                         elif ct == "expression_statement":
-                            _maybe_emit_include(ccc, src, out)
+                            _maybe_emit_include(ccc, src, out, regions)
 
 
-def _maybe_emit_include(stmt: Node, src: bytes, out: list[str]) -> None:
+def _maybe_emit_include(
+    stmt: Node,
+    src: bytes,
+    out: list[str],
+    regions: list[tuple[int, int]] | None = None,
+) -> None:
     """Emit the include text iff the `expression_statement` directly
     wraps an include/require expression. Wrapped forms like
     `$x = require 'a';` are intentionally skipped — the statement is
     an assignment, not an import.
+
+    If ``regions`` is supplied, also appends the inner expression's
+    byte range when an include is emitted.
     """
     # `expression_statement` carries exactly one named child in
     # tree-sitter-php (the expression itself); guard with a `next` so
@@ -257,6 +283,8 @@ def _maybe_emit_include(stmt: Node, src: bytes, out: list[str]) -> None:
     inner = next(iter(stmt.named_children), None)
     if inner is not None and inner.type in _INCLUDE_EXPR_NODES:
         out.append(_collapse_ws(_text(inner, src)))
+        if regions is not None:
+            regions.append((inner.start_byte, inner.end_byte))
 
 
 # AST node types that establish a conditional-or-runtime scope. An

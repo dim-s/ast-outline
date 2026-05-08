@@ -206,6 +206,9 @@ ast-outline show Player.cs TakeDamage Heal Die
 # Compact public-API map of a whole module
 ast-outline digest src/Services
 
+# Find every place a symbol is defined / called / referenced, with scope
+ast-outline grep User.save src/
+
 # Built-in guide
 ast-outline help
 ast-outline help show
@@ -309,6 +312,21 @@ you already know the symbol:
    Add `--signature` to any of the above to return header only
    (docs + attrs + signature, no body) — useful after `digest`, when
    you have the name and want the contract, not the implementation.
+
+4. **Where a symbol appears** —
+   `ast-outline grep <pattern> <paths…>`: matches grouped by enclosing
+   class/function. Definitions are tagged `[def]`, imports `[import]`;
+   calls and refs carry no tag (inferable from `(` after symbol).
+   Use for "where is X defined", "who calls Y", "is Z dead code" —
+   scope in the output spares follow-up reads. Comments and strings
+   filtered. Batch via repeatable `-e`:
+   `ast-outline grep User.save -e User.load -e User.delete src/`.
+   Narrow by classification with `--kind def|call|ref|import` (also
+   accepts `--kind def,call`) — drops the post-filter step when you
+   only want definitions, only call sites, etc.
+   POSIX flags `-w` (whole word), `-l` (paths only), `-c` (counts),
+   `-m N` (cap per file) work as in `grep` / `rg`. For non-symbol
+   patterns use your default search strategy.
 
 `outline` and `digest` accept multiple paths in one call (files and
 directories, mixed languages OK) — batch instead of looping. Type
@@ -507,6 +525,96 @@ so they're paid for once per session, not on every digest call. Size class is
 calibrated against an approximate token count (`len(chars)/4`, ±15-20% vs
 real BPE tokenizers — fine for the heuristic). The same `~N tokens` count
 appears in every `outline` header too.
+
+### `grep` — find symbol uses with structural scope and kind
+
+```bash
+ast-outline grep User.save src/
+```
+
+A code-search command that returns matches **annotated with the
+enclosing class/function** and a **kind classification** (`[def]` for
+definitions, `[import]` for import statements; calls and refs render
+untagged because the line shape — identifier-followed-by-`(` or not —
+makes them obvious). Comments and string literals are filtered out by
+default; a typical match line looks like:
+
+```
+# src/payments/processor.py (4 matches)
+
+## imports
+  > L3: from .models import User [import]
+
+## matches
+class PaymentProcessor  L12-180
+    def commit(self, tx)  L45-78
+        > L48: user.save()
+        > L67: user.save()
+    def refund(self, tx)  L90-120
+        > L98: user.save()
+```
+
+#### Why a separate command — `grep`/`rg` already exist
+
+Regular `grep` returns flat `path:line:content` rows. To answer "where
+is `User.save` actually used in this codebase" an agent has to:
+
+1. Run `grep -rn 'User.save' src/` → 20 matches across 8 files
+2. For each match, **open the file** and read enough surrounding lines
+   to understand which class / function contains it
+3. Repeat for every interesting hit
+
+`ast-outline grep` collapses that into one call:
+
+- The **scope** of each match is in the output (class/function chain
+  with line ranges) — no follow-up `Read` calls needed to learn
+  "this is the `commit` method in `PaymentProcessor`"
+- The **kind** tells the agent at a glance which match is the
+  definition, which are calls, which are imports — so a "find dead
+  code" query can be answered by reading whether anything other than
+  `[def]` shows up
+- **String / docstring noise is filtered** — a mention of `User.save`
+  in a docstring or log message doesn't pollute the result; pass
+  `--include-noise` to opt in
+- **AST-aware multi-line imports**: `User` inside Go's `import (...)`
+  block, Python's `from x import (\n  User,\n)`, or TypeScript's
+  multi-line `import { User } from '...'` all classify as `[import]`
+  — regular grep sees only the line and would call those `[ref]`
+
+#### Why this matters for an LLM agent specifically
+
+The single most expensive thing an agent does is **follow-up file
+reads after a `grep`**. Each "I need to read this file to understand
+the context" round-trip burns context window and tool-call budget.
+`ast-outline grep` is designed so the *first call* contains enough
+structural information that the agent can usually decide what to do
+next — invoke `show` on a specific method, plan a refactor, or
+conclude the symbol is unused — without re-reading source files.
+
+For "where is X defined", "who calls Y", "is Z dead code", "where is
+package P imported" queries, this is one call instead of N.
+
+#### Flags
+
+```bash
+ast-outline grep User.save -e User.load -e User.delete src/   # multiple patterns in one walk
+ast-outline grep -w save src/                                  # whole-word (POSIX -w)
+ast-outline grep -l User src/                                  # files-with-matches only (POSIX -l)
+ast-outline grep -c TODO src/                                  # path:N counts (POSIX -c)
+ast-outline grep -m 5 User src/                                # cap matches per file (POSIX -m)
+ast-outline grep --kind def User src/                          # only definitions
+ast-outline grep --kind def,call save src/                     # def + call (skip refs/imports)
+ast-outline grep --regex '\.save\(' src/                       # treat pattern as regex
+ast-outline grep -i todo src/                                  # case-insensitive
+ast-outline grep --include-noise FIXME src/                    # include comments / strings
+```
+
+POSIX `-e`, `-w`, `-l`, `-c`, `-m`, `-i` work as in `grep` / `rg`.
+Regex syntax (`\|`, `\d`, `(?:`, etc.) is auto-detected — you can type
+`Magnet\|Container` and it Just Works without `--regex`. For non-symbol
+patterns (TODO comments, log strings, free-text in docs) fall back to
+your usual `grep` / `rg`; this command is built for code-symbol
+queries.
 
 ### `setup-prompt` — let an agent wire ast-outline in (automatic, recommended)
 

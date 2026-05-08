@@ -107,7 +107,12 @@ class ScalaAdapter:
         declarations: list[Declaration] = []
         _walk_top(tree.root_node, src, declarations)
         imports: list[str] = []
-        _collect_imports(tree.root_node, src, imports)
+        # Piggyback byte-range collection for grep's import classifier.
+        # Lets ``import foo.{\n  Bar,\n  Baz,\n}`` multi-line braced
+        # form classify inner symbols as ``[import]`` instead of ``[ref]``.
+        import_regions: list[tuple[int, int]] = []
+        _collect_imports(tree.root_node, src, imports, import_regions)
+        import_regions.sort()
         # Scala `import` can appear at any depth. Imports inside a
         # function / method body are scoped to that callable —
         # they're effectively local-scope and not part of the file's
@@ -125,13 +130,19 @@ class ScalaAdapter:
             error_count=count_parse_errors(tree.root_node),
             imports=imports,
             conditional_imports_count=conditional_count,
+            import_regions=import_regions,
         )
 
 
 # --- Imports --------------------------------------------------------------
 
 
-def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+def _collect_imports(
+    root: Node,
+    src: bytes,
+    out: list[str],
+    regions: list[tuple[int, int]] | None = None,
+) -> None:
     """Scala imports — `import foo.bar.Baz`, `import foo.{A, B}`,
     `import foo.{A => Renamed}`, `import foo.*` (Scala 3) or
     `import foo._` (Scala 2). Source-true text reads as either dialect.
@@ -142,12 +153,18 @@ def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
     and the file-level imports are what an agent typically needs for a
     "where does this file pull from" view. If a real-world need
     surfaces, descend into `package_object` and braced `package_clause`
-    bodies."""
+    bodies.
+
+    If ``regions`` is supplied, also appends each declaration's byte
+    range — covers single-line ``import foo.{A, B}`` AND multi-line
+    braced ``import foo.{\\n  A,\\n  B,\\n}`` for grep's classifier."""
     for child in root.named_children:
         if child.type == "import_declaration":
             text = _collapse_ws(_text(child, src)).strip()
             if text:
                 out.append(text)
+            if regions is not None:
+                regions.append((child.start_byte, child.end_byte))
 
 
 # AST node types that put a Scala `import` into runtime / function-

@@ -75,7 +75,10 @@ class TypeScriptAdapter:
         decls: list[Declaration] = []
         _walk_module(tree.root_node, src, decls)
         imports: list[str] = []
-        _collect_imports(tree.root_node, src, imports)
+        # Piggyback byte-range collection for grep's import classifier.
+        import_regions: list[tuple[int, int]] = []
+        _collect_imports(tree.root_node, src, imports, import_regions)
+        import_regions.sort()
         # Count dynamic `import('...')` calls that live inside a
         # function / method / control-flow scope — i.e. NOT module-
         # level. Reported as `conditional_imports_count` so renderers
@@ -95,6 +98,7 @@ class TypeScriptAdapter:
             error_count=count_parse_errors(tree.root_node),
             imports=imports,
             conditional_imports_count=conditional_count,
+            import_regions=import_regions,
         )
 
 
@@ -126,12 +130,24 @@ class TypeScriptAdapter:
 #   sibling `--exports` flag.
 
 
-def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+def _collect_imports(
+    root: Node,
+    src: bytes,
+    out: list[str],
+    regions: list[tuple[int, int]] | None = None,
+) -> None:
+    """Walk top-level children once. Emits normalized import strings to
+    ``out``; if ``regions`` is supplied, also collects each statement's
+    byte range — piggybacked to avoid a second tree walk for grep's
+    classifier (see Python adapter's ``_collect_imports`` for full
+    rationale)."""
     for child in root.named_children:
         if child.type == "import_statement":
             text = _collapse_ws(_text(child, src)).rstrip(";").strip()
             if text:
                 out.append(text)
+            if regions is not None:
+                regions.append((child.start_byte, child.end_byte))
 
 
 # AST node types that take a dynamic `import(...)` out of "module-level

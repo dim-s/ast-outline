@@ -93,7 +93,10 @@ class GoAdapter:
         declarations: list[Declaration] = []
         _walk_top(tree.root_node, src, declarations)
         imports: list[str] = []
-        _collect_imports(tree.root_node, src, imports)
+        # Piggyback byte-range collection for grep's import classifier.
+        import_regions: list[tuple[int, int]] = []
+        _collect_imports(tree.root_node, src, imports, import_regions)
+        import_regions.sort()
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -102,22 +105,35 @@ class GoAdapter:
             declarations=declarations,
             error_count=count_parse_errors(tree.root_node),
             imports=imports,
+            import_regions=import_regions,
         )
 
 
 # --- Imports --------------------------------------------------------------
 
 
-def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+def _collect_imports(
+    root: Node,
+    src: bytes,
+    out: list[str],
+    regions: list[tuple[int, int]] | None = None,
+) -> None:
     """Go imports come in two shapes: single-line `import "fmt"` and
     grouped `import ( "a"; "b" )`. We flatten both into a flat list of
     `import <spec>` lines, each carrying one spec — agents see the same
     syntactic form regardless of whether the source used grouping. The
     spec text preserves package alias (`f "fmt"`) and blank-import
-    sentinel (`_ "side/effect"`) verbatim."""
+    sentinel (`_ "side/effect"`) verbatim.
+
+    If ``regions`` is supplied, also appends each ``import_declaration``
+    byte range — covers single-line AND grouped forms in one pass. Lets
+    grep classify package paths inside ``import (...)`` blocks as
+    ``[import]`` (see Python adapter for full rationale)."""
     for child in root.named_children:
         if child.type != "import_declaration":
             continue
+        if regions is not None:
+            regions.append((child.start_byte, child.end_byte))
         for sub in child.named_children:
             if sub.type == "import_spec":
                 out.append(f"import {_collapse_ws(_text(sub, src)).strip()}")

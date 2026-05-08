@@ -246,6 +246,16 @@ class CppAdapter:
 
     def parse(self, path: Path) -> ParseResult:
         src = path.read_bytes()
+        # Note: ``import_regions`` is populated below via piggyback on
+        # ``_collect_imports``. Includes ``#include`` (already in the
+        # imports list) AND ``using_directive`` / ``using_declaration``
+        # (which are NOT in the imports list to preserve --imports
+        # header-only behavior, but ARE imports for grep classification:
+        # `using namespace std;` and `using std::vector;` bring names
+        # into scope). ``alias_declaration`` (`using A = B;`) is
+        # deliberately excluded — it's a type alias, not an import.
+        # AST-level distinction is the only reliable way: line-prefix
+        # would lump all three under ``using ``.
         # Strip Unreal Header Tool body markers from the source before
         # parsing. Without this, the missing-semicolon convention of
         # `GENERATED_BODY()` confuses tree-sitter into treating the
@@ -260,7 +270,9 @@ class CppAdapter:
         declarations: list[Declaration] = []
         _walk_top(tree.root_node, cleaned, declarations)
         imports: list[str] = []
-        _collect_imports(tree.root_node, cleaned, imports)
+        import_regions: list[tuple[int, int]] = []
+        _collect_imports(tree.root_node, cleaned, imports, import_regions)
+        import_regions.sort()
         # tree-sitter inserts a synthetic MISSING `;` after every UE
         # reflection macro invocation (`UCLASS(...)`, `UPROPERTY(...)`,
         # `GENERATED_BODY()`, etc.) — by spec the parser expects
@@ -281,24 +293,51 @@ class CppAdapter:
             declarations=declarations,
             error_count=error_count,
             imports=imports,
+            import_regions=import_regions,
         )
 
 
 # --- Imports --------------------------------------------------------------
 
 
-def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+def _collect_imports(
+    root: Node,
+    src: bytes,
+    out: list[str],
+    regions: list[tuple[int, int]] | None = None,
+) -> None:
     """Collect ``#include`` directives at file scope. Each entry is the
     full source-true line including the ``#include`` keyword and the
     ``<…>``/``"…"`` form, so the agent reads exactly what the file
     declared (``#include <vector>``, ``#include "myheader.h"``).
     Other preprocessor directives are not collected — ``#define`` is a
-    macro definition, not a dependency."""
+    macro definition, not a dependency.
+
+    If ``regions`` is supplied, also appends byte ranges of:
+      - ``preproc_include``     — same as the imports list
+      - ``using_directive``     — ``using namespace std;``
+      - ``using_declaration``   — ``using std::vector;``
+    These three are imports for the grep classifier (they bring names
+    into scope). ``alias_declaration`` (``using A = B;``) is
+    deliberately NOT collected — it's a type alias, not an import.
+    Tree-sitter's distinct node types let us discriminate cleanly;
+    a line-prefix approach (``startswith("using ")``) would lump all
+    three under ``[import]`` and misclassify type aliases.
+    """
     for child in root.named_children:
-        if child.type == "preproc_include":
+        kind = child.type
+        if kind == "preproc_include":
             text = _collapse_ws(_text(child, src))
             if text:
                 out.append(text)
+            if regions is not None:
+                regions.append((child.start_byte, child.end_byte))
+        elif kind in ("using_directive", "using_declaration") and regions is not None:
+            # Region-only — we do NOT add to the imports list. The
+            # imports list keeps its existing header-only scope
+            # (#include directives) so --imports output stays stable;
+            # `using` lines are imports for grep classification only.
+            regions.append((child.start_byte, child.end_byte))
 
 
 # --- Walk -----------------------------------------------------------------

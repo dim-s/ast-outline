@@ -34,7 +34,7 @@ from .core import (
 )
 
 
-SUBCOMMANDS = {"outline", "show", "help", "digest", "prompt", "setup-prompt"}
+SUBCOMMANDS = {"outline", "show", "help", "digest", "prompt", "setup-prompt", "grep"}
 
 
 class _LLMArgumentParser(argparse.ArgumentParser):
@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     p_help.add_argument(
         "topic",
         nargs="?",
-        choices=["outline", "show", "digest", "prompt", "setup-prompt"],
+        choices=["outline", "show", "digest", "prompt", "setup-prompt", "grep"],
         help="Topic-specific help",
     )
 
@@ -154,6 +154,94 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser(
         "setup-prompt",
         help="Print the agent-facing setup-prompt — instructs an LLM to wire ast-outline into the current repo",
+    )
+
+    p_grep = sub.add_parser(
+        "grep",
+        help="Find pattern in code with scope and kind annotations (def/call/ref/import)",
+    )
+    # Positional pattern is required because making it optional
+    # (nargs="?") interacts badly with paths (nargs="+") and the -e
+    # flag — argparse can't disambiguate which trailing string is a
+    # path vs a stray positional. Multi-pattern users put the first
+    # one positional, rest via -e.
+    p_grep.add_argument(
+        "pattern",
+        help="Primary pattern (literal substring by default; combine with -e for more)",
+    )
+    p_grep.add_argument(
+        "-e",
+        "--expression",
+        dest="extra_patterns",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="Additional pattern to search for (repeatable, like rg / git grep)",
+    )
+    p_grep.add_argument("paths", nargs="+", help="Files or directories to search")
+    p_grep.add_argument(
+        "--regex",
+        action="store_true",
+        help="Treat all patterns as regular expressions instead of literal substrings",
+    )
+    p_grep.add_argument(
+        "-i",
+        "--case-insensitive",
+        action="store_true",
+        help="Case-insensitive match",
+    )
+    p_grep.add_argument(
+        "-w",
+        "--word",
+        action="store_true",
+        dest="word_match",
+        help="Match whole words only (\\bpattern\\b boundaries — POSIX grep -w)",
+    )
+    p_grep.add_argument(
+        "--include-noise",
+        action="store_true",
+        help="Include matches inside comments and strings (filtered by default)",
+    )
+    p_grep.add_argument(
+        "--no-ignore",
+        action="store_true",
+        help="Disable .gitignore / .ignore filtering — walk every dir except by extension",
+    )
+    p_grep.add_argument(
+        "-m",
+        "--max-count",
+        type=int,
+        default=None,
+        metavar="NUM",
+        dest="max_count",
+        help="Stop after NUM matches per file (POSIX grep -m). A "
+             "truncation note is appended whenever the cap fires so the "
+             "agent never silently sees a partial result set.",
+    )
+    p_grep.add_argument(
+        "--kind",
+        action="append",
+        default=[],
+        metavar="KIND",
+        help="Filter matches by kind: def | call | ref | import | "
+             "comment | string. Repeatable (--kind def --kind call) or "
+             "comma-separated (--kind def,call). When 'comment' or "
+             "'string' are included, --include-noise is auto-enabled.",
+    )
+    output_mode = p_grep.add_mutually_exclusive_group()
+    output_mode.add_argument(
+        "-l",
+        "--files-with-matches",
+        action="store_true",
+        dest="files_only",
+        help="Output only paths of files containing matches (POSIX grep -l)",
+    )
+    output_mode.add_argument(
+        "-c",
+        "--count",
+        action="store_true",
+        dest="count_only",
+        help="Output only counts per file as 'path:N' (POSIX grep -c)",
     )
 
     try:
@@ -175,6 +263,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_prompt(args)
     if args.cmd == "setup-prompt":
         return _cmd_setup_prompt(args)
+    if args.cmd == "grep":
+        return _cmd_grep(args)
     return _cmd_outline(args)
 
 
@@ -422,6 +512,163 @@ def _cmd_show(args) -> int:
     return 0
 
 
+def _cmd_grep(args) -> int:
+    """Find pattern with scope and kind annotations.
+
+    The intended consumer is an LLM agent that today does ``grep
+    symbol → 20 hits → read 5 files``; this collapses that to one
+    call by returning matches grouped under their enclosing
+    class/function and labelled with kind (``def`` / ``call`` /
+    ``ref`` / ``import``).
+    """
+    from .grep import grep, render_grep, _looks_like_regex, looks_like_ambiguous_regex
+
+    paths = [Path(p) for p in args.paths]
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        for p in missing:
+            print(f"# note: path not found: {p}")
+        return 0
+
+    # Collect all patterns from the positional slot + every ``-e``
+    # flag. Order is preserved (positional first, then -e in CLI
+    # order) so the agent can predict how alternations bind. Empty
+    # strings are filtered — they'd never produce useful matches.
+    patterns: list[str] = []
+    if args.pattern:
+        patterns.append(args.pattern)
+    patterns.extend(p for p in args.extra_patterns if p)
+    if not patterns:
+        print(
+            "# note: no pattern — provide one as positional argument "
+            "or via -e PATTERN (repeatable for multiple)"
+        )
+        return 0
+
+    # Auto-promote to regex when any pattern carries unambiguous regex
+    # syntax (``\|``, ``\d``, bare ``|``, ``(?:`` etc.). Agents fluent
+    # in basic grep / rg often type ``Magnet\|Container`` expecting
+    # alternation, and getting "no matches" on a literal interpretation
+    # forces a wasted retry. The note documents the promotion so the
+    # behavior isn't silent magic.
+    #
+    # BRE→ERE conversion: ``\|`` is alternation in basic regex (grep,
+    # sed) but Python's ``re`` reads it as escaped literal pipe — the
+    # opposite semantic. When auto-promoting we replace ``\|`` with
+    # ``|``, matching the user's clear intent. Explicit ``--regex``
+    # mode skips this conversion so power users keep raw Python regex
+    # semantics.
+    is_regex = args.regex
+    if not is_regex:
+        regex_like = [p for p in patterns if _looks_like_regex(p)]
+        if regex_like:
+            is_regex = True
+            original = regex_like[0]
+            patterns = [p.replace(r"\|", "|") for p in patterns]
+            converted = original.replace(r"\|", "|")
+            if converted != original:
+                print(
+                    f"# note: {original!r} → {converted!r} "
+                    f"(auto-promoted to regex; \\| as alternation; "
+                    f"pass --regex for raw Python regex semantics)"
+                )
+            else:
+                print(
+                    f"# note: pattern {original!r} contains regex syntax — "
+                    f"auto-promoted to regex (pass --regex to silence)"
+                )
+
+    # ``--max-count`` validation: must be a positive integer. Zero and
+    # negative values have no useful semantics — ``-m 0`` would render
+    # empty ``(0 matches)`` headers via the truncation path; agents that
+    # want a "did anything match" probe use ``-l`` directly without ``-m``.
+    max_count = args.max_count
+    if max_count is not None and max_count < 1:
+        print(f"# note: --max-count must be ≥ 1 (got {max_count})")
+        return 0
+
+    # ``--kind`` parsing: accept both repeated (``--kind def --kind call``)
+    # and comma-separated (``--kind def,call``) forms — agents fluent in
+    # ``rg --type`` reach for either, and supporting both costs nothing.
+    # Normalize, validate, then auto-enable ``--include-noise`` when the
+    # filter explicitly asks for ``comment``/``string`` (otherwise the
+    # noise filter zeroes them out before the kind filter ever sees them
+    # — silently giving the user empty results).
+    kind_filter: set[str] | None = None
+    include_noise = args.include_noise
+    if args.kind:
+        from .grep import (
+            KIND_DEF, KIND_CALL, KIND_REF,
+            KIND_IMPORT, KIND_COMMENT, KIND_STRING,
+        )
+        valid = {KIND_DEF, KIND_CALL, KIND_REF, KIND_IMPORT, KIND_COMMENT, KIND_STRING}
+        kinds: set[str] = set()
+        for entry in args.kind:
+            for k in entry.split(","):
+                k = k.strip().lower()
+                if k:
+                    kinds.add(k)
+        invalid = kinds - valid
+        if invalid:
+            print(
+                f"# note: invalid --kind value(s): {sorted(invalid)}; "
+                f"valid: {sorted(valid)}"
+            )
+            return 0
+        kind_filter = kinds
+        if kinds & {KIND_COMMENT, KIND_STRING}:
+            include_noise = True
+
+    file_results, _ignored_dirs = grep(
+        patterns,
+        paths,
+        is_regex=is_regex,
+        case_insensitive=args.case_insensitive,
+        word_match=args.word_match,
+        include_noise=include_noise,
+        no_ignore=args.no_ignore,
+        max_count=max_count,
+        kind_filter=kind_filter,
+    )
+    if not file_results:
+        shown = patterns[0] if len(patterns) == 1 else f"{len(patterns)} patterns"
+        print(f"# note: no matches for {shown!r}")
+        # Warn-on-no-match: if any pattern carries metachars that might
+        # have been intended as regex, hint at --regex. The strict
+        # auto-detect already promoted the unambiguous cases, so we only
+        # reach this hint for genuinely ambiguous patterns where literal
+        # interpretation might have been wrong.
+        if not is_regex:
+            ambiguous = [p for p in patterns if looks_like_ambiguous_regex(p)]
+            if ambiguous:
+                print(
+                    f"# hint: pattern {ambiguous[0]!r} contains regex-like syntax "
+                    f"(escaped metachar, quantifier, or anchor) — if you meant "
+                    f"regex, retry with --regex"
+                )
+        return 0
+    # Output-mode dispatch — ``-l`` and ``-c`` short-circuit the
+    # default scope-annotated render with grep-style compact formats
+    # familiar from POSIX (``grep -l`` / ``grep -c``). Mutually
+    # exclusive at the argparse level. Files with zero visible
+    # matches are already absent from ``file_results`` (only files
+    # with at least one visible or filtered match are returned), so
+    # ``-c`` skips zero-files naturally — matches ``rg``'s default,
+    # which excludes empty files unless ``--include-zero`` is set.
+    if args.files_only:
+        for fr in file_results:
+            if fr.matches:
+                print(fr.path)
+        return 0
+    if args.count_only:
+        for fr in file_results:
+            if fr.matches:
+                print(f"{fr.path}:{len(fr.matches)}")
+        return 0
+    print(render_grep(file_results))
+    return 0
+
+
 def _cmd_digest(args) -> int:
     paths = [Path(p) for p in args.paths]
     missing = [p for p in paths if not p.exists()]
@@ -530,6 +777,7 @@ COMMANDS
     ast-outline outline <paths...>          Print outline of files or dirs
     ast-outline show <file> <symbols...>    Print source of one or more symbols
     ast-outline digest <paths...>           Compact public-API map of a dir
+    ast-outline grep <pattern> <paths...>   Find pattern with scope+kind annotations
     ast-outline prompt                      Print the canonical agent prompt snippet
     ast-outline setup-prompt                Print the install-time setup-prompt for an LLM agent
     ast-outline --version                   Print version + author
@@ -758,6 +1006,97 @@ EXAMPLES
     ast-outline setup-prompt | xclip -sel c    # Linux clipboard
 """
 
+GUIDE_GREP = """\
+ast-outline grep — find pattern with scope and kind annotations
+
+USAGE
+    ast-outline grep <pattern> <paths...> [flags]
+    ast-outline grep -e PATTERN [-e PATTERN]... <paths...> [flags]
+
+WHAT IT DOES
+    Like ripgrep, but each match is annotated with:
+      - the enclosing class/function chain (where it sits structurally),
+      - a kind tag for definitions ([def]) and imports ([import]).
+        Calls and refs are unmarked — the line shape (identifier
+        followed by `(` or not) makes them obvious.
+    Matches inside comments and strings are filtered by default;
+    when surfaced via --include-noise they carry [comment]/[string].
+    Designed for LLM agents asking "where is X used", "who calls Y",
+    "is Z dead code" — answers them in one call without follow-up
+    file reads.
+
+Not a replacement for ripgrep on non-symbol patterns (TODO comments,
+log strings, regex queries) — fall back to `rg` for those.
+
+FLAGS
+    -e, --expression PAT    Additional pattern (repeatable; combines
+                            with the positional pattern via OR. Use
+                            multiple -e to search several symbols
+                            in one walk — saves N startup costs)
+    -w, --word              Whole-word match (POSIX grep -w; wraps
+                            patterns in \\b boundaries — `save`
+                            no longer matches `save_user` / `_save`)
+    -l, --files-with-matches  Output only paths of files containing
+                            matches (POSIX grep -l) — compact mode
+                            for "where does X exist" queries
+    -c, --count             Output `path:N` per file (POSIX grep -c) —
+                            compact mode for distribution checks
+    -m, --max-count NUM     Cap visible matches per file at NUM
+                            (POSIX grep -m). Truncated files get a
+                            `# truncated — N more...` footer so the
+                            agent never silently sees a partial set
+    --kind KIND             Filter matches by classification:
+                            def | call | ref | import | comment | string.
+                            Repeatable (--kind def --kind call) or
+                            comma-separated (--kind def,call). When
+                            comment/string included, --include-noise
+                            is auto-enabled.
+    --regex                 Treat all patterns as regular expressions
+                            instead of literal substrings
+    -i, --case-insensitive  Case-insensitive match
+    --include-noise         Include matches inside comments / strings
+                            (filtered by default)
+    --no-ignore             Disable .gitignore / .ignore filtering
+
+EXAMPLES
+    ast-outline grep User.save src/
+    ast-outline grep User.save -e User.load -e User.delete src/
+    ast-outline grep -w save src/                   # whole word only
+    ast-outline grep -l User src/                   # files containing User
+    ast-outline grep -c TODO src/                   # count per file
+    ast-outline grep -m 5 User src/                 # cap 5 matches per file
+    ast-outline grep --kind def User src/           # only definitions of User
+    ast-outline grep --kind call,ref save src/      # calls + refs (skip defs/imports)
+    ast-outline grep --regex '\\.save\\(' src/
+    ast-outline grep -i todo src/                   # case-insensitive
+    ast-outline grep --include-noise FIXME src/
+
+OUTPUT FORMAT
+    # path/to/file.py (N matches)
+
+    ## imports
+      > L1: from .models import User [import]
+
+    ## matches
+    class Handler  L98-145
+        def update(...)  L100-115
+            > L108: user.save()
+
+    Match line:  > L<line>: <code>[ <kind-tag>]
+    Tagged kinds: [def] (function/class/variable definition),
+    [import] (import statement). Calls and refs are untagged
+    (inferable from line shape). [comment] and [string] only
+    appear with --include-noise. Multi-pattern searches combine
+    matches into a single output — read the line content to see
+    which pattern hit.
+
+NOT TO BE CONFUSED WITH
+    `ast-grep` — a separate Rust tool for structural codemods using
+    placeholder patterns ($_.save()). `ast-outline grep` is a
+    scope-annotated symbol search, not a codemod tool.
+"""
+
+
 def _print_guide(topic: str | None = None) -> None:
     if topic == "outline":
         print(GUIDE_OUTLINE)
@@ -769,6 +1108,8 @@ def _print_guide(topic: str | None = None) -> None:
         print(GUIDE_PROMPT)
     elif topic == "setup-prompt":
         print(GUIDE_SETUP_PROMPT)
+    elif topic == "grep":
+        print(GUIDE_GREP)
     else:
         print(GUIDE_GENERAL)
 

@@ -152,7 +152,10 @@ class RustAdapter:
         declarations: list[Declaration] = []
         _walk_items(tree.root_node, src, declarations)
         imports: list[str] = []
-        _collect_imports(tree.root_node, src, imports)
+        # Piggyback byte-range collection for grep's import classifier.
+        import_regions: list[tuple[int, int]] = []
+        _collect_imports(tree.root_node, src, imports, import_regions)
+        import_regions.sort()
         # `use` inside a `fn` / `impl` body is function-local — the
         # symbol it brings in is only visible inside that function.
         # Counting these (without listing them) tells the agent
@@ -171,13 +174,19 @@ class RustAdapter:
             error_count=count_parse_errors(tree.root_node),
             imports=imports,
             conditional_imports_count=conditional_count,
+            import_regions=import_regions,
         )
 
 
 # --- Imports --------------------------------------------------------------
 
 
-def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+def _collect_imports(
+    root: Node,
+    src: bytes,
+    out: list[str],
+    regions: list[tuple[int, int]] | None = None,
+) -> None:
     """Rust `use` declarations + legacy `extern crate`. Source-true text
     preserves visibility (`pub use ...` for re-exports), nested groups
     (`use foo::{Bar, Baz}`), aliasing (`as Qux`), and wildcards (`*`).
@@ -186,12 +195,18 @@ def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
     — it is a structural file-tree marker, not an import in the
     "where does this code pull from" sense. Keeping `--imports`
     semantically clean (only consumption-direction statements) avoids
-    confusing the agent with mixed concepts."""
+    confusing the agent with mixed concepts.
+
+    If ``regions`` is supplied, also appends each declaration's byte
+    range — covers single-line ``use foo::Bar;`` AND multi-line group
+    ``use foo::{\\n Bar,\\n};`` for grep's classifier."""
     for child in root.named_children:
         if child.type in ("use_declaration", "extern_crate_declaration"):
             text = _collapse_ws(_text(child, src)).rstrip(";").strip()
             if text:
                 out.append(text)
+            if regions is not None:
+                regions.append((child.start_byte, child.end_byte))
 
 
 # AST node types that put a `use` declaration into runtime / function-

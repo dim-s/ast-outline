@@ -152,6 +152,39 @@ class ParseResult:
     # most languages imports are top-level by spec (Java, Go, C#, …) and
     # the field stays at 0.
     conditional_imports_count: int = 0
+    # Byte ranges of multi-line strings and block comments. Each entry
+    # is ``(start, end, kind)`` where kind is ``"string"`` or
+    # ``"comment"``. Used by ``ast_outline.grep`` to filter matches
+    # that fall inside docstrings or block comments — the per-line
+    # heuristics in grep.py can't see across line boundaries, so this
+    # list is the authoritative source for multi-line noise.
+    #
+    # Populated by adapters opportunistically: only languages where
+    # multi-line strings or block comments are common enough to cause
+    # false positives in agent searches need to bother. Empty list
+    # means "fall back to single-line heuristics" — backwards
+    # compatible for adapters that haven't been updated.
+    noise_regions: list[tuple[int, int, str]] = field(default_factory=list)
+
+    # Byte ranges of import declarations as the language grammar sees
+    # them — single-line OR block-form (Go ``import ( ... )``, Python
+    # ``from X import (\n A,\n B,\n)``, TypeScript ``import { A, B }
+    # from '...'`` spanning multiple lines, Rust ``use foo::{...}``,
+    # PHP ``use App\{...}``).
+    #
+    # The line-prefix heuristic in ``grep._classify_match`` only sees
+    # the OPENING line of a block ("import (") and misses the inner
+    # package paths. Adapters that populate this list let the grep
+    # classifier promote those inner matches to ``[import]`` directly,
+    # mirroring how ``noise_regions`` provides authoritative string /
+    # comment ranges.
+    #
+    # Populated opportunistically: languages with single-line imports
+    # only (Java / Kotlin / Scala / C# / C++) don't need to bother —
+    # the line-prefix path already classifies their imports correctly.
+    # Empty list means "rely on line-only heuristics" — backwards-
+    # compatible for adapters that haven't been updated.
+    import_regions: list[tuple[int, int]] = field(default_factory=list)
 
 
 # --- Options --------------------------------------------------------------

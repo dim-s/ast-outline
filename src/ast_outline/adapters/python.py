@@ -48,7 +48,18 @@ class PythonAdapter:
         decls: list[Declaration] = []
         _walk_module(tree.root_node, src, decls)
         imports: list[str] = []
-        _collect_imports(tree.root_node, src, imports)
+        # Two-source region collection — both are zero-cost piggybacks
+        # on existing walks, neither adds a tree traversal:
+        #   1. ``_collect_imports`` (top-level + if/try) writes the
+        #      module-scope regions while building the imports list.
+        #   2. ``_count_conditional_imports`` (whole tree) writes the
+        #      function/class-body regions while counting lazy imports.
+        # Together they cover every import in the file without overlap
+        # — the conditional walker only appends when ``in_scope`` is
+        # True (i.e. inside a function/class), exactly the gap the
+        # imports walk leaves uncovered.
+        import_regions: list[tuple[int, int]] = []
+        _collect_imports(tree.root_node, src, imports, import_regions)
         # Imports inside function / method / class bodies are runtime-
         # scoped (lazy `import` for circular-deps avoidance, etc.) or
         # class-namespaced (eager but bound to the class, not the
@@ -57,7 +68,17 @@ class PythonAdapter:
         # so the renderer can emit `[+ N conditional includes]` and
         # the agent isn't misled into thinking the file is dependency-
         # closed by its top-level imports alone.
-        conditional_count = _count_conditional_imports(tree.root_node)
+        conditional_count = _count_conditional_imports(
+            tree.root_node, import_regions
+        )
+        import_regions.sort()
+        # Multi-line strings (docstrings) and any string/comment that
+        # spans line boundaries — collected so the grep command can
+        # reliably filter symbols mentioned in docstrings without
+        # relying on a regex pre-pass that gets confused by ``"""`` /
+        # ``'''`` literals appearing inside regular code (e.g. the
+        # ``('"""', "'''")`` tuple in a doc-stripping helper).
+        noise_regions = _collect_noise_regions(tree.root_node)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -67,7 +88,34 @@ class PythonAdapter:
             error_count=count_parse_errors(tree.root_node),
             imports=imports,
             conditional_imports_count=conditional_count,
+            noise_regions=noise_regions,
+            import_regions=import_regions,
         )
+
+
+def _collect_noise_regions(root: Node) -> list[tuple[int, int, str]]:
+    """Walk the tree once, returning string and comment byte ranges.
+
+    Tree-sitter is the authoritative source — it distinguishes a
+    triple-quote that opens a docstring from one that appears as data
+    inside another string, which a regex pre-pass cannot. Output is
+    sorted by start_byte so byte-position lookup can early-exit.
+    """
+    out: list[tuple[int, int, str]] = []
+    stack: list[Node] = [root]
+    while stack:
+        node = stack.pop()
+        if node.type == "string":
+            out.append((node.start_byte, node.end_byte, "string"))
+            # Don't descend — string contents (interpolation parts on
+            # f-strings) are already covered by the outer range.
+            continue
+        if node.type == "comment":
+            out.append((node.start_byte, node.end_byte, "comment"))
+            continue
+        stack.extend(node.children)
+    out.sort()
+    return out
 
 
 # --- Imports --------------------------------------------------------------
@@ -94,15 +142,40 @@ _PY_IMPORT_DESCEND = {
 }
 
 
-def _collect_imports(root: Node, src: bytes, out: list[str]) -> None:
+def _collect_imports(
+    root: Node,
+    src: bytes,
+    out: list[str],
+    regions: list[tuple[int, int]] | None = None,
+) -> None:
+    """Walk the tree once, emitting normalized import strings into ``out``
+    AND (if ``regions`` is supplied) appending each import declaration's
+    byte range. Piggybacking the byte-range collection onto the existing
+    imports walk avoids a second tree traversal — the standalone
+    ``_collect_import_regions`` cost ~22% of post-parse time on a mixed
+    100-file corpus, while doing this in the same loop is essentially
+    free (one ``.append`` per import found).
+
+    Scope intentionally matches what ``_collect_imports`` already covers:
+    top-level + ``if`` / ``try`` blocks. Lazy imports inside function
+    bodies are NOT walked — they're rare, and single-line ones still get
+    ``[import]`` from the line-prefix classifier in ``grep`` (the
+    stripped line starts with ``import ``). The only loss is the very
+    rare ``def foo(): from x import (\\n a,\\n)`` pattern, where inner
+    ``a`` lines would classify as ``[ref]`` instead of ``[import]``.
+    """
     for child in root.named_children:
         kind = child.type
         if kind == "import_statement":
             _emit_import_statement(child, src, out)
+            if regions is not None:
+                regions.append((child.start_byte, child.end_byte))
         elif kind == "import_from_statement":
             _emit_import_from(child, src, out)
+            if regions is not None:
+                regions.append((child.start_byte, child.end_byte))
         elif kind in _PY_IMPORT_DESCEND:
-            _collect_imports(child, src, out)
+            _collect_imports(child, src, out, regions)
         # function_definition / class_definition / decorated_definition →
         # not descended; their imports are local-scope and intentionally
         # excluded from the file-level overview.
@@ -119,7 +192,10 @@ _PY_RUNTIME_OR_SCOPED = frozenset({
 })
 
 
-def _count_conditional_imports(root: Node) -> int:
+def _count_conditional_imports(
+    root: Node,
+    regions: list[tuple[int, int]] | None = None,
+) -> int:
     """Count `import` / `from ... import` statements that live inside
     a function / method / class body — i.e. NOT module-level.
 
@@ -129,6 +205,14 @@ def _count_conditional_imports(root: Node) -> int:
     `if TYPE_CHECKING:` block or a `try/except` import-fallback,
     which `_collect_imports` already surfaces as static — are not
     counted.
+
+    If ``regions`` is supplied, also appends the byte range of each
+    in-scope import — extends grep's ``import_regions`` to cover lazy
+    multi-line imports inside function / class bodies (e.g.
+    ``def foo(): from x import (\\n    a,\\n)``). Top-level + if/try
+    regions are already populated by ``_collect_imports``; this walker
+    fills the function-body gap WITHOUT a separate tree pass — we're
+    already walking everything to count, the ``.append`` is free.
     """
     count = 0
     stack: list[tuple[Node, bool]] = [(root, False)]
@@ -138,6 +222,8 @@ def _count_conditional_imports(root: Node) -> int:
         if t in ("import_statement", "import_from_statement"):
             if in_scope:
                 count += 1
+                if regions is not None:
+                    regions.append((node.start_byte, node.end_byte))
             # No nested imports to find inside an import statement.
             continue
         new_in_scope = in_scope or t in _PY_RUNTIME_OR_SCOPED

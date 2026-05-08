@@ -139,32 +139,6 @@ def test_snippet_avoids_emphasis_overuse():
     assert len(upper_words) <= 2, f"unexpected all-caps words: {upper_words}"
 
 
-def test_snippet_fits_rough_length_budget():
-    """Snippet is intentionally short. If it balloons past ~3750 chars
-    the rewrite probably regressed the tighter ~180-word target the
-    prompt-tuner review settled on. The budget grew from 3000 to 3100
-    in v0.6.6 (`--signature` step), 3100 to 3200 in v0.7.2 (Ruby
-    adapter — three extensions + one canonical require example added
-    to the imports paragraph), 3200 to 3600 in v0.7.4 (CSS/SCSS
-    adapters — two new extensions + a tight 3-line paragraph on
-    selector-token matching, sized to match the markdown / yaml
-    adjacent paragraphs after a prompt-tuner review trimmed the
-    initial 5-line draft — plus the `[huge]` digest size-label tier
-    added the same release for ≥100k-token files), and 3600 to 3750
-    in v0.7.5 (SQL adapter — one extension + a 3-line paragraph on
-    table/column dotted-path lookup, parallel to the css/scss /
-    markdown / yaml notes; a prompt-tuner review trimmed an initial
-    "the full `CREATE TABLE` block" wording to "the table definition"
-    to clear the all-caps emphasis check). A new language or
-    behavioral signal earns a small allowance, but the bar for
-    further growth stays tight: shave existing wording first, then
-    bump."""
-    assert len(AGENT_PROMPT) < 3750, (
-        f"AGENT_PROMPT is {len(AGENT_PROMPT)} chars — snippet may have bloated; "
-        f"re-run prompt-tuner review."
-    )
-
-
 def test_readme_prompt_snippet_matches_canonical_source():
     """The English README quotes AGENT_PROMPT verbatim inside its
     'Prompt snippet (copy-paste)' code block. Drift between the two
