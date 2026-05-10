@@ -62,6 +62,49 @@ class _ArgParseFail(Exception):
     """Raised by _LLMArgumentParser instead of sys.exit on bad args."""
 
 
+def _cross_command_flag_hint(
+    parser: argparse.ArgumentParser, message: str, argv: list[str]
+) -> str:
+    """Suggest the right subcommand when an unknown flag belongs to another.
+
+    LLM agents routinely confuse subcommand-scoped flags (e.g. ``--signature``
+    is `show`-only but tempting to pair with `outline`). Argparse's default
+    "unrecognized arguments: --signature" doesn't tell the agent where the
+    flag actually lives. This walks all subparsers, looks up each unknown
+    flag, and returns a "(hint: ...)" tail naming the right command.
+    Returns "" when no hint applies.
+    """
+    prefix = "unrecognized arguments: "
+    if not message.startswith(prefix):
+        return ""
+    tokens = message[len(prefix):].split()
+    flag_tokens = [t.split("=", 1)[0] for t in tokens if t.startswith("-")]
+    if not flag_tokens:
+        return ""
+    invoked = next((a for a in argv if a in SUBCOMMANDS), None)
+    sub_action = next(
+        (a for a in parser._actions if isinstance(a, argparse._SubParsersAction)),
+        None,
+    )
+    if sub_action is None:
+        return ""
+    hints: list[str] = []
+    for flag in flag_tokens:
+        owners = [
+            name
+            for name, sub in sub_action.choices.items()
+            if name != invoked
+            and any(flag in act.option_strings for act in sub._actions)
+        ]
+        if owners:
+            owner_list = " / ".join(f"`{o}`" for o in owners)
+            tail = f", not `{invoked}`" if invoked else ""
+            hints.append(f"`{flag}` is a flag of {owner_list}{tail}")
+    if not hints:
+        return ""
+    return " (hint: " + "; ".join(hints) + ")"
+
+
 # Grep flags that consume a value as the next argv token. Used by
 # ``_normalize_grep_argv`` to skip values when scanning for free
 # positionals. Kept in lockstep with the ``p_grep.add_argument`` calls
@@ -343,7 +386,8 @@ def main(argv: list[str] | None = None) -> int:
     except _ArgParseFail as e:
         # Bad CLI usage. Surface it as the LLM's response on stdout and
         # exit cleanly so a parallel batch isn't aborted by exit code 2.
-        print(f"# note: {e}")
+        msg = str(e)
+        print(f"# note: {msg}{_cross_command_flag_hint(parser, msg, argv)}")
         return 0
 
     if args.cmd == "help":

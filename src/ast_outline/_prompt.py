@@ -5,8 +5,8 @@ etc.) to prefer `ast-outline` over full-file reads. It's the single
 source of truth for:
 
 - The `ast-outline prompt` CLI subcommand (prints this verbatim)
-- The "Prompt snippet (copy-paste)" section of the README (kept in
-  sync by hand — when you change AGENT_PROMPT, update the README too)
+- The `??? quote` block in the docs site (`docs/agents.md` in the
+  sibling `ast-outline.github.io` repo — kept in sync by hand)
 
 Keep AGENT_PROMPT a pure markdown string. No placeholders, no
 language-switching — the snippet is intentionally cross-vendor
@@ -69,7 +69,7 @@ you already know the symbol:
    For sql, the symbol is a table or column name (`users`,
    `users.email`) — `show users` returns the table definition,
    `show users.email` returns one column line.
-   Add `--signature` to any of the above to return header only
+   Add `--signature` to `show` (only there) to return header only
    (docs + attrs + signature, no body) — useful after `digest`, when
    you have the name and want the contract, not the implementation.
 

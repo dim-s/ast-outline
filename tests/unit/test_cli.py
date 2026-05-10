@@ -391,6 +391,31 @@ def test_bad_subcommand_returns_zero_with_note(capsys):
     assert "# note:" in captured.out
 
 
+def test_cross_command_flag_hint_signature_on_outline(tmp_path, capsys):
+    """When an LLM passes a flag belonging to a sibling subcommand, the note
+    should name the right command instead of just "unrecognized arguments"."""
+    f = tmp_path / "sample.py"
+    f.write_text("def foo():\n    pass\n")
+    rc = main(["outline", str(f), "--signature"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "# note:" in captured.out
+    assert "`--signature` is a flag of `show`" in captured.out
+    assert "not `outline`" in captured.out
+
+
+def test_cross_command_flag_hint_absent_for_truly_unknown_flag(tmp_path, capsys):
+    """A flag that exists nowhere should NOT get a hint — only flags that
+    legitimately live on a different subcommand qualify."""
+    f = tmp_path / "sample.py"
+    f.write_text("def foo():\n    pass\n")
+    rc = main(["outline", str(f), "--definitely-not-a-flag"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "# note:" in captured.out
+    assert "hint:" not in captured.out
+
+
 def test_show_missing_file_returns_zero_with_note(tmp_path, capsys):
     rc = main(["show", str(tmp_path / "absent.cs"), "Foo"])
     captured = capsys.readouterr()

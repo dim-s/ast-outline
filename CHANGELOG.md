@@ -7,6 +7,30 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.2] — 2026-05-10
+
+Patch release — agent-prompt clarity + cross-command flag hints to
+prevent LLM agents from misrouting subcommand-scoped flags.
+
+### Fixed
+
+- **Agent-prompt: `--signature` scope disambiguated.** The canonical
+  agent prompt (`ast-outline prompt`) previously read
+  *"Add `--signature` to any of the above"* inside the `show` section.
+  Literal models (Opus 4.7, GPT-5.5) read the menu globally and reached
+  for `--signature` on `outline` or `digest`, where the flag does not
+  exist. Reworded to *"Add `--signature` to `show` (only there)"* —
+  preserves the workflow hint, adds an explicit anchor.
+
+### Added
+
+- **Cross-command flag hint on unrecognized arguments.** When an unknown
+  flag passed to one subcommand is recognized by another, the
+  `# note: unrecognized arguments: --flag` line now carries
+  `(hint: \`--flag\` is a flag of \`<other-cmd>\`, not \`<this-cmd>\`)`.
+  Truly unknown flags get no hint. Helps LLM agents self-correct in one
+  retry instead of guessing or asking the user.
+
 ## [0.8.1] — 2026-05-08
 
 Patch release — usability fix for the `grep` subcommand.
