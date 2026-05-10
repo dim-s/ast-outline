@@ -139,6 +139,23 @@ def test_snippet_avoids_emphasis_overuse():
     assert len(upper_words) <= 2, f"unexpected all-caps words: {upper_words}"
 
 
+def test_signature_flag_anchored_to_show_only():
+    """Regression for the v0.8.2 fix. Earlier wording was
+    "Add `--signature` to any of the above" inside the `show` section,
+    which literal models (Opus 4.7, GPT-5.5) read globally and applied
+    to `outline` and `digest`. The fix anchors the flag to `show`
+    explicitly. Guard the wording so future edits don't reintroduce
+    the ambiguous form."""
+    assert "any of the above" not in AGENT_PROMPT, (
+        "AGENT_PROMPT regressed to the ambiguous 'any of the above' wording "
+        "for --signature. That phrasing caused agents to pass --signature "
+        "to outline/digest where the flag does not exist."
+    )
+    assert "Add `--signature` to `show`" in AGENT_PROMPT, (
+        "AGENT_PROMPT must anchor --signature to `show` explicitly."
+    )
+
+
 def test_snippet_ends_with_newline():
     """Appending with `ast-outline prompt >> AGENTS.md` must leave a
     clean newline so the next line doesn't concatenate."""

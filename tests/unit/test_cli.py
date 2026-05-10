@@ -416,6 +416,45 @@ def test_cross_command_flag_hint_absent_for_truly_unknown_flag(tmp_path, capsys)
     assert "hint:" not in captured.out
 
 
+def test_cross_command_flag_hint_with_equals_form(tmp_path, capsys):
+    """``--flag=value`` form should be recognized — the hint extractor
+    must strip the ``=value`` suffix before looking up the flag."""
+    f = tmp_path / "sample.py"
+    f.write_text("def foo():\n    pass\n")
+    rc = main(["outline", str(f), "--view=signature"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "`--view` is a flag of `show`" in captured.out
+    assert "not `outline`" in captured.out
+
+
+def test_cross_command_flag_hint_short_flag(tmp_path, capsys):
+    """Short POSIX-style flags from another subcommand also get a hint —
+    `-l` is a `grep` flag (files-with-matches), not an `outline` flag."""
+    f = tmp_path / "sample.py"
+    f.write_text("def foo():\n    pass\n")
+    rc = main(["outline", str(f), "-l"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "`-l` is a flag of `grep`" in captured.out
+
+
+def test_cross_command_flag_hint_lists_all_owners(tmp_path, capsys):
+    """When a flag lives on multiple sibling commands (``--imports`` is on
+    both ``outline`` and ``digest``), the hint names all owners — agents
+    can pick whichever fits their workflow."""
+    f = tmp_path / "sample.py"
+    f.write_text("def foo():\n    pass\n")
+    rc = main(["show", str(f), "foo", "--imports"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "# note:" in captured.out
+    assert "`--imports` is a flag of" in captured.out
+    assert "`outline`" in captured.out
+    assert "`digest`" in captured.out
+    assert "not `show`" in captured.out
+
+
 def test_show_missing_file_returns_zero_with_note(tmp_path, capsys):
     rc = main(["show", str(tmp_path / "absent.cs"), "Foo"])
     captured = capsys.readouterr()
