@@ -7,6 +7,37 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.4] — 2026-05-11
+
+Patch release — `grep --kind X` now tells the agent which kinds were
+excluded when the result is empty, so a wrong-kind narrow no longer
+masks the symbol's presence.
+
+### Added
+
+- **Kind-filter hint on empty `grep` results.** When `grep --kind X`
+  returns zero matches but the pattern would have matched under
+  other kinds, the CLI now prints a second line under the `# note:`
+  with a breakdown and a retry suggestion:
+
+  ```
+  # note: no matches for 'EditorPrefs'
+  # hint: --kind call excluded 4 matches (4 ref) — retry with --kind call,ref or drop --kind
+  ```
+
+  Motivation: agents reading `EditorPrefs.GetString(...)` see a call,
+  pass `--kind call`, and get nothing — because the match lands on
+  the type name `EditorPrefs` (a `ref`, since `.` follows it), not on
+  the called method `GetString`. The bare "no matches" hid the fact
+  that the symbol was present in a different role; one extra line
+  collapses what was previously a binary-search through `--kind`
+  values into a single retry. Universal across all six kinds (`def`,
+  `call`, `ref`, `import`, `comment`, `string`) and works with
+  multi-kind filters (`--kind def,import`). Suppressed when the
+  regex-syntax hint fires for the same empty result — one hint per
+  call keeps the output scannable. Internal `grep()` API gained a
+  third tuple element `kind_excluded_counts: dict[str, int]`.
+
 ## [0.8.3] — 2026-05-11
 
 Patch release — fix `show` lookup for markdown headings carrying a

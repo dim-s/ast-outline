@@ -259,7 +259,7 @@ def grep(
     no_ignore: bool = False,
     max_count: int | None = None,
     kind_filter: set[str] | None = None,
-) -> tuple[list[GrepFileResult], int]:
+) -> tuple[list[GrepFileResult], int, dict[str, int]]:
     """Find ``patterns`` across ``paths``, return per-file annotated results.
 
     ``patterns`` may be a single string (back-compat) or a list of
@@ -290,9 +290,20 @@ def grep(
     runs first and would zero out those kinds before this filter ever
     sees them.
 
-    Returns a tuple of (file_results, ignored_dirs_count). When
-    ``include_noise=False`` (the default), matches inside comments and
-    strings are counted but filtered out of the result.
+    Returns a tuple of (file_results, ignored_dirs_count,
+    kind_excluded_counts). When ``include_noise=False`` (the default),
+    matches inside comments and strings are counted but filtered out
+    of the result.
+
+    ``kind_excluded_counts`` aggregates, across all files, how many
+    matches were silently dropped by the ``kind_filter`` narrow —
+    keyed by kind (``"ref"``, ``"call"``, ...). Always empty when
+    ``kind_filter is None``. The CLI uses this on the empty-result
+    path to tell the agent which kinds DID match, so a 0-result
+    "no matches" doesn't mask the fact that the symbol is present
+    in a different role (e.g. ``EditorPrefs.GetString(...)`` under
+    ``--kind call`` — the dot makes ``EditorPrefs`` a ``ref``, not
+    a ``call``).
 
     Empty patterns return no results — ``bytes.find(b"")`` returns 0
     at every position and would fire a "match" on every byte of every
@@ -302,7 +313,7 @@ def grep(
         patterns = [patterns] if patterns else []
     patterns = [p for p in patterns if p]
     if not patterns:
-        return [], 0
+        return [], 0, {}
     if word_match:
         # Wrap in word boundaries — for literals, escape first so the
         # pattern itself stays literal; for regex, wrap as a non-
@@ -316,6 +327,7 @@ def grep(
     matcher = _build_matcher(patterns, is_regex=is_regex, case_insensitive=case_insensitive)
 
     out: list[GrepFileResult] = []
+    kind_excluded_counts: dict[str, int] = {}
     for path in collected.files:
         adapter = get_adapter_for(path)
         if adapter is None:
@@ -340,11 +352,13 @@ def grep(
         except Exception:
             continue
 
-        file_result = _annotate_matches(
+        file_result, file_kind_excluded = _annotate_matches(
             result, spans, src,
             include_noise=include_noise,
             kind_filter=kind_filter,
         )
+        for k, n in file_kind_excluded.items():
+            kind_excluded_counts[k] = kind_excluded_counts.get(k, 0) + n
         if max_count is not None and len(file_result.matches) > max_count:
             file_result.truncated_count = len(file_result.matches) - max_count
             file_result.matches = file_result.matches[:max_count]
@@ -355,7 +369,7 @@ def grep(
         ):
             out.append(file_result)
 
-    return out, collected.ignored_dirs
+    return out, collected.ignored_dirs, kind_excluded_counts
 
 
 def _build_matcher(
@@ -423,8 +437,17 @@ def _annotate_matches(
     *,
     include_noise: bool,
     kind_filter: set[str] | None = None,
-) -> GrepFileResult:
-    """Annotate raw byte spans with scope and kind, and filter noise."""
+) -> tuple[GrepFileResult, dict[str, int]]:
+    """Annotate raw byte spans with scope and kind, and filter noise.
+
+    Returns ``(file_result, kind_excluded_counts)``. The second item
+    is a kind→count map of matches dropped by the ``kind_filter``
+    narrow — populated only when ``kind_filter is not None``, and
+    only with kinds that were actually excluded (so ``{"ref": 42}``,
+    not ``{"call": 0, "ref": 42, ...}``). Caller aggregates these
+    across files to power the "no <kind> matches; <K>=<N> excluded"
+    hint emitted by the CLI on empty results.
+    """
 
     # Pre-compute line offsets so we can map byte → line in O(log N) per match.
     line_offsets = _compute_line_offsets(src)
@@ -442,6 +465,7 @@ def _annotate_matches(
     # lines as ``[string]`` or ``[ref]``. See ParseResult.import_regions.
     import_regions = result.import_regions
     file_result = GrepFileResult(path=result.path, language=result.language)
+    kind_excluded: dict[str, int] = {}
 
     for pos, end in spans:
         line_no = _byte_to_line(line_offsets, pos)
@@ -513,6 +537,17 @@ def _annotate_matches(
             # noise enabled. Suppress the count to keep the footer honest.
             if kind_filter is None or kind in kind_filter:
                 file_result.filtered_count += 1
+            elif kind_filter is not None:
+                # Doubly hidden: noise filter would drop it, AND the
+                # ``--kind`` narrow would too. Count toward
+                # ``kind_excluded`` so the CLI's empty-result hint
+                # surfaces "retry with --kind ..., comment" — that
+                # retry auto-enables ``--include-noise`` in the CLI
+                # layer, so the user's one-shot fix actually works.
+                # Without this, a pattern that lives only in comments
+                # / strings vanishes silently under any non-noise
+                # ``--kind`` narrow (def/call/ref/import).
+                kind_excluded[kind] = kind_excluded.get(kind, 0) + 1
             continue
 
         if kind_filter is not None and kind not in kind_filter:
@@ -520,6 +555,13 @@ def _annotate_matches(
             # (that's reserved for the noise filter, which the user can
             # opt back into via ``--include-noise``). A ``--kind`` skip
             # is a deliberate exclusion, not noise to surface.
+            #
+            # But DO accumulate per-kind so the CLI can tell an agent
+            # "you got 0 results because --kind <X> excluded 42 ref
+            # and 3 def" instead of bare "no matches" — far more
+            # actionable when the wrong kind narrow is the only thing
+            # standing between the agent and a useful answer.
+            kind_excluded[kind] = kind_excluded.get(kind, 0) + 1
             continue
 
         file_result.matches.append(
@@ -532,7 +574,7 @@ def _annotate_matches(
             )
         )
 
-    return file_result
+    return file_result, kind_excluded
 
 
 def _kind_at_byte(

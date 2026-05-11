@@ -757,7 +757,7 @@ def _cmd_grep(args) -> int:
         if kinds & {KIND_COMMENT, KIND_STRING}:
             include_noise = True
 
-    file_results, _ignored_dirs = grep(
+    file_results, _ignored_dirs, kind_excluded_counts = grep(
         patterns,
         paths,
         is_regex=is_regex,
@@ -771,19 +771,50 @@ def _cmd_grep(args) -> int:
     if not file_results:
         shown = patterns[0] if len(patterns) == 1 else f"{len(patterns)} patterns"
         print(f"# note: no matches for {shown!r}")
+        # Universal kind-filter hint: when ``--kind`` was the only thing
+        # standing between the agent and a real result, tell them so
+        # they can fix it in one retry instead of binary-searching.
+        # Wording mirrors the existing `# hint:` style — what was
+        # dropped, what to do about it. Suppressed if the regex-syntax
+        # hint will fire below; one hint per empty result keeps the
+        # output scannable.
+        regex_hint_pending = (
+            not is_regex
+            and any(looks_like_ambiguous_regex(p) for p in patterns)
+        )
+        if kind_excluded_counts and kind_filter is not None and not regex_hint_pending:
+            # Stable order: highest-count kind first (most likely what
+            # the agent actually wanted), ties broken alphabetically.
+            ranked = sorted(
+                kind_excluded_counts.items(),
+                key=lambda kv: (-kv[1], kv[0]),
+            )
+            # Word the breakdown as natural counts ("4 ref, 1 def"),
+            # not key=value pairs ("ref=4, def=1") — the latter reads
+            # as a flag-value form (cf. ``--kind=ref``) and obscures
+            # the fact that the numbers ARE the counts. Total prefix
+            # gives the magnitude at a glance before the parens.
+            breakdown = ", ".join(f"{n} {k}" for k, n in ranked)
+            total = sum(kind_excluded_counts.values())
+            kind_shown = ",".join(sorted(kind_filter))
+            extend = ",".join(sorted(kind_filter | set(kind_excluded_counts.keys())))
+            plural = "es" if total != 1 else ""
+            print(
+                f"# hint: --kind {kind_shown} excluded {total} match{plural} "
+                f"({breakdown}) — retry with --kind {extend} or drop --kind"
+            )
         # Warn-on-no-match: if any pattern carries metachars that might
         # have been intended as regex, hint at --regex. The strict
         # auto-detect already promoted the unambiguous cases, so we only
         # reach this hint for genuinely ambiguous patterns where literal
         # interpretation might have been wrong.
-        if not is_regex:
+        if regex_hint_pending:
             ambiguous = [p for p in patterns if looks_like_ambiguous_regex(p)]
-            if ambiguous:
-                print(
-                    f"# hint: pattern {ambiguous[0]!r} contains regex-like syntax "
-                    f"(escaped metachar, quantifier, or anchor) — if you meant "
-                    f"regex, retry with --regex"
-                )
+            print(
+                f"# hint: pattern {ambiguous[0]!r} contains regex-like syntax "
+                f"(escaped metachar, quantifier, or anchor) — if you meant "
+                f"regex, retry with --regex"
+            )
         return 0
     # Output-mode dispatch — ``-l`` and ``-c`` short-circuit the
     # default scope-annotated render with grep-style compact formats
