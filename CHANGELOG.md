@@ -7,6 +7,30 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.3] — 2026-05-11
+
+Patch release — fix `show` lookup for markdown headings carrying a
+numeric prefix (the form `outline` prints), restoring round-trip
+`outline` → `show`.
+
+### Fixed
+
+- **`show "3. Foo"` / `show "4.2 Foo"` now resolve.** Markdown
+  headings like `## 3. Numbered Heading` are stored with their
+  numeric prefix intact (and `outline` prints them that way), but the
+  `find_symbols` query tokenizer was reading the dot in `3.` as a
+  path separator and splitting the query into `["3", " Foo"]`. That
+  forced the matcher to look for a two-segment trail that never
+  exists — markdown headings are single declarations whose `name`
+  carries the prefix — so the lookup silently returned `symbol not
+  found`. `_split_query` now short-circuits queries shaped like a
+  numbered-heading prefix (`\d+(\.\d+)*\.?\s+<text>`) into a single
+  opaque token, letting the existing substring-matching path resolve
+  them. Bare dotted-numeric queries without trailing text (`"1.2"`,
+  `"1.foo"`) keep the previous split behaviour so non-markdown
+  lookups are unaffected. Fixes
+  [#2](https://github.com/ast-outline/ast-outline/issues/2).
+
 ## [0.8.2] — 2026-05-10
 
 Patch release — agent-prompt clarity + cross-command flag hints to

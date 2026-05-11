@@ -1499,6 +1499,13 @@ import re as _re
 #   "[0].image"             → ["[0]", "image"]
 _QUERY_TOKEN_RE = _re.compile(r"\[[^\]]*\]|[^.\[]+")
 
+# Markdown-numbered-heading short-circuit. Recognises queries shaped
+# like ``"3. Foo"``, ``"4.2 Foo"``, ``"1.2.3. Foo"`` — a numeric
+# prefix (optionally decimal-dotted, optionally trailed by a period)
+# followed by whitespace and at least one non-whitespace char. See
+# ``_split_query`` for why we keep these as a single token.
+_LEADING_NUMBER_PREFIX_RE = _re.compile(r"^\d+(?:\.\d+)*\.?\s+\S")
+
 
 def _split_query(symbol: str) -> list[str]:
     """Tokenise a dotted (and possibly bracketed) query into trail parts.
@@ -1518,8 +1525,24 @@ def _split_query(symbol: str) -> list[str]:
     here: they're part of the CSS compound-selector syntax. Without
     this short-circuit, querying `.btn-primary` would split into
     `["btn-primary"]` (the leading dot stripped) and miss the rule
-    whose `match_names` contains the literal `.btn-primary`."""
+    whose `match_names` contains the literal `.btn-primary`.
+
+    Markdown numbered-heading queries — ``"3. Foo Bar"``,
+    ``"4.2 Decimal Foo"`` — are also returned as a single token.
+    ``outline`` prints these headings with the prefix intact (the
+    prefix is part of the heading's ``name``), so an agent pasting
+    the printed form back into ``show`` arrives here verbatim.
+    Without this short-circuit the dot in ``3.`` reads as a path
+    separator → ``["3", " Foo Bar"]`` → matching demands a
+    two-segment trail that doesn't exist (markdown headings are
+    single declarations). We require ``\\s+\\S`` after the numeric
+    prefix so pure numeric / dotted-numeric queries without trailing
+    text (``"1.2"``, ``"1.foo"``) keep the existing token-split
+    behaviour — only the natural numbered-heading shape is
+    short-circuited."""
     if symbol[:1] in ".#%&@:":
+        return [symbol]
+    if _LEADING_NUMBER_PREFIX_RE.match(symbol):
         return [symbol]
     return _QUERY_TOKEN_RE.findall(symbol)
 

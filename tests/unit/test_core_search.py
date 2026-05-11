@@ -13,7 +13,7 @@ from ast_outline.adapters.rust import RustAdapter
 from ast_outline.adapters.scala import ScalaAdapter
 from ast_outline.adapters.sql import SqlAdapter
 from ast_outline.adapters.typescript import TypeScriptAdapter
-from ast_outline.core import find_symbols
+from ast_outline.core import _split_query, find_symbols
 
 
 # --- find_symbols --------------------------------------------------------
@@ -316,4 +316,76 @@ def test_code_symbol_matching_remains_exact(csharp_dir):
     # accept full-segment equality, so this query should return zero hits.
     matches = find_symbols(r, "TakeDam")
     assert matches == []
+
+
+# --- find_symbols: numbered-heading round-trip (issue #2) ---------------
+
+
+def test_markdown_query_keeps_numbered_prefix(md_dir):
+    """`"1. ТЕКУЩИЙ АНАЛИЗ"` — the exact form `outline` prints — must
+    resolve. Regression for
+    https://github.com/ast-outline/ast-outline/issues/2: the dot in
+    `1.` was being misread as a path separator, splitting the query
+    into ``["1", " ТЕКУЩИЙ АНАЛИЗ"]`` and breaking round-trip
+    `outline` → `show`."""
+    r = MarkdownAdapter().parse(md_dir / "decorated_headings.md")
+    matches = find_symbols(r, "1. ТЕКУЩИЙ АНАЛИЗ")
+    assert len(matches) == 1
+    assert "1. ТЕКУЩИЙ АНАЛИЗ (февраль 2026)" in matches[0].qualified_name
+
+
+def test_markdown_query_keeps_decimal_numbered_prefix(tmp_path):
+    """Decimal prefixes (`4.2 Foo`) and deeper (`1.2.3. Foo`) round-trip
+    too — every dot in the leading number block must stay attached
+    rather than splitting the query."""
+    p = tmp_path / "decimal.md"
+    p.write_text(
+        "# Top\n\n## 4.2 Decimal Numbered\n\nBody.\n\n## 1.2.3. Deep\n\nMore.\n",
+        encoding="utf8",
+    )
+    r = MarkdownAdapter().parse(p)
+    [m1] = find_symbols(r, "4.2 Decimal Numbered")
+    assert m1.qualified_name.endswith("4.2 Decimal Numbered")
+    [m2] = find_symbols(r, "1.2.3. Deep")
+    assert m2.qualified_name.endswith("1.2.3. Deep")
+
+
+def test_markdown_query_without_prefix_still_works(md_dir):
+    """The number-prefix short-circuit must not regress the existing
+    contract: querying just the meaningful core of a numbered heading
+    still resolves via substring matching."""
+    r = MarkdownAdapter().parse(md_dir / "decorated_headings.md")
+    matches = find_symbols(r, "ТЕКУЩИЙ АНАЛИЗ")
+    assert any(
+        "1. ТЕКУЩИЙ АНАЛИЗ (февраль 2026)" in m.qualified_name for m in matches
+    )
+
+
+# --- _split_query: shape-by-shape contract ------------------------------
+
+
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        # Numbered-heading shapes — single opaque token.
+        ("3. Numbered Heading", ["3. Numbered Heading"]),
+        ("4.2 Decimal Numbered", ["4.2 Decimal Numbered"]),
+        ("1.2.3. Deep Numbered", ["1.2.3. Deep Numbered"]),
+        ("1.0 Release Notes", ["1.0 Release Notes"]),
+        # Bare numeric / dotted-numeric WITHOUT trailing text — keep
+        # existing split behaviour so non-markdown lookups are
+        # untouched.
+        ("1.foo", ["1", "foo"]),
+        ("1.2", ["1", "2"]),
+        # Code-style dotted paths — must stay split.
+        ("Foo.Bar.method", ["Foo", "Bar", "method"]),
+        # CSS sigils — opaque (pre-existing behaviour).
+        (".btn-primary", [".btn-primary"]),
+        ("#header", ["#header"]),
+        # YAML bracketed path — pre-existing behaviour.
+        ("containers[0].image", ["containers", "[0]", "image"]),
+    ],
+)
+def test_split_query_contract(query, expected):
+    assert _split_query(query) == expected
 
