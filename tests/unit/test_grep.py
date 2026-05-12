@@ -408,6 +408,99 @@ def test_grep_indexed_array_is_ref_not_call(tmp_path: Path) -> None:
     assert KIND_CALL not in kinds
 
 
+def test_next_call_paren_after_skips_leading_angle_closer() -> None:
+    """Walker must skip a leading ``>`` left over from a match that
+    consumed the opener — e.g. regex ``Bind.*SaveSystem`` matches
+    ``Bind<SaveSystem`` greedily, ending on ``>`` with no matching
+    ``<`` to skip via the existing balanced-block branch. Without
+    this, every generic call surfaced by a regex like ``Foo.*Bar``
+    classifies as ``ref`` and ``--kind call`` returns 0."""
+    from ast_outline.grep import _next_call_paren_after
+    # ``Bind<SaveSystem>();`` — cursor starts on ``>``, ``(`` follows.
+    assert _next_call_paren_after(">();", 0) is True
+    # Nested generic closure ``Foo<Bar<Baz>>()`` — cursor on first ``>``,
+    # then second ``>``, then ``(``. The walker must chain closer-skips.
+    assert _next_call_paren_after(">>()", 0) is True
+    # Stray ``>`` not followed by ``(`` — must still return False so
+    # comparisons like ``a > b`` (matching ``a``) don't all classify
+    # as call.
+    assert _next_call_paren_after("> something", 0) is False
+
+
+def test_next_call_paren_after_skips_leading_square_closer() -> None:
+    """Same closer-skip for ``]`` — covers Go 1.18+ generics ``foo[T]()``,
+    Scala type-args ``Map[K, V]()``, and any regex match that ended
+    inside an indexing / type-arg block."""
+    from ast_outline.grep import _next_call_paren_after
+    assert _next_call_paren_after("]()", 0) is True
+    # ``arr[i]`` (index, no call): cursor on ``]``, nothing follows.
+    assert _next_call_paren_after("];", 0) is False
+
+
+def test_grep_generic_call_regex_match_ends_on_closer(tmp_path: Path) -> None:
+    """Regex ``Bind.*SaveSystem`` against ``c.Bind<SaveSystem>();`` —
+    greedy ``.*`` consumes ``<`` and the match ends at ``>``. Before
+    the closer-skip fix the walker landed on ``>`` and returned False
+    → KIND_REF, so ``--kind call`` excluded the only structural hit
+    and the agent fell through to ``rg``. Now the closer is skipped
+    and ``(`` is found → KIND_CALL.
+
+    Real-world repro from the v0.8.8 changelog."""
+    src = tmp_path / "boot.cs"
+    src.write_text(
+        "public class Bootstrap {\n"
+        "    public void Configure(Container c) {\n"
+        "        c.Bind<SaveSystem>();\n"
+        "    }\n"
+        "}\n"
+    )
+    results, _, _ = grep("Bind.*SaveSystem", [src], is_regex=True)
+    kinds = [m.kind for m in results[0].matches]
+    assert KIND_CALL in kinds, (
+        f"regex match ending on `>` must classify as call, got {kinds}"
+    )
+
+
+def test_grep_generic_call_literal_full_invocation(tmp_path: Path) -> None:
+    """Literal ``Bind<SaveSystem>`` — match ends ON ``(`` (just past
+    ``>``), which the existing trailing-paren check already handles.
+    Pins that the closer-skip change doesn't regress this path."""
+    src = tmp_path / "boot.cs"
+    src.write_text(
+        "public class Bootstrap {\n"
+        "    public void Configure(Container c) {\n"
+        "        c.Bind<SaveSystem>();\n"
+        "    }\n"
+        "}\n"
+    )
+    results, _, _ = grep("Bind<SaveSystem>", [src])
+    kinds = [m.kind for m in results[0].matches]
+    assert KIND_CALL in kinds, kinds
+
+
+def test_grep_nested_generic_call(tmp_path: Path) -> None:
+    """Nested generics ``Foo<Bar<Baz>>()`` — greedy regex landing on the
+    outer ``>`` must still classify as call. Exercises the chained
+    closer-skip: cursor lands on inner ``>``, walker skips, lands on
+    outer ``>``, skips again, hits ``(``."""
+    src = tmp_path / "app.ts"
+    src.write_text(
+        "function genericCall<A, B>(): void {}\n"
+        "function caller() {\n"
+        "  genericCall<Array<string>, number>();\n"   # nested generics
+        "}\n"
+    )
+    # Greedy `.*` consumes through ``number``; the match ends on the
+    # last char of ``number``, leaving the cursor on the inner ``>``
+    # (the type-arg list closes with ``>>`` here, but the match ends
+    # before either of them — the walker chains both closer-skips).
+    results, _, _ = grep(r"genericCall.*number", [src], is_regex=True)
+    # Match ends at end of ``number``, cursor on ``>``. Closer-skip
+    # hops over both ``>`` chars, then finds ``(``.
+    kinds = [m.kind for m in results[0].matches]
+    assert KIND_CALL in kinds, kinds
+
+
 # --- multi-line string filtering (Python docstrings) ---------------------
 
 
@@ -727,6 +820,23 @@ def test_looks_like_ambiguous_regex_catches_line_anchors() -> None:
     from ast_outline.grep import looks_like_ambiguous_regex
     assert looks_like_ambiguous_regex("^class")
     assert looks_like_ambiguous_regex("trailing$")
+
+
+def test_looks_like_ambiguous_regex_catches_dot_wildcard_with_quantifier() -> None:
+    """``.*`` / ``.+`` / ``.?`` is the canonical regex-wildcard shape and
+    has no literal-code interpretation — a bare ``.`` legitimately
+    appears in qualified names (``foo.bar``), but ``.<quantifier>`` does
+    not. Without this trigger, ``Bind.*SaveSystem`` (a common shape
+    when agents grep for generic-call invocations) silently matches
+    nothing — the previous fingerprint required a *letter* before the
+    quantifier (``d*``), which ``.*`` doesn't have."""
+    from ast_outline.grep import looks_like_ambiguous_regex
+    assert looks_like_ambiguous_regex("Bind.*SaveSystem")
+    assert looks_like_ambiguous_regex("foo.+bar")
+    assert looks_like_ambiguous_regex("a.?b")
+    # Bare dot (no quantifier) still skipped — it's a literal qualified-name
+    # separator in nearly all languages.
+    assert not looks_like_ambiguous_regex("User.save")
 
 
 def test_looks_like_ambiguous_regex_skips_plain_literals() -> None:
@@ -1418,6 +1528,31 @@ def test_cli_kind_filter_hint_yields_to_regex_hint(tmp_path: Path) -> None:
     assert "# hint: --kind" not in output
 
 
+def test_cli_regex_hint_fires_on_dot_wildcard_with_quantifier(
+    tmp_path: Path,
+) -> None:
+    """``Bind.*SaveSystem`` is the canonical shape an agent types when
+    grepping for a generic-call invocation (``Bind<SaveSystem>()`` in
+    C#, ``Bind<SaveSystem>`` in Java/TS/Kotlin). Under literal mode the
+    pattern doesn't match the source byte-for-byte (the source has
+    ``<...>``, not arbitrary chars), so 0 results came back with no
+    hint — agents had no signal that ``--regex`` would have worked.
+    Now the ``.<quantifier>`` shape is recognized as unambiguous
+    regex intent and the existing regex hint fires."""
+    src = tmp_path / "sample.cs"
+    src.write_text(
+        "public class Bootstrap {\n"
+        "    public void Configure(Container c) {\n"
+        "        c.Bind<SaveSystem>();\n"
+        "    }\n"
+        "}\n"
+    )
+    output = _run_cli("grep", "Bind.*SaveSystem", str(src))
+    assert "# note: no matches" in output
+    assert "regex" in output
+    assert "Bind.*SaveSystem" in output
+
+
 # --- Per-language KIND classification matrix -----------------------------
 #
 # Each language adapter must classify matches consistently for `--kind`
@@ -2052,6 +2187,129 @@ def test_kind_rust_turbofish_classifies_as_call(tmp_path: Path) -> None:
     assert by_line.get(2) == KIND_CALL, (
         f"turbofish `parse::<i32>()` should classify as call, got {by_line}"
     )
+
+
+def test_kind_rust_turbofish_match_ending_on_angle_closer(tmp_path: Path) -> None:
+    """``parse::<i32`` literal match — ends on ``>`` with no opener
+    left to skip via the balanced-block branch. The closer-skip is
+    what makes ``--kind call`` work here. (Real agents type the
+    literal-with-type form to disambiguate between multiple ``parse``
+    overloads.)"""
+    src = (
+        "fn run() {\n"
+        '    let v = parse::<i32>("42");\n'
+        '    let w = parse::<u64>("42");\n'
+        "}\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "rs", src, "parse::<i32")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(2) == KIND_CALL, by_line
+
+
+# --- Generic-call matrix (closer-skip across languages) ------------------
+#
+# Every language with generic / type-argument call syntax must classify
+# ``Foo<T>()`` / ``Foo[T]()`` invocations as ``call`` even when the
+# grep match ends ON the generic closer (``>`` or ``]``) rather than
+# past it. Bug fixed in v0.8.8 — the walker's closer-skip handles all
+# of these uniformly. One test per language locks in the matrix.
+
+
+def test_kind_csharp_generic_call_match_ending_on_closer(tmp_path: Path) -> None:
+    """C# DI ``container.Bind<SaveSystem>()`` — match ending on ``>``
+    classifies as call. This is the v0.8.8 repro: real agent grep
+    against a Unity codebase fell through to ``rg`` because
+    ``--kind call`` returned 0 hits under the regex pattern."""
+    src = (
+        "public class Boot {\n"
+        "    public void Configure(Container c) {\n"
+        "        c.Bind<SaveSystem>();\n"           # L3
+        "    }\n"
+        "}\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "cs", src, "Bind<SaveSystem")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(3) == KIND_CALL, by_line
+
+
+def test_kind_java_generic_constructor_match_ending_on_closer(
+    tmp_path: Path,
+) -> None:
+    """Java ``new ArrayList<String>()`` — ctor invocation is a call.
+    Match ``ArrayList<String`` ends on ``>``."""
+    src = (
+        "import java.util.ArrayList;\n"
+        "class App {\n"
+        "    void run() {\n"
+        "        var xs = new ArrayList<String>();\n"  # L4
+        "    }\n"
+        "}\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "java", src, "ArrayList<String")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(4) == KIND_CALL, by_line
+
+
+def test_kind_kotlin_generic_call_match_ending_on_closer(tmp_path: Path) -> None:
+    """Kotlin ``listOf<String>()`` — match ``listOf<String`` ends on ``>``."""
+    src = (
+        "fun run() {\n"
+        '    val xs = listOf<String>("a", "b")\n'   # L2
+        "}\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "kt", src, "listOf<String")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(2) == KIND_CALL, by_line
+
+
+def test_kind_typescript_generic_call_match_ending_on_closer(
+    tmp_path: Path,
+) -> None:
+    """TS ``useState<number>(0)`` — match ``useState<number`` ends on ``>``.
+    Common shape in React codebases where agents disambiguate hooks by
+    type argument."""
+    src = (
+        "function App() {\n"
+        "    const [n, setN] = useState<number>(0);\n"   # L2
+        "}\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "ts", src, "useState<number")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(2) == KIND_CALL, by_line
+
+
+def test_kind_scala_generic_call_match_ending_on_square_closer(
+    tmp_path: Path,
+) -> None:
+    """Scala uses ``[...]`` for type args: ``Map[String, Int](...)``.
+    Match ``Map[String, Int`` ends on ``]``."""
+    src = (
+        "object App {\n"
+        '    val m = Map[String, Int]("a" -> 1)\n'   # L2
+        "}\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "scala", src, "Map[String, Int")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(2) == KIND_CALL, by_line
+
+
+def test_kind_go_generics_call_match_ending_on_square_closer(
+    tmp_path: Path,
+) -> None:
+    """Go 1.18+ generics: ``Foo[int](42)`` uses ``[]`` for type args.
+    Match ``Foo[int`` ends on ``]``."""
+    src = (
+        "package main\n"
+        "\n"
+        "func Foo[T any](x T) T { return x }\n"
+        "\n"
+        "func run() {\n"
+        "    Foo[int](42)\n"                         # L6
+        "}\n"
+    )
+    matches = _kinds_for_pattern(tmp_path, "go", src, "Foo[int")
+    by_line = {line: kind for line, kind, _ in matches}
+    assert by_line.get(6) == KIND_CALL, by_line
 
 
 # --- C++ -----------------------------------------------------------------

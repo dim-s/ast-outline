@@ -7,6 +7,59 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.8] — 2026-05-12
+
+Patch release — `ast-outline grep` now correctly classifies
+generic-call invocations (`Bind<SaveSystem>()`, `Map[K, V](...)`,
+`parse::<i32>()`) as `[call]` regardless of how the match lands
+relative to the generic closer, and surfaces the `--regex` hint on
+the `.*` / `.+` / `.?` shape that previously fell through to bare
+"no matches".
+
+### Fixed
+
+- **Generic-call invocations no longer misclassify as `[ref]` when the
+  match ends on the closer (`>` or `]`).** Repro: agent grepping a C#
+  Unity codebase with `ast-outline grep Bind.*SaveSystem --regex
+  --kind call` got 0 hits and fell back to `rg "Bind<SaveSystem>"`,
+  even though the line `c.Bind<SaveSystem>();` is an invocation.
+  Root cause: `_next_call_paren_after` only knew how to skip an
+  *opener* (`<` / `[`) preceding the cursor — it balanced the block
+  to the matching closer and resumed the search for `(`. But the
+  same call-vs-ref decision lands on a *closer* in two routine
+  shapes: greedy regex `Bind.*SaveSystem` whose match ends on `>`,
+  and literal `parse::<i32` / `Map[String, Int` patterns agents
+  type to disambiguate generic overloads. With no closer-skip the
+  walker hit `>` / `]`, fell through `return ch == "("` → False, and
+  classified the whole invocation as `[ref]` — making `--kind call`
+  return 0 across C# / Java / Kotlin / Scala / TypeScript / Rust
+  (turbofish-with-explicit-type) / Go (1.18+ `Foo[int]()`) / C++.
+  The walker now skips bare leading `>` / `]` the same way it skips
+  whitespace, `?.`, `!`, and `::` — consistent with the existing
+  bias documented in the walker's caveat (when the line shape is
+  ambiguous, classify as call; ref false positives in code-search
+  contexts are more painful than call false positives). Adds 8
+  per-language tests pinning the matrix.
+
+- **`Foo.*Bar` no longer fails silently with 0 results and no hint.**
+  Companion gap to the above — even after a user adds `--regex`, the
+  classifier bug above blocked them; even before, the hint that
+  *would* have surfaced `--regex` didn't fire on `.*` patterns.
+  The warn-on-no-match hint required the pattern to carry either an
+  escaped metachar (`\.`, `\(`), a *letter*-or-`)` / `]` followed by
+  a quantifier (`d*`, `)*`), or an edge anchor (`^`, `$`). The
+  `.<quantifier>` shape — where `.` is the char before `*` / `+` /
+  `?` — slipped through both the strict auto-promote fingerprint
+  (intentionally excluded — `.` and `*` individually appear in
+  literal code as qualified names and array types) AND the
+  warn-on-no-match fingerprint, so the agent saw no signal that
+  `--regex` would have helped. The ambiguous-regex fingerprint now
+  treats `.[*+?]` as unambiguous regex intent: bare `.` in qualified
+  names (`User.save`) is still skipped, but the *pair* `.*` / `.+` /
+  `.?` has no literal-code interpretation worth protecting. Extends
+  the same hint-coverage principle as v0.8.4 (kind-filter zero-results
+  hint) to the regex-mode blind spot.
+
 ## [0.8.7] — 2026-05-12
 
 Patch release — block-level HTML comments (`<!-- ... -->`) in markdown

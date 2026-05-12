@@ -140,10 +140,18 @@ def _looks_like_regex(pattern: str) -> bool:
 # Triggers:
 #   \., \(, \), \[, \], \{, \} — escaped metachars (regex-only intent)
 #   *, +, ? after a non-meta char — quantifiers
+#   ., ?, +, * after ``.`` — wildcard-with-quantifier (``.*``, ``.+``,
+#       ``.?``). Unlike a bare ``.`` (which legitimately appears in
+#       qualified names ``foo.bar``), the ``.<quantifier>`` shape has no
+#       literal-code interpretation: agents typing ``Bind.*SaveSystem``
+#       expecting regex previously got bare "no matches" with no hint
+#       (``.`` and ``*`` individually are too noisy to auto-promote,
+#       but the *pair* is unambiguous).
 #   ^, $ at edges — line anchors
 _AMBIGUOUS_REGEX_FINGERPRINT = re.compile(
     r"\\[.()\[\]{}+*?]"
     r"|[A-Za-z_)\]][*+?]"
+    r"|\.[*+?]"
     r"|^\^|\$$"
 )
 
@@ -715,9 +723,25 @@ def _next_call_paren_after(line_content: str, start: int) -> bool:
     """True if a ``(`` follows ``start``, after skipping call-prefixes.
 
     Walks past whitespace, generic-arg blocks (``<...>`` or ``[...]``
-    balanced), turbofish (``::``), TS optional-chain (``?.``), and TS
-    non-null (``!``) until either ``(`` is found (→ True) or any other
-    significant character is hit (→ False).
+    balanced), bare generic closers ``>`` / ``]`` left over from a
+    match that already consumed the opener, turbofish (``::``), TS
+    optional-chain (``?.``), and TS non-null (``!``) until either
+    ``(`` is found (→ True) or any other significant character is
+    hit (→ False).
+
+    The bare-closer skip handles two real cases:
+
+    1. ``ast-outline grep "Bind.*SaveSystem"`` (regex, greedy). The
+       match ``Bind<SaveSystem`` ends on ``>`` — the walker starts
+       on the closer with no matching opener to skip. Without the
+       closer-skip, every generic call on the line classifies as
+       ``ref`` instead of ``call``.
+    2. ``ast-outline grep "Bind<SaveSystem>"`` (literal). The match
+       ends past ``>``, on ``(`` — already handled by the trailing
+       paren check; not affected by this branch.
+
+    Covers ``<...>`` (C# / Java / Kotlin / Scala-types / TS / Rust /
+    C++) and ``[...]`` (Go 1.18+ generics, Scala type-args).
 
     Caveats:
     - Bracket balancing is naive: ``a < b ? c : d`` could be misread
@@ -726,7 +750,10 @@ def _next_call_paren_after(line_content: str, start: int) -> bool:
       call?" are happy with ~99% precision.
     - Comparisons ``x = a < b > (c)`` look the same as a TS generic
       call. We err on the side of classifying as call — it's the
-      rarer false positive in code-search contexts.
+      rarer false positive in code-search contexts. The closer-skip
+      extends the same bias to patterns like ``a > (c)`` where a
+      match ending on ``>`` is now treated as a call if ``(`` follows;
+      this is consistent policy across the walker.
     """
     i = start
     n = len(line_content)
@@ -754,6 +781,9 @@ def _next_call_paren_after(line_content: str, start: int) -> bool:
                 elif line_content[i] == close:
                     depth -= 1
                 i += 1
+            continue
+        if ch in ">]":
+            i += 1
             continue
         return ch == "("
     return False
