@@ -7,6 +7,29 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.6] — 2026-05-12
+
+Patch release — `ast-outline grep` no longer drowns YAML searches in
+shell lines lifted from `run: |` block scalars in CI workflows / Helm
+charts / K8s ConfigMaps.
+
+### Fixed
+
+- **Block scalars (`|`, `>`) are now noise-filtered in YAML grep.**
+  `ast-outline grep npm .github/workflows/` previously returned every
+  `npm install`, `npm run lint`, `npm run build` line lifted from
+  `run: |` step bodies — the structural mentions (job names, step
+  names) drowned in the shell-line noise. The YAML adapter now
+  populates `ParseResult.noise_regions` with the byte ranges of every
+  `block_scalar` node (kind `string`, so the existing `--noise-filter`
+  / `--include-noise` path handles it without a new flag). Plain
+  scalars stay visible — `image: registry.example.com/api`,
+  `replicas: 3`, single-line `run: npm publish` are exactly what
+  agents grep YAML for; only the multi-line block forms (`|` literal,
+  `>` folded) — which YAML authors reach for specifically to embed
+  opaque scripts / templates — get masked. Mirrors the v0.8.5
+  fenced-code-block treatment in markdown.
+
 ## [0.8.5] — 2026-05-12
 
 Patch release — `ast-outline grep` no longer drowns markdown searches

@@ -517,3 +517,72 @@ def test_yaml_outline_header_omits_doc_count_when_single(yaml_dir):
     out = render_outline(YamlAdapter().parse(yaml_dir / "k8s_deployment.yaml"), OutlineOptions())
     first = out.splitlines()[0]
     assert " docs" not in first  # singular case suppressed
+
+
+# --- noise_regions for block scalars -------------------------------------
+
+
+def test_noise_regions_populated_for_block_scalars(yaml_dir):
+    """``|`` and ``>`` block scalars contribute (start, end, kind) regions."""
+    from ast_outline.grep import grep
+
+    r = YamlAdapter().parse(yaml_dir / "block_scalars.yaml")
+    assert r.noise_regions, "expected noise_regions for block_scalars.yaml"
+    # block_scalars.yaml has one ``|`` and one ``>`` block.
+    assert len(r.noise_regions) == 2
+    assert all(kind == "string" for _start, _end, kind in r.noise_regions)
+
+
+def test_noise_regions_cover_block_scalar_body(yaml_dir):
+    """Each region's bytes should contain the scalar body — no plain
+    siblings sneaking in."""
+    src = (yaml_dir / "block_scalars.yaml").read_bytes()
+    r = YamlAdapter().parse(yaml_dir / "block_scalars.yaml")
+    bodies = [src[s:e].decode() for s, e, _ in r.noise_regions]
+    # The literal block contains ``nested: value``; the folded block
+    # contains ``A folded scalar``. Either string has to live somewhere
+    # in the regions.
+    joined = "\n".join(bodies)
+    assert "nested: value" in joined
+    assert "A folded scalar" in joined
+    # And the unrelated ``short: brief value`` line (a plain scalar)
+    # must NOT be inside any region.
+    assert "brief value" not in joined
+
+
+def test_noise_regions_empty_when_no_block_scalars(yaml_dir):
+    """Files without ``|``/``>`` shouldn't emit any noise regions."""
+    r = YamlAdapter().parse(yaml_dir / "k8s_deployment.yaml")
+    assert r.noise_regions == []
+
+
+def test_grep_filters_matches_inside_block_scalar(yaml_dir):
+    """Matches inside ``run: |`` shell bodies vanish under default noise filter."""
+    from ast_outline.grep import grep
+
+    path = yaml_dir / "grep_noise.yaml"
+    results, _ignored, _excluded = grep("npm", [path])
+    assert results, "expected structural mentions to survive"
+    fr = results[0]
+    src_lines = path.read_text().splitlines()
+    for m in fr.matches:
+        line = src_lines[m.line - 1]
+        # No shell-line hits — those live inside ``run: |`` / ``run: >``.
+        assert "npm install" not in line
+        assert "npm run lint" not in line
+        assert "npm run build" not in line
+    # Plenty of matches were swallowed by the filter.
+    assert fr.filtered_count > 0
+
+
+def test_grep_include_noise_surfaces_block_scalar_matches(yaml_dir):
+    """``include_noise=True`` recovers shell-line hits inside ``run: |``."""
+    from ast_outline.grep import grep
+
+    path = yaml_dir / "grep_noise.yaml"
+    visible_default, _, _ = grep("npm", [path])
+    all_with_noise, _, _ = grep("npm", [path], include_noise=True)
+    assert (
+        sum(len(fr.matches) for fr in all_with_noise)
+        > sum(len(fr.matches) for fr in visible_default)
+    )

@@ -102,6 +102,17 @@ class YamlAdapter:
         src = path.read_bytes()
         tree = _PARSER.parse(src)
         decls = _walk_stream(tree.root_node, src)
+        # Block scalars (``run: |`` shell scripts in CI workflows, Helm
+        # values bodies, K8s ConfigMap data:, multi-line text in OpenAPI
+        # description: |) are functionally opaque blobs embedded in the
+        # YAML — agents grepping for ``npm`` across ``.github/workflows/``
+        # don't want every shell line inside a ``run: |`` block as a hit.
+        # Mark them as ``"string"`` so the existing noise filter handles
+        # them; ``--include-noise`` re-surfaces with ``[string]`` tags.
+        # Plain quoted scalars (``image: "registry.example.com/api"``)
+        # are intentionally NOT marked — they ARE the data agents
+        # search yaml for; filtering them would gut grep's usefulness.
+        noise_regions = _collect_noise_regions(tree.root_node)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -109,7 +120,32 @@ class YamlAdapter:
             line_count=src.count(b"\n") + 1,
             declarations=decls,
             error_count=count_parse_errors(tree.root_node),
+            noise_regions=noise_regions,
         )
+
+
+def _collect_noise_regions(root: Node) -> list[tuple[int, int, str]]:
+    """Return byte ranges of every ``block_scalar`` node — the literal
+    ``|`` and folded ``>`` multi-line forms.
+
+    Single-line and quoted scalars are deliberately left visible; only
+    the block-style forms (which YAML authors reach for specifically to
+    embed opaque multi-line content) get masked. Range covers the
+    indicator byte (``|``/``>``) along with the body — the indicator is
+    unique punctuation no one greps for, and treating the whole node as
+    one range mirrors how the Python adapter masks triple-quote
+    delimiters together with their docstring contents.
+    """
+    out: list[tuple[int, int, str]] = []
+    stack: list[Node] = [root]
+    while stack:
+        node = stack.pop()
+        if node.type == "block_scalar":
+            out.append((node.start_byte, node.end_byte, "string"))
+            continue
+        stack.extend(node.children)
+    out.sort()
+    return out
 
 
 # --- Walk -----------------------------------------------------------------

@@ -1,0 +1,26 @@
+name: CI
+on:
+  push:
+    branches: [main]
+
+# This file uses npm at three levels: the workflow's name, step keys,
+# and inside `run: |` script bodies. Default grep should surface the
+# structural mentions (job/step names) and hide the shell lines.
+
+jobs:
+  build:
+    name: build npm package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install npm deps
+        run: |
+          npm install
+          npm run lint
+          npm run build
+      - name: Test
+        run: >
+          npm
+          test
+          --ci
+      - name: Single line
+        run: npm publish --dry-run
