@@ -219,13 +219,11 @@ def test_digest_marks_empty_file(md_dir):
 
 
 def test_noise_regions_populated_for_fenced_blocks(md_dir):
-    """Each fenced code block contributes a (start, end, kind) region."""
+    """Each fenced code block contributes one (start, end, "string") region."""
     r = MarkdownAdapter().parse(md_dir / "grep_noise.md")
-    assert r.noise_regions, "expected noise_regions to be populated"
+    string_regions = [(s, e, k) for s, e, k in r.noise_regions if k == "string"]
     # Two fenced blocks in grep_noise.md — javascript + python.
-    assert len(r.noise_regions) == 2
-    # Kind tag is "string" so the existing grep noise filter picks it up.
-    assert all(kind == "string" for _start, _end, kind in r.noise_regions)
+    assert len(string_regions) == 2
 
 
 def test_noise_regions_exclude_fence_delimiters_and_info_string(md_dir):
@@ -234,7 +232,9 @@ def test_noise_regions_exclude_fence_delimiters_and_info_string(md_dir):
     agent can grep for ``python`` to find code blocks by language."""
     src = (md_dir / "grep_noise.md").read_bytes()
     r = MarkdownAdapter().parse(md_dir / "grep_noise.md")
-    for start, end, _ in r.noise_regions:
+    for start, end, kind in r.noise_regions:
+        if kind != "string":
+            continue
         body = src[start:end]
         # No fence delimiter inside the masked region.
         assert b"```" not in body
@@ -253,14 +253,16 @@ def test_grep_filters_matches_inside_fenced_code_block(md_dir):
     assert results, "expected at least the prose matches to survive"
     fr = results[0]
     visible_lines = {m.line for m in fr.matches}
-    # Every visible match line should be prose, never inside a fence.
+    # Every visible match line should be prose, never inside a fence
+    # or an HTML comment.
     src_lines = path.read_text().splitlines()
     for line_no in visible_lines:
         line = src_lines[line_no - 1]
-        # A prose mention of useState — never the JS literal call or the
-        # python assignment.
         assert "useState(0)" not in line
         assert 'useState = "this is python' not in line
+        # Also no HTML-comment leakage now that those are noise-filtered.
+        assert not line.lstrip().startswith("<!--")
+        assert "TODO: revisit useState" not in line
     # Filtered count tracks how many were swallowed.
     assert fr.filtered_count > 0
 
@@ -276,3 +278,141 @@ def test_grep_include_noise_surfaces_fenced_block_matches(md_dir):
         sum(len(fr.matches) for fr in all_with_noise)
         > sum(len(fr.matches) for fr in visible_default)
     )
+
+
+# --- noise_regions for HTML block comments -------------------------------
+
+
+def test_noise_regions_html_comment_marked_as_comment(md_dir):
+    """``<!-- ... -->`` block-level comments contribute a region with
+    kind ``"comment"`` so grep classifies them with [comment]."""
+    r = MarkdownAdapter().parse(md_dir / "grep_noise.md")
+    comment_regions = [(s, e, k) for s, e, k in r.noise_regions if k == "comment"]
+    # Two HTML comments in the fixture: one multi-line, one single-line.
+    assert len(comment_regions) == 2
+    src = (md_dir / "grep_noise.md").read_bytes()
+    for start, end, _ in comment_regions:
+        body = src[start:end]
+        assert body.startswith(b"<!--")
+        # ``-->`` may carry a trailing newline; the marker is what matters.
+        assert b"-->" in body
+
+
+def test_grep_filters_html_comment_matches(md_dir):
+    """useState mentions inside ``<!-- ... -->`` vanish under default
+    noise filter — the agent doesn't need draft / TODO annotations
+    surfacing alongside real prose."""
+    path = md_dir / "grep_noise.md"
+    results, _, _ = grep("useState", [path])
+    fr = results[0]
+    src_lines = path.read_text().splitlines()
+    for m in fr.matches:
+        line = src_lines[m.line - 1]
+        assert "TODO: revisit useState" not in line
+        assert "useState: shorter inline comment" not in line
+
+
+def test_grep_html_comment_surfaces_as_comment_kind_with_include_noise(md_dir):
+    """When ``--include-noise`` is on, HTML-comment matches surface
+    tagged ``[comment]`` (not ``[string]``) — the kind annotation
+    helps the agent triage why a match was previously hidden."""
+    path = md_dir / "grep_noise.md"
+    results, _, _ = grep("useState", [path], include_noise=True)
+    fr = results[0]
+    # Find the match on the multi-line comment's TODO line.
+    matches_with_todo = [m for m in fr.matches if "TODO: revisit useState" in m.line_content]
+    assert matches_with_todo, "expected the TODO comment match to surface"
+    for m in matches_with_todo:
+        assert m.kind == "comment"
+
+
+def test_grep_div_block_keeps_html_searchable(md_dir):
+    """Raw ``<div>`` blocks are NOT noise-filtered — embedded HTML
+    carries searchable signal (data attrs, IDs) and the user might
+    legitimately grep for it."""
+    path = md_dir / "grep_noise.md"
+    results, _, _ = grep("useState", [path])
+    fr = results[0]
+    matches_in_div = [m for m in fr.matches if "<div data-tag=" in m.line_content]
+    assert matches_in_div, "div-block useState should remain visible"
+
+
+# --- end-to-end snapshot of grep behavior on grep_noise.md ---------------
+
+
+def test_grep_noise_fixture_snapshot_default(md_dir):
+    """Pin down the default-mode grep behavior on grep_noise.md.
+
+    The fixture mentions ``useState`` in 6 distinct contexts; each
+    line below is asserted to be visible OR filtered with the exact
+    rationale, so a regression on any single classification path
+    (fenced-block / HTML-comment / `<div>` / line-string heuristic)
+    fails this test instead of slipping through.
+    """
+    path = md_dir / "grep_noise.md"
+    results, _ignored, _excluded = grep("useState", [path])
+    assert len(results) == 1
+    fr = results[0]
+    visible = {(m.line, m.column): m for m in fr.matches}
+
+    # Visible (prose / structural mentions): line numbers only — column
+    # checks would couple too tightly to fixture wording. The shape we
+    # care about is "this LINE was kept", not "this column survived".
+    visible_lines = {line for line, _col in visible}
+    expected_visible_lines = {
+        3,   # H1-blurb prose
+        7,   # ## Basic usage prose
+        30,  # closing prose
+        39,  # <div> prose mention (one of two on this line)
+    }
+    assert visible_lines == expected_visible_lines
+
+    # Filtered count covers every match the default mode swallowed.
+    # 6 in-fence (4 useState in JS block + 2 in Python block)
+    # 3 in-HTML-comment (1 multi-line TODO + 1 multi-line NOTE + 1 inline)
+    #   Wait — the inline single-line `<!-- useState: ... -->` is one
+    #   block-level comment with one useState; the multi-line block has
+    #   two (TODO line + nothing useState on NOTE line). So 1 + 1 = 2
+    #   from HTML comments. Plus the per-line string heuristic catches
+    #   apostrophe-bearing prose lines (L18, L22) and the `<div>` data-
+    #   attr value (L39). That's 2 + 2 + 1 = 5 string-flavored hits.
+    # Total: 6 fenced + 2 html-comment + 5 line-string = 13.
+    # Visible = 4. Filtered = 13 - 4 = 9.
+    assert fr.filtered_count == 9
+
+
+def test_grep_noise_fixture_snapshot_include_noise(md_dir):
+    """Pin down the include-noise breakdown — every category surfaces
+    with the kind tag designed for it (string vs comment vs ref)."""
+    path = md_dir / "grep_noise.md"
+    results, _, _ = grep("useState", [path], include_noise=True)
+    fr = results[0]
+    # 4 visible + 9 filtered = 13 total when noise is surfaced.
+    assert len(fr.matches) == 13
+
+    kinds: dict[str, int] = {}
+    for m in fr.matches:
+        kinds[m.kind] = kinds.get(m.kind, 0) + 1
+
+    # 2 [comment] = the multi-line TODO line (one useState) + the
+    # single-line ``<!-- useState: ... -->`` block-level comment.
+    assert kinds.get("comment", 0) == 2
+
+    # 7 [string] = 2 in JS fence (L10 import + L13 useState call) +
+    # 2 in Python fence (L26 assign + L27 print) + 2 line-heuristic
+    # apostrophe false-positives (L18 "That's", L22 "Don't") + 1
+    # data-attr value on L39 (``data-tag="useState"`` is inside
+    # double quotes by the per-line scanner). The two apostrophe and
+    # data-attr classifications are pre-existing line-heuristic
+    # behavior; pinning them here so a future tweak to the heuristic
+    # surfaces the impact loud and clear instead of silently shifting
+    # noise totals.
+    assert kinds.get("string", 0) == 7
+
+    # 4 [ref] = the four prose mentions visible by default (L3, L7,
+    # L30, and the second match on L39 — ``keeps useState searchable``).
+    assert kinds.get("ref", 0) == 4
+
+    # No other kinds should appear — markdown grep never produces
+    # def/import/call for prose patterns.
+    assert set(kinds) == {"comment", "string", "ref"}

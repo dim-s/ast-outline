@@ -7,6 +7,32 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.7] — 2026-05-12
+
+Patch release — block-level HTML comments (`<!-- ... -->`) in markdown
+are now classified as `[comment]` in `ast-outline grep`, so hidden
+TODO / NOTE / draft annotations no longer surface as prose mentions.
+
+### Fixed
+
+- **`<!-- ... -->` in markdown noise-filtered as comments.** A
+  multi-line `<!-- TODO: revisit useState patterns -->` block in
+  README.md previously surfaced under `ast-outline grep useState`
+  as a regular `[ref]` match alongside real prose mentions — agents
+  reading the result couldn't tell signal from author-private
+  annotation. The markdown adapter now appends `(start, end,
+  "comment")` regions for every block-level `html_block` whose first
+  four bytes are `<!--`, which the existing noise filter handles
+  identically to source-language comments. Surfaces with `[comment]`
+  under `--include-noise` so the agent can opt back in. Inline
+  `<!-- -->` *inside a paragraph* is NOT covered — tree-sitter-markdown
+  fragments those into single-character punctuation nodes with no
+  clean byte range; block-level is the 95% case for hidden
+  annotations. Other `html_block` content (raw `<div>`, `<table>`)
+  intentionally stays visible — embedded HTML carries searchable
+  signal (component names, data attrs) that an agent may legitimately
+  grep for.
+
 ## [0.8.6] — 2026-05-12
 
 Patch release — `ast-outline grep` no longer drowns YAML searches in

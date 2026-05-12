@@ -66,7 +66,7 @@ class MarkdownAdapter:
         # markdown). Info-string bytes (the ``python`` after ``\`\`\``)
         # are NOT included — those live outside ``code_fence_content``
         # and remain searchable for language filtering.
-        noise_regions = _collect_noise_regions(tree.root_node)
+        noise_regions = _collect_noise_regions(tree.root_node, src)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -78,15 +78,25 @@ class MarkdownAdapter:
         )
 
 
-def _collect_noise_regions(root: Node) -> list[tuple[int, int, str]]:
-    """Walk the tree once, returning byte ranges of fenced code block bodies.
+def _collect_noise_regions(root: Node, src: bytes) -> list[tuple[int, int, str]]:
+    """Walk the tree once, returning byte ranges of two noise categories:
 
-    Targets the ``code_fence_content`` child of each ``fenced_code_block``
-    so the fence delimiters and the info string stay searchable —
-    only the literal body is masked from grep. Indented (4-space) code
-    blocks are intentionally left unmasked: they're rare in modern
-    markdown and almost always paired with a fenced equivalent
-    elsewhere.
+    1. Fenced code block bodies → kind ``"string"``. Targets the
+       ``code_fence_content`` child so fence delimiters and info string
+       stay searchable; only the literal body is masked from grep.
+       Indented (4-space) code blocks are intentionally left unmasked —
+       rare in modern markdown and almost always paired with a fenced
+       equivalent elsewhere.
+
+    2. Block-level HTML comments (``<!-- ... -->``) → kind ``"comment"``.
+       Common pattern for hiding TODO / NOTE / draft annotations in
+       docs that the agent shouldn't surface as prose mentions. Only
+       block-level comments — inline ``<!-- -->`` inside a paragraph
+       gets character-fragmented by tree-sitter-markdown and has no
+       clean byte range to mark. Other ``html_block`` content (raw
+       ``<div>``, ``<table>``, …) is intentionally left visible:
+       embedded HTML carries searchable signal (component names, IDs)
+       that an agent may legitimately grep for.
     """
     out: list[tuple[int, int, str]] = []
     stack: list[Node] = [root]
@@ -98,6 +108,17 @@ def _collect_noise_regions(root: Node) -> list[tuple[int, int, str]]:
                     out.append((c.start_byte, c.end_byte, "string"))
                     break
             # No need to descend — content child is leaf-ish for our purposes.
+            continue
+        if node.type == "html_block":
+            # tree-sitter-markdown lumps every block-level HTML construct
+            # under one ``html_block`` node — comments, raw element
+            # blocks, processing instructions, doctype, CDATA. We only
+            # want the comment subset, so peek at the literal opening
+            # bytes; ``<!--`` is unambiguous and cheap to check (vs.
+            # introspecting ``html_block``'s untyped children, which
+            # carry only stray punctuation).
+            if src[node.start_byte : node.start_byte + 4] == b"<!--":
+                out.append((node.start_byte, node.end_byte, "comment"))
             continue
         stack.extend(node.children)
     out.sort()

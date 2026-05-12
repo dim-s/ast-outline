@@ -28,3 +28,12 @@ print(useState)
 ```
 
 End of file. The word useState appears one final time in prose here.
+
+<!--
+TODO: revisit useState patterns here once the new compiler ships.
+NOTE: hidden draft annotation, should not surface in grep results.
+-->
+
+<!-- useState: shorter inline comment, also hidden -->
+
+<div data-tag="useState">Embedded HTML keeps useState searchable here.</div>
