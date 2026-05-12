@@ -56,6 +56,17 @@ class MarkdownAdapter:
         tree = _PARSER.parse(src)
         decls: list[Declaration] = []
         _walk(tree.root_node, src, decls)
+        # Fenced code block bodies are noise for ``ast-outline grep`` —
+        # README/docs bristle with examples like ``useState("x")`` that
+        # the agent isn't searching for when grepping the prose around
+        # them. Tagged as ``"string"`` so they share the existing
+        # ``--include-noise`` opt-in path (kind ``"string"`` is what the
+        # filter already understands; a fenced block is, semantically, a
+        # multi-line literal whose content is opaque to the surrounding
+        # markdown). Info-string bytes (the ``python`` after ``\`\`\``)
+        # are NOT included — those live outside ``code_fence_content``
+        # and remain searchable for language filtering.
+        noise_regions = _collect_noise_regions(tree.root_node)
         return ParseResult(
             path=path,
             language=self.language_name,
@@ -63,7 +74,34 @@ class MarkdownAdapter:
             line_count=src.count(b"\n") + 1,
             declarations=decls,
             error_count=count_parse_errors(tree.root_node),
+            noise_regions=noise_regions,
         )
+
+
+def _collect_noise_regions(root: Node) -> list[tuple[int, int, str]]:
+    """Walk the tree once, returning byte ranges of fenced code block bodies.
+
+    Targets the ``code_fence_content`` child of each ``fenced_code_block``
+    so the fence delimiters and the info string stay searchable —
+    only the literal body is masked from grep. Indented (4-space) code
+    blocks are intentionally left unmasked: they're rare in modern
+    markdown and almost always paired with a fenced equivalent
+    elsewhere.
+    """
+    out: list[tuple[int, int, str]] = []
+    stack: list[Node] = [root]
+    while stack:
+        node = stack.pop()
+        if node.type == "fenced_code_block":
+            for c in node.named_children:
+                if c.type == "code_fence_content":
+                    out.append((c.start_byte, c.end_byte, "string"))
+                    break
+            # No need to descend — content child is leaf-ish for our purposes.
+            continue
+        stack.extend(node.children)
+    out.sort()
+    return out
 
 
 # --- Walk -----------------------------------------------------------------

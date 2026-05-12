@@ -13,6 +13,7 @@ from ast_outline.core import (
     render_digest,
     render_outline,
 )
+from ast_outline.grep import grep
 
 
 def _find(decls, kind=None, name=None):
@@ -212,3 +213,66 @@ def test_digest_marks_empty_file(md_dir):
     r = MarkdownAdapter().parse(md_dir / "empty.md")
     out = render_digest([r], DigestOptions())
     assert "# empty" in out
+
+
+# --- noise_regions for fenced code blocks --------------------------------
+
+
+def test_noise_regions_populated_for_fenced_blocks(md_dir):
+    """Each fenced code block contributes a (start, end, kind) region."""
+    r = MarkdownAdapter().parse(md_dir / "grep_noise.md")
+    assert r.noise_regions, "expected noise_regions to be populated"
+    # Two fenced blocks in grep_noise.md — javascript + python.
+    assert len(r.noise_regions) == 2
+    # Kind tag is "string" so the existing grep noise filter picks it up.
+    assert all(kind == "string" for _start, _end, kind in r.noise_regions)
+
+
+def test_noise_regions_exclude_fence_delimiters_and_info_string(md_dir):
+    r"""Region bytes cover the body — never the ``\`\`\`python`` line or
+    the closing ``\`\`\```. That keeps the info-string searchable so an
+    agent can grep for ``python`` to find code blocks by language."""
+    src = (md_dir / "grep_noise.md").read_bytes()
+    r = MarkdownAdapter().parse(md_dir / "grep_noise.md")
+    for start, end, _ in r.noise_regions:
+        body = src[start:end]
+        # No fence delimiter inside the masked region.
+        assert b"```" not in body
+        # No language token at the very start (info string lives on the
+        # opening fence line, before the body).
+        assert not body.startswith(b"javascript")
+        assert not body.startswith(b"python")
+
+
+def test_grep_filters_matches_inside_fenced_code_block(md_dir):
+    """Matches inside fenced code blocks vanish under default noise filter."""
+    path = md_dir / "grep_noise.md"
+    results, _ignored, _excluded = grep("useState", [path])
+    # Pattern lives in both prose and fenced examples — prose hits stay,
+    # the fence content gets filtered.
+    assert results, "expected at least the prose matches to survive"
+    fr = results[0]
+    visible_lines = {m.line for m in fr.matches}
+    # Every visible match line should be prose, never inside a fence.
+    src_lines = path.read_text().splitlines()
+    for line_no in visible_lines:
+        line = src_lines[line_no - 1]
+        # A prose mention of useState — never the JS literal call or the
+        # python assignment.
+        assert "useState(0)" not in line
+        assert 'useState = "this is python' not in line
+    # Filtered count tracks how many were swallowed.
+    assert fr.filtered_count > 0
+
+
+def test_grep_include_noise_surfaces_fenced_block_matches(md_dir):
+    """``include_noise=True`` re-surfaces matches inside fenced blocks."""
+    path = md_dir / "grep_noise.md"
+    visible_default, _, _ = grep("useState", [path])
+    all_with_noise, _, _ = grep("useState", [path], include_noise=True)
+    # Strictly more matches with noise enabled — the previously filtered
+    # in-fence hits show up.
+    assert (
+        sum(len(fr.matches) for fr in all_with_noise)
+        > sum(len(fr.matches) for fr in visible_default)
+    )

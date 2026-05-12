@@ -7,6 +7,28 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.5] — 2026-05-12
+
+Patch release — `ast-outline grep` no longer drowns markdown searches
+in matches lifted from fenced code examples.
+
+### Fixed
+
+- **Fenced code block bodies are now noise-filtered in markdown grep.**
+  `ast-outline grep useState docs/` against a tutorial site previously
+  surfaced every example-code occurrence of `useState` alongside the
+  prose mentions, making the result useless on docs-heavy repositories.
+  The markdown adapter now populates `ParseResult.noise_regions` with
+  the byte ranges of each fenced block's `code_fence_content` (kind
+  `string`, so the existing `--noise-filter` / `--include-noise` path
+  handles it without a new flag). Fence delimiters and the info string
+  itself (`` ```python ``) stay searchable, so language-by-fence
+  queries still work. Indented (4-space) code blocks are intentionally
+  not masked yet — rare in modern markdown and almost always paired
+  with a fenced equivalent. Repro that surfaced the gap:
+  `ast-outline grep useState README.md` returning identical hits from
+  prose and from the JSX example below it.
+
 ## [0.8.4] — 2026-05-11
 
 Patch release — `grep --kind X` now tells the agent which kinds were
