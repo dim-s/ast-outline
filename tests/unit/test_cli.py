@@ -378,6 +378,117 @@ def test_digest_include_private(csharp_dir, capsys):
     assert "Die()" in out
 
 
+# --- digest --format presets --------------------------------------------
+
+
+def test_digest_format_names_one_line_per_file(csharp_dir, capsys):
+    """`--format=names` collapses each file to one comma-separated line —
+    no methods, no `()`, no line ranges, no `: Base`."""
+    rc = main(["digest", str(csharp_dir), "--format=names"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    # HeroController appears as a top-level type name, but its method
+    # `TakeDamage()` must not appear (no callables in names format).
+    assert "HeroController" in out
+    assert "TakeDamage" not in out
+    assert "()" not in out
+
+
+def test_digest_oneline_alias_matches_format_names(csharp_dir, capsys):
+    """`--oneline` is the CLI alias for `--format=names`. Output is
+    byte-identical to the explicit form."""
+    rc = main(["digest", str(csharp_dir), "--oneline"])
+    out_alias = capsys.readouterr().out
+    assert rc == 0
+
+    rc = main(["digest", str(csharp_dir), "--format=names"])
+    out_explicit = capsys.readouterr().out
+    assert rc == 0
+    assert out_alias == out_explicit
+
+
+def test_digest_format_compact_drops_line_ranges_and_blanks(csharp_dir, capsys):
+    """`--format=compact` removes `L<a>-<b>` suffixes and the blank
+    paragraph break between types-with-members."""
+    rc = main(["digest", str(csharp_dir), "--format=compact"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    import re
+    assert not re.search(r"L\d+-\d+", out), \
+        f"compact must not emit line ranges, got:\n{out}"
+    # Per-file counters dropped: header must not carry `, X types`.
+    header_lines = [
+        line for line in out.splitlines()
+        if "lines" in line and "tokens" in line
+    ]
+    for line in header_lines:
+        assert "types" not in line
+        assert "methods" not in line
+        assert "fields" not in line
+
+
+def test_digest_format_wide_preset_enables_private_and_fields(csharp_dir, capsys):
+    """`--format=wide` is a CLI preset that turns on `--include-private`
+    and `--include-fields` (and lifts max-members). Private methods like
+    `Die()` and field tokens must surface."""
+    rc = main(["digest", str(csharp_dir), "--format=wide"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    # Same private-method check as the explicit `--include-private` test
+    # above — wide must produce equivalent output here.
+    assert "Die()" in out
+
+
+def test_digest_format_default_back_compat_unchanged(csharp_dir, capsys):
+    """`--format=default` and the bare `digest` invocation must produce
+    byte-identical output — back-compat anchor for every existing skill
+    that parses digest stdout."""
+    rc = main(["digest", str(csharp_dir)])
+    out_omitted = capsys.readouterr().out
+    assert rc == 0
+
+    rc = main(["digest", str(csharp_dir), "--format=default"])
+    out_explicit = capsys.readouterr().out
+    assert rc == 0
+    assert out_omitted == out_explicit
+
+
+def test_digest_explicit_include_private_overrides_names_preset(python_dir, capsys):
+    """`--oneline --include-private` must include private symbols even
+    though the `names` preset defaults `include_private` to False. This
+    pins the kubectl-style override: explicit flag wins over preset."""
+    rc = main(["digest", str(python_dir / "domain_model.py"), "--oneline", "--include-private"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    # `_encode` is a private free function in domain_model.py — must
+    # appear because the explicit `--include-private` overrides the
+    # names preset's default of False.
+    assert "_encode" in out
+
+
+def test_digest_explicit_max_members_overrides_wide_preset(csharp_dir, capsys):
+    """`--format=wide --max-members 1` must use the explicit cap of 1
+    instead of wide's `10**9`. Same override rule as include-private."""
+    rc = main(["digest", str(csharp_dir), "--format=wide", "--max-members", "1"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    # The `... (N more)` suffix is the proof that the cap applied.
+    assert "more)" in out
+
+
+def test_digest_invalid_format_value_rejected_with_note(csharp_dir, capsys):
+    """An unknown `--format=` value is caught by argparse's `choices=`.
+    Same LLM-friendly error path as every other bad arg: rc=0 with a
+    `# note:` line on stdout. This pins the contract — adding a new
+    format must extend the `choices` list rather than relying on a
+    free-form string."""
+    rc = main(["digest", str(csharp_dir), "--format=verbose"])  # not a valid choice
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "# note:" in out
+    assert "invalid choice" in out.lower() or "--format" in out
+
+
 # --- LLM-friendly error handling -----------------------------------------
 
 

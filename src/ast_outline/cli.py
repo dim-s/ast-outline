@@ -260,9 +260,29 @@ def main(argv: list[str] | None = None) -> int:
 
     p_digest = sub.add_parser("digest", help="Compact public-API map of a directory")
     p_digest.add_argument("paths", nargs="+", help="Directories or files")
-    p_digest.add_argument("--include-private", action="store_true")
-    p_digest.add_argument("--include-fields", action="store_true")
-    p_digest.add_argument("--max-members", type=int, default=50)
+    p_digest.add_argument(
+        "--format",
+        choices=["names", "compact", "default", "wide"],
+        default="default",
+        help=(
+            "Output format preset (default: default). "
+            "names = one line per file, top-level symbols only. "
+            "compact = hierarchical, no blank lines, no line ranges, no per-file counters. "
+            "default = current full output. "
+            "wide = default + private + fields + no max-members cap."
+        ),
+    )
+    p_digest.add_argument(
+        "--oneline",
+        action="store_true",
+        help="Alias for `--format=names`",
+    )
+    # `default=None` sentinel for per-flag preset overrides: when a user
+    # doesn't pass the flag, the value resolved from the chosen `--format`
+    # preset applies. When they pass it explicitly, that value wins.
+    p_digest.add_argument("--include-private", action="store_true", default=None)
+    p_digest.add_argument("--include-fields", action="store_true", default=None)
+    p_digest.add_argument("--max-members", type=int, default=None)
     p_digest.add_argument(
         "--imports",
         action="store_true",
@@ -845,11 +865,36 @@ def _cmd_digest(args) -> int:
         for p in missing:
             print(f"# note: path not found: {p}")
         return 0
+    # `--oneline` is an alias for `--format=names`. If both are passed
+    # they agree on `names`; if only `--oneline` is passed it overrides
+    # whatever `--format` defaults to. Keeps the two-knob surface friendly
+    # without a contradiction error path users have to read.
+    fmt = "names" if args.oneline else args.format
+    # Preset defaults — applied only for flags the user did NOT pass
+    # explicitly (sentinel `None`). When the user passes the flag, their
+    # value wins over the preset default (`kubectl`-style silent override).
+    # `max_members` for `wide` is effectively unlimited; we use a large
+    # int instead of `math.inf` to keep `DigestOptions.max_members_per_type`
+    # a plain `int` (currently `dataclass` field typed as int).
+    _PRESET_DEFAULTS = {
+        "names":   {"include_private": False, "include_fields": False, "max_members": 50},
+        "compact": {"include_private": False, "include_fields": False, "max_members": 50},
+        "default": {"include_private": False, "include_fields": False, "max_members": 50},
+        "wide":    {"include_private": True,  "include_fields": True,  "max_members": 10**9},
+    }
+    preset = _PRESET_DEFAULTS[fmt]
     opts = DigestOptions(
-        include_private=args.include_private,
-        include_fields=args.include_fields,
-        max_members_per_type=args.max_members,
+        include_private=(
+            preset["include_private"] if args.include_private is None else args.include_private
+        ),
+        include_fields=(
+            preset["include_fields"] if args.include_fields is None else args.include_fields
+        ),
+        max_members_per_type=(
+            preset["max_members"] if args.max_members is None else args.max_members
+        ),
         show_imports=args.imports,
+        format=fmt,
     )
     results, errors, collected = _parse_paths(paths, no_ignore=args.no_ignore)
     if not results:

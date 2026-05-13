@@ -218,6 +218,20 @@ class DigestOptions:
     # the digest gets an `imports: ...` line indented under the file
     # header.
     show_imports: bool = False
+    # Output format preset — controls rendering density.
+    #   "names"   — one line per file, only top-level type / function names.
+    #               Files with no public top-level symbols are hidden.
+    #   "compact" — hierarchical (same shape as default) but with: no blank
+    #               lines between types, no `L<a>-<b>` line ranges, no
+    #               per-file `, X types, Y methods, Z fields` counters,
+    #               and files with no declarations are hidden.
+    #   "default" — current behavior (unchanged for backwards compatibility).
+    #   "wide"    — same shape as default. The CLI raises `include_private`,
+    #               `include_fields`, and `max_members_per_type` in the
+    #               preset, so the renderer itself doesn't need to branch on
+    #               "wide" — the existing default-format code already shows
+    #               everything when those toggles are on.
+    format: str = "default"
 
 
 # --- Match types ----------------------------------------------------------
@@ -329,7 +343,9 @@ def _format_imports_line(imports: list[str], conditional_count: int = 0) -> str:
 # --- Header helpers (shared between outline + digest) --------------------
 
 
-def _format_file_header(prefix: str, result: ParseResult) -> str:
+def _format_file_header(
+    prefix: str, result: ParseResult, include_counters: bool = True
+) -> str:
     """Build the `# path (N lines, ~N tokens, ...)` header for one file.
 
     `prefix` is the leading marker + path (e.g. `"# /abs/path.py"` for
@@ -341,6 +357,12 @@ def _format_file_header(prefix: str, result: ParseResult) -> str:
     Zero-valued categories are skipped so a trivial file reads
     `(42 lines, ~310 tokens)` not `(42 lines, ~310 tokens, 0 types, 0 methods)`.
 
+    `include_counters=False` drops the category counters entirely
+    (`types`, `methods`, `fields`, `headings`, `code blocks`, `docs`),
+    keeping only `N lines, ~N tokens`. Used by the `compact` digest
+    format where the breakdown adds visual weight without changing the
+    sizing decision (the line+token totals are what drive routing).
+
     Token estimate is ``len(source_bytes) // 4`` — a coarse BPE-style
     approximation, deliberately not exact (no tiktoken dep). The ``~``
     prefix and the rule-of-thumb in the digest legend make it explicit
@@ -351,7 +373,9 @@ def _format_file_header(prefix: str, result: ParseResult) -> str:
         f"{result.line_count} lines",
         f"~{_estimate_tokens(result.source):,} tokens",
     ]
-    if result.language == "markdown":
+    if not include_counters:
+        order: list[tuple[str, str]] = []
+    elif result.language == "markdown":
         order = [("headings", "headings"), ("code_blocks", "code blocks")]
     elif result.language == "yaml":
         # YAML files report their document count when multi-doc — for
@@ -940,6 +964,18 @@ def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optiona
     keys / heading text and line-range suffixes — get no legend, since
     there is nothing in the body that needs explaining. See
     `_build_legend` for the exact omission rule.
+
+    `opts.format` selects the rendering preset:
+    - ``"names"`` — one line per file, top-level symbols only. Routed
+      through `_render_digest_names`; bypasses the legend / per-type
+      hierarchy entirely.
+    - ``"compact"`` — same hierarchy as default but with file-header
+      counters, line-range suffixes, blank lines between types, and
+      no-declarations files all dropped. Empty directories collapse.
+    - ``"default"`` — current behavior (unchanged).
+    - ``"wide"`` — same as default; the CLI's preset just cranks the
+      include-private / include-fields / max-members knobs, so the
+      renderer itself doesn't need to branch.
     """
     if not results:
         return "# no files\n"
@@ -950,6 +986,9 @@ def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optiona
             root = Path(os.path.commonpath([str(r.path) for r in results]))
         except ValueError:
             root = results[0].path.parent
+
+    if opts.format == "names":
+        return _render_digest_names(results, opts, root)
 
     grouped: dict[Path, list[ParseResult]] = {}
     for r in results:
@@ -964,13 +1003,152 @@ def render_digest(results: list[ParseResult], opts: DigestOptions, root: Optiona
             rel = str(directory.relative_to(root))
         except ValueError:
             rel = str(directory)
-        body.append(f"{rel}/")
+        # Render each file first; in `compact` mode files with no
+        # declarations return an empty block, so a directory composed
+        # entirely of such files should not surface a header.
+        file_blocks: list[list[str]] = []
         for r in grouped[directory]:
-            body.extend(_digest_one(r, opts, flags))
+            block = _digest_one(r, opts, flags)
+            if block:
+                file_blocks.append(block)
+        if not file_blocks:
+            continue
+        body.append(f"{rel}/")
+        for block in file_blocks:
+            body.extend(block)
         body.append("")
+    # `compact` hides declaration-less files; if every input file was
+    # hidden, emit an explicit note so the caller doesn't confuse
+    # "all-empty" with "no files found" (the latter is the
+    # `results == []` case handled at the top of `render_digest`).
+    if not body and opts.format == "compact":
+        return "# note: all files hidden (no declarations under current filters)\n"
     legend = _build_legend(flags)
     lines = ([legend] if legend else []) + body
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_digest_names(
+    results: list[ParseResult],
+    opts: DigestOptions,
+    root: Path,
+) -> str:
+    """One line per file: ``  name.py [label]: SymA, SymB, SymC``.
+
+    Format design:
+    - Only top-level types and free functions surface — methods,
+      fields, line ranges, inheritance, decorators are all dropped.
+      The next agent step after `names` is typically `outline <file>`
+      or `grep <symbol>`, neither of which benefits from members
+      being pre-listed in the digest.
+    - Files with no headline symbols (after applying include_private /
+      include_fields filters) are hidden entirely; the agent doesn't
+      need to know about declaration-empty `__init__.py` shims when
+      picking what to drill into.
+    - ``[huge]`` files emit just ``  name.py [huge]`` (no colon, no
+      symbol list) since the digest never collected their bodies. The
+      size label alone tells the agent to skip the in-line read.
+    - Markdown surfaces top-level (H1) headings; YAML surfaces top-
+      level keys; CSS/SCSS surface their flat selector list. Same
+      shape as code, different "symbol" semantics per language.
+    - No legend — none of the legend tokens (`()`, `[kind]`,
+      `[N overloads]`, `: Base`, `L<a>-<b>`) appear in this format.
+    """
+    grouped: dict[Path, list[ParseResult]] = {}
+    for r in results:
+        grouped.setdefault(r.path.parent, []).append(r)
+
+    body: list[str] = []
+    for directory in sorted(grouped.keys(), key=str):
+        try:
+            rel = str(directory.relative_to(root))
+        except ValueError:
+            rel = str(directory)
+        dir_lines: list[str] = []
+        for r in grouped[directory]:
+            file_block = _digest_one_names(r, opts)
+            if file_block:
+                dir_lines.extend(file_block)
+        if not dir_lines:
+            continue
+        body.append(f"{rel}/")
+        body.extend(dir_lines)
+        body.append("")
+    # All input files filtered out (no top-level symbols under the
+    # current visibility/private rules). Distinguish from the truly
+    # no-input case (handled at the top of `render_digest`).
+    if not body:
+        return "# note: all files hidden (no top-level symbols under current filters)\n"
+    return "\n".join(body).rstrip() + "\n"
+
+
+def _digest_one_names(result: ParseResult, opts: DigestOptions) -> list[str]:
+    """Render one file in names format. Returns a 1- or 2-line block
+    (the file's symbol line plus an optional indented imports line when
+    ``opts.show_imports`` is set), or an empty list to skip the file
+    entirely.
+
+    The `--imports` flag adds a second indented line so the invariant
+    "if you ask for imports you see them in every format" holds. This
+    softens the "one line per file" promise of names format but only
+    when the caller explicitly opts in by passing `--imports`.
+    """
+    label = _size_label(_estimate_tokens(result.source))
+    integrity = " [broken]" if result.error_count > 0 else ""
+    prefix = f"  {result.path.name} {label}{integrity}"
+
+    def with_imports(file_line: str) -> list[str]:
+        out = [file_line]
+        if opts.show_imports and (
+            result.imports or result.conditional_imports_count > 0
+        ):
+            out.append(
+                "    " + _format_imports_line(
+                    result.imports, result.conditional_imports_count
+                )
+            )
+        return out
+
+    # [huge] files have no collected body in digest — emit just the
+    # header so the agent still sees the file exists, but with no
+    # trailing colon / symbol list (there are none to list).
+    if label == "[huge]":
+        return with_imports(prefix)
+
+    if result.language == "markdown":
+        # Top-level headings only (children are nested H2+ — not
+        # listed here to keep the line tight).
+        headlines = [
+            d.signature.lstrip("# ").strip() or d.name
+            for d in result.declarations
+            if d.kind == KIND_HEADING
+        ]
+    elif result.language == "yaml":
+        # Single-doc YAML: top-level keys. Multi-doc: doc separator
+        # captions (e.g. `--- doc 1 of 3 — ConfigMap prod/api-config`)
+        # — the signature carries the descriptive label, name alone is
+        # just an index.
+        if any(d.kind == KIND_YAML_DOC for d in result.declarations):
+            headlines = [
+                d.signature for d in result.declarations if d.kind == KIND_YAML_DOC
+            ]
+        else:
+            headlines = [
+                d.name for d in result.declarations if d.kind == KIND_YAML_KEY
+            ]
+    elif result.language in ("css", "scss"):
+        flat = _flatten_css(result.declarations, opts)
+        headlines = [d.name for d in flat]
+    else:
+        types = _flatten_types(result.declarations)
+        if not opts.include_private:
+            types = [t for t in types if t.visibility != "private"]
+        free_functions = _flatten_free_functions(result.declarations, opts)
+        headlines = [t.name for t in types] + [f.name for f in free_functions]
+
+    if not headlines:
+        return []
+    return with_imports(f"{prefix}: {', '.join(headlines)}")
 
 
 def _digest_one(
@@ -992,7 +1170,11 @@ def _digest_one(
     label = _size_label(_estimate_tokens(result.source))
     integrity = " [broken]" if result.error_count > 0 else ""
     prefix = f"  {result.path.name} {label}{integrity}"
-    lines = [_format_file_header(prefix, result)]
+    is_compact = opts.format == "compact"
+    # `compact` drops the per-file `, X types, Y methods, Z fields`
+    # breakdown — the totals (`N lines, ~N tokens`) drive routing
+    # decisions, the breakdown only weighs the visual.
+    lines = [_format_file_header(prefix, result, include_counters=not is_compact)]
     warn = _format_error_warning(result)
     if warn:
         # Indent under the file line so the warning lives with its file.
@@ -1030,6 +1212,8 @@ def _digest_one(
     if result.language == "markdown":
         toc = _digest_markdown(result.declarations, opts, indent=4, depth=1, flags=flags)
         if not toc:
+            if is_compact:
+                return []
             lines[-1] += "  # empty"
             return lines
         lines.extend(toc)
@@ -1043,6 +1227,8 @@ def _digest_one(
     if result.language == "yaml":
         body = _digest_yaml(result.declarations, opts, flags=flags)
         if not body:
+            if is_compact:
+                return []
             lines[-1] += "  # empty"
             return lines
         lines.extend(body)
@@ -1059,6 +1245,8 @@ def _digest_one(
     if result.language in ("css", "scss"):
         body = _digest_css(result.declarations, opts, flags=flags)
         if not body:
+            if is_compact:
+                return []
             lines[-1] += "  # empty"
             return lines
         lines.extend(body)
@@ -1068,6 +1256,11 @@ def _digest_one(
     free_functions = _flatten_free_functions(result.declarations, opts)
 
     if not types and not free_functions:
+        # `compact` hides declaration-less files entirely (the empty
+        # marker is noise when scanning a map); other formats keep the
+        # header with an explicit `# no declarations` annotation.
+        if is_compact:
+            return []
         lines[-1] += "  # no declarations"
         return lines
 
@@ -1119,9 +1312,14 @@ def _digest_one(
             if flags is not None:
                 flags.inheritance = True
 
-        suffix = t.lines_suffix()
-        if suffix and flags is not None:
-            flags.line_range = True
+        # `compact` drops the `L<a>-<b>` line range — Read-routing
+        # workflows step up to `--format=default` when ranges matter.
+        if is_compact:
+            suffix = ""
+        else:
+            suffix = t.lines_suffix()
+            if suffix and flags is not None:
+                flags.line_range = True
         header = "    " + " ".join(header_parts) + suffix
         lines.append(header)
         members = _digest_members(t, opts)
@@ -1132,7 +1330,10 @@ def _digest_one(
             lines.extend(_wrap_tokens(tokens, width=100, indent="      "))
             if len(collapsed) > len(shown):
                 lines.append(f"      ... ({len(collapsed) - len(shown)} more)")
-            lines.append("")  # paragraph break — types with bodies own their block
+            # `compact` skips the inter-type paragraph break — types
+            # stack tightly to maximise information density per line.
+            if not is_compact:
+                lines.append("")
 
     # Module-level functions / fields (common in Python). No parent —
     # skip rules don't apply, free functions render with whatever

@@ -7,6 +7,159 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.9] — 2026-05-13
+
+Minor release — `ast-outline digest` gains a `--format=` preset selector
+with four levels (`names`, `compact`, `default`, `wide`) plus the
+`--oneline` alias for `--format=names`. Backwards-compatible: the bare
+`digest <paths>` invocation produces byte-identical output to v0.8.8.
+
+### Motivation
+
+Agents reading digest output for unfamiliar repos repeatedly hit the
+same friction: the default per-file detail (line ranges, per-class
+counters, blank-line paragraph breaks) is exactly right when the next
+step is `Read --offset N`, and exactly *wrong* when the next step is
+"pick a file to drill into" — at which point the agent only needs file
++ headline symbols. We saw multiple skill traces where agents reached
+for `head -N digest` or piped the output through `awk` to throw away
+detail they didn't need. The right answer isn't truncation (loses
+files at the tail); it's letting the caller name the level of detail
+that matches the task at hand.
+
+Four levels match four agent task archetypes:
+
+- **`names`** (one line per file, only top-level type / function
+  names): orientation in an unfamiliar repo. The next call is
+  `outline <chosen_file>` or `grep <symbol>`. Tightest output.
+- **`compact`** (full hierarchy minus visual padding): "explain this
+  module's structure" without further calls. Drops per-file counters,
+  line ranges, blank lines between types, and the `# no declarations`
+  marker. Files with no declarations are hidden entirely.
+- **`default`** (unchanged): surgical Read-by-range workflow needs
+  `L<a>-<b>`, full counters, paragraph breaks.
+- **`wide`** (default + private + fields + no max-members cap): deep
+  one-file questions (does this class have field `_cache`?) without
+  opening the file.
+
+### Added
+
+- **`digest --format={names,compact,default,wide}`.** The renderer
+  dispatches on `DigestOptions.format`. `names` goes through a new
+  `_render_digest_names` path that emits `  name.py [label]: A, B, C`
+  per file (top-level types + free functions joined by `, `). Markdown
+  files surface their top-level headings; YAML files surface their
+  top-level keys (or doc separators for multi-doc); CSS / SCSS files
+  surface their flat selector list. Files with no public top-level
+  symbols are hidden; a directory whose every file was filtered is
+  also hidden. When the whole batch is filtered, an explicit
+  `# note: all files hidden (no top-level symbols under current
+  filters)` line replaces the empty stream so agents don't conflate
+  "filtered" with "no files found".
+
+- **`digest --oneline`.** Alias for `--format=names` — picked to match
+  `git log --oneline`'s established meaning ("one entry per line").
+  Byte-identical output to the explicit form.
+
+- **`compact` rendering rules.** Same hierarchy as `default` but:
+  per-file `, X types, Y methods, Z fields` breakdown dropped from the
+  header (line + token totals remain — those drive routing); `L<a>-<b>`
+  suffix dropped from class headers; the blank paragraph break after a
+  type-with-members dropped; files with no declarations hidden
+  (default still shows `# no declarations` marker). Inheritance
+  (`: Base`), decorators (`@dataclass`), modifiers (`abstract`,
+  `sealed`), and the size label (`[large]`) all survive — they carry
+  semantic weight, not visual padding. The legend stays at the top of
+  the output (compact still uses `()` / `: Base` / `[kind]` tokens, so
+  the legend is still load-bearing).
+
+- **`wide` as a CLI-side preset.** No new rendering branch — the CLI
+  simply sets `include_private=True`, `include_fields=True`, and
+  `max_members_per_type=10**9` when `--format=wide` is passed. The
+  existing default-format renderer already shows everything when those
+  toggles are on. Implementation choice: keeps the renderer surface
+  small, and "wide is default with the knobs cranked" is the right
+  mental model.
+
+- **Preset override (`kubectl`-style silent override).** Explicit
+  `--include-private` / `--include-fields` / `--max-members` win over
+  the preset's defaults. Implemented by switching those three flags to
+  argparse `default=None` sentinels — when the user passes the flag,
+  their value applies; when they don't, the format preset's default
+  applies. Lets the caller fine-tune any preset without learning a new
+  flag (`--format=wide --max-members 5` works, gives wide's private +
+  fields with a small cap).
+
+- **`--imports` composes with every format, including `names`.** Names
+  format emits a 1-line summary per file by default; when `--imports`
+  is passed it adds an indented second line per file carrying the
+  `imports: …` annotation. Preserves the invariant "if you asked for
+  imports, you see them in every format" — an earlier draft silently
+  dropped imports under `--oneline` / `--format=names`, which would
+  have misled agents into thinking "this file has no imports".
+
+### Design decisions worth pinning
+
+- **Four levels, not three or five.** Each level maps to a distinct
+  agent task archetype. A fifth `grep`-shape flat format
+  (`path:line:qualname` per symbol, pipe-ready) was considered and
+  dropped: it would have collided with the existing `ast-outline grep`
+  subcommand's output shape, and no concrete agent task was unmet by
+  the four-level set. Will revisit if a real pipe-shape need emerges.
+
+- **No new `--no-X` flags.** A targeted `--no-stats` /
+  `--no-bases` / `--no-blanks` family was considered for fine-grained
+  tuning between presets. Dropped on YAGNI grounds: the four preset
+  levels cover the five agent task archetypes (A — orientation,
+  B — module structure, C — surgical Read, D — pipe-filter falls back
+  to the existing `grep` subcommand with `--kind def`, E — deep dive),
+  and every in-between case is reachable by picking the adjacent
+  preset plus the three existing override flags. Adding `--no-X` flags
+  speculatively bloats `--help` and locks in a contract with agents
+  for behavior that may never be exercised.
+
+- **`: Base` stays the inheritance notation.** A Python-native
+  `Class(Base)` alternative was considered for self-documenting
+  legend-less reading. Dropped because `: Base` is already
+  language-native for the OOP-heavy languages digest most cares about
+  (C# `class Foo : IBar`, Kotlin `class Foo : Bar()`, TS / Scala
+  via `extends`), and `Class(Base)` in C# 12 reads as a primary
+  constructor — would actively mislead.
+
+- **`L40-58` stays as ` L40-58` (double-space prefix).** A
+  `[L40-58]`-in-brackets alternative was considered to unify with
+  `[large]` / `[broken]`. Dropped: bracket labels and line-range
+  references are semantically different (category vs location), the
+  current shape is already unambiguous (regex `L\d+-\d+`), and changing
+  the shape would break every existing agent skill parsing v0.8.x
+  output for no functional gain.
+
+### Test surface
+
+- New file `tests/unit/test_digest_format_presets.py` (26 tests)
+  pinning per-format rendering rules: names emits one line per file
+  with no methods / no `()` / no inheritance / no ranges; compact
+  drops counters / ranges / blanks / `# no declarations` markers;
+  wide is exactly default with private + fields + no max-members cap;
+  default is byte-identical to omitting the flag. Plus edge-case
+  pins: names renders markdown headings / yaml keys / yaml multi-doc
+  separators / css selectors; `[huge]` files emit a header-only line
+  with no trailing colon; `[broken]` marker preserved across all
+  formats; multi-directory output keeps the blank-line separator;
+  `--imports` composes with names (2 lines per file); compact still
+  applies `--max-members` truncation; compact hides empty markdown
+  files (consistent with the empty-code-file rule).
+
+- 8 new CLI-integration tests in `tests/unit/test_cli.py` covering the
+  `--format=` and `--oneline` flags through `main()` end-to-end,
+  including the kubectl-style override (`--oneline --include-private`
+  forces private symbols even though the names preset defaults to
+  public-only; `--format=wide --max-members 1` honors the explicit
+  cap over wide's `10**9` default) and the LLM-friendly invalid-arg
+  path (`--format=verbose` returns rc=0 with a `# note:` line).
+
+- All existing tests still pass.
+
 ## [0.8.8] — 2026-05-12
 
 Patch release — `ast-outline grep` now correctly classifies
