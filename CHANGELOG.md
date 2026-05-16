@@ -7,6 +7,41 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.11] — 2026-05-16
+
+Minor release — `ast-outline outline / digest / grep` gain
+`--exclude <glob>` (repeatable, gitwildmatch / `.gitignore` syntax) so
+agents can narrow the walk inline without editing `.gitignore` or
+`.ignore` files.
+
+### Added
+
+- **`--exclude <glob>` on `outline`, `digest`, and `grep`** — repeatable
+  flag, `.gitignore`-syntax patterns, anchored at the project root so
+  `--exclude src/generated/` resolves the same regardless of cwd.
+  Supports `!pattern` negation. Layered ABOVE the auto-filter frame,
+  so a bare `--exclude '!node_modules/'` re-includes a default-filtered
+  dir without the three-line git escape idiom required inside
+  `.gitignore`. Still applies under `--no-ignore` — that flag silences
+  the auto-filter (`.gitignore` + hardcoded defaults), `--exclude` is
+  the user's explicit voice and survives. Explicit single-file inputs
+  continue to bypass filtering (same rule as `.gitignore`). When the
+  flag contributes to ignored-dir pruning, the existing
+  `# note: ignored N dirs (...) via …` line widens its source list
+  from `.gitignore/.ignore + defaults` to
+  `.gitignore/.ignore + defaults + --exclude`, so an agent debugging
+  "where did my folder go" sees its own flag named. Malformed patterns
+  (lone `!`, trailing backslash) surface as
+  `# note: invalid --exclude pattern: …` and return 0 — honors the
+  CLI batch-friendly invariant. Implemented as a single extra
+  `GitIgnoreSpec` frame in `collect_files_with_stats`, reusing the
+  existing pathspec dependency; no new deps. Agent prompt snippet
+  (`ast-outline prompt`) gains one universal sentence covering all
+  three subcommands so any LLM picks the flag up on first read. 14
+  new regression tests covering each subcommand × negation × CLI vs
+  unit level × no_ignore composition × bad-pattern note × explicit-file
+  bypass × deeply-nested anchoring.
+
 ## [0.8.10] — 2026-05-16
 
 Patch release — `ast-outline show` now resolves markdown headings whose

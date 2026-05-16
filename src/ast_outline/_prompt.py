@@ -95,6 +95,12 @@ directories, mixed languages OK) — batch instead of looping. Type
 headers in both renderers carry inheritance as `: Base, Trait`, so the
 shape of class hierarchies is visible without a separate query.
 
+Narrow the walk with repeatable `--exclude <glob>`
+(`.gitignore`-syntax, anchored at the project root) on `outline` /
+`digest` / `grep` — e.g. `--exclude tests/ --exclude '*.gen.*'` to
+skip test trees and generated files in one call. `!pattern` negates;
+`.gitignore` is still honored by default — `--exclude` adds to it.
+
 When you need to know **what a file pulls in** or **where a referenced
 type / function comes from**, add `--imports` to `outline` or `digest`.
 The file header gets an `imports:` line listing every

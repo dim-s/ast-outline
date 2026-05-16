@@ -276,7 +276,10 @@ def _is_ignored(
 
 
 def collect_files(
-    paths: list[Path], glob: Optional[str] = None, no_ignore: bool = False
+    paths: list[Path],
+    glob: Optional[str] = None,
+    no_ignore: bool = False,
+    exclude: Optional[list[str]] = None,
 ) -> list[Path]:
     """Gather all source files under ``paths`` that any adapter handles.
 
@@ -284,11 +287,16 @@ def collect_files(
     that don't need ignore-filter statistics. ``.gitignore`` and the
     hardcoded fallback list are still applied unless ``no_ignore=True``.
     """
-    return collect_files_with_stats(paths, glob=glob, no_ignore=no_ignore).files
+    return collect_files_with_stats(
+        paths, glob=glob, no_ignore=no_ignore, exclude=exclude
+    ).files
 
 
 def collect_files_with_stats(
-    paths: list[Path], glob: Optional[str] = None, no_ignore: bool = False
+    paths: list[Path],
+    glob: Optional[str] = None,
+    no_ignore: bool = False,
+    exclude: Optional[list[str]] = None,
 ) -> CollectResult:
     """Walk input paths and return matched files plus ignore-filter stats.
 
@@ -313,6 +321,23 @@ def collect_files_with_stats(
     fd / ast-grep — a way to hide files from search-style tools
     without affecting git tracking.
 
+    ``exclude`` is a list of gitwildmatch (``.gitignore``-syntax)
+    patterns supplied via the CLI ``--exclude`` flag. They form an
+    extra frame that:
+
+    * Is anchored at the **project root** so users write
+      ``src/generated/`` and it resolves the same regardless of cwd.
+    * Applies in BOTH the normal walk and the ``no_ignore=True`` raw
+      walk — ``--exclude`` is the user's explicit voice, while
+      ``--no-ignore`` only silences automatic filters.
+    * Contributes to ``ignored_dirs`` / ``ignored_dir_names`` exactly
+      like the other ignore frames — visibility helps agents notice
+      when their own pattern was the reason a folder is empty.
+
+    Explicit single-file inputs continue to bypass filtering — same
+    rule as ``.gitignore``, since pointing at a file is an explicit
+    intent.
+
     Matching directories are pruned at walk time so we never descend
     into them. Files are filtered by supported extension (or by
     ``glob`` if provided).
@@ -323,6 +348,10 @@ def collect_files_with_stats(
     exts = supported_extensions()
     basenames = supported_basenames()
 
+    exclude_spec: Optional[GitIgnoreSpec] = None
+    if exclude:
+        exclude_spec = GitIgnoreSpec.from_lines(exclude)
+
     for p in paths:
         if p.is_file():
             out.append(p)
@@ -330,14 +359,47 @@ def collect_files_with_stats(
         if not p.is_dir():
             continue
 
+        # Anchor the user's ``--exclude`` frame at the project root
+        # when available, otherwise at the input dir itself. Matches
+        # how the root ``.gitignore`` frame is anchored — keeps the
+        # mental model consistent regardless of cwd.
+        anchor_root = _find_project_root(p).resolve() if exclude_spec else None
+        exclude_frame: Optional[tuple[Path, GitIgnoreSpec]] = (
+            (anchor_root, exclude_spec) if exclude_spec and anchor_root else None
+        )
+
         if no_ignore:
             # Raw walk — no defaults, no .gitignore, no .ignore. Only
             # the extension (or ``glob``) filter applies. Used when the
             # agent / user explicitly opts out of smart filtering, e.g.
             # to outline a vendored fork inside ``node_modules`` without
-            # editing any ignore files.
-            for dirpath, _, files in os.walk(p):
+            # editing any ignore files. ``--exclude`` still applies
+            # here — it's the user's explicit narrowing, distinct from
+            # the auto-filter that ``--no-ignore`` disables. Output
+            # paths preserve the caller's input shape (no ``.resolve()``
+            # applied) to stay back-compat with existing tests that do
+            # ``f.relative_to(input_dir)``; matching against the exclude
+            # frame uses a separate resolved ``dpath`` since the frame
+            # anchor is resolved.
+            no_ignore_frames: list[tuple[Path, GitIgnoreSpec]] = (
+                [exclude_frame] if exclude_frame else []
+            )
+            for dirpath, dirs, files in os.walk(p):
                 dpath = Path(dirpath)
+                if no_ignore_frames:
+                    match_dpath = dpath.resolve()
+                    kept: list[str] = []
+                    for d in dirs:
+                        if _is_ignored(
+                            match_dpath / d,
+                            is_dir=True,
+                            frames=no_ignore_frames,
+                        ):
+                            ignored_dirs += 1
+                            ignored_dir_basenames.add(d)
+                            continue
+                        kept.append(d)
+                    dirs[:] = sorted(kept)
                 for fname in sorted(files):
                     f = dpath / fname
                     if glob:
@@ -349,26 +411,39 @@ def collect_files_with_stats(
                             and f.name not in basenames
                         ):
                             continue
+                    if no_ignore_frames and _is_ignored(
+                        match_dpath / fname,
+                        is_dir=False,
+                        frames=no_ignore_frames,
+                    ):
+                        continue
                     out.append(f)
             continue
 
         project_root = _find_project_root(p).resolve()
         # Frame stack: shallowest → deepest. The root frame includes
-        # hardcoded defaults + project-root .gitignore. Nested
-        # ``.gitignore`` files encountered during the walk add their
-        # own frames anchored at their containing dir (per git
+        # hardcoded defaults + project-root .gitignore. ``--exclude``
+        # (if any) sits ABOVE the root frame so its patterns override
+        # the defaults — agents pass ``!node_modules/our-fork/`` and
+        # it works without crafting the three-line escape idiom.
+        # Nested ``.gitignore`` files encountered during the walk add
+        # their own frames anchored at their containing dir (per git
         # semantics — a nested gitignore's patterns are relative to
         # that nested dir, not the project root).
         frames: list[tuple[Path, GitIgnoreSpec]] = [
             (project_root, _build_root_spec(project_root))
         ]
+        if exclude_frame:
+            frames.append(exclude_frame)
 
         for dirpath, dirs, files in os.walk(p):
             dpath = Path(dirpath).resolve()
 
             # Drop frames whose anchor is no longer an ancestor of the
             # current dir (we backed up the tree to a sibling). The
-            # root frame is always kept — it covers every path.
+            # root frame is always kept — it covers every path. The
+            # ``--exclude`` frame is anchored at the project root too,
+            # so the same guard keeps it alive for the whole walk.
             frames = [
                 (anchor, spec)
                 for anchor, spec in frames
@@ -387,7 +462,7 @@ def collect_files_with_stats(
             # Prune ignored subdirectories in place — git matches
             # directories with a trailing slash, so ``_is_ignored``
             # appends one for is_dir=True paths.
-            kept: list[str] = []
+            kept = []
             for d in dirs:
                 if _is_ignored(dpath / d, is_dir=True, frames=frames):
                     ignored_dirs += 1

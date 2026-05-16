@@ -265,6 +265,7 @@ def grep(
     word_match: bool = False,
     include_noise: bool = False,
     no_ignore: bool = False,
+    exclude: list[str] | None = None,
     max_count: int | None = None,
     kind_filter: set[str] | None = None,
 ) -> tuple[list[GrepFileResult], int, dict[str, int]]:
@@ -331,7 +332,9 @@ def grep(
         else:
             patterns = [rf"\b{re.escape(p)}\b" for p in patterns]
             is_regex = True
-    collected = collect_files_with_stats(paths, no_ignore=no_ignore)
+    collected = collect_files_with_stats(
+        paths, no_ignore=no_ignore, exclude=exclude
+    )
     matcher = _build_matcher(patterns, is_regex=is_regex, case_insensitive=case_insensitive)
 
     out: list[GrepFileResult] = []

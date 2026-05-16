@@ -613,3 +613,226 @@ def test_cli_note_when_only_ignored_dirs_match(tmp_path, capsys):
     assert rc == 0
     assert "# note: ignored" in out
     assert "no supported files" not in out
+
+
+# --- --exclude flag -----------------------------------------------------
+
+
+def test_exclude_dir_at_collect_level(tmp_path):
+    """``exclude`` argument prunes directories at the walker level."""
+    (tmp_path / ".git").mkdir()
+    _write(tmp_path / "src" / "real.py", "def real(): pass\n")
+    _write(tmp_path / "tests" / "test_a.py", "def test_a(): pass\n")
+
+    result = collect_files_with_stats([tmp_path], exclude=["tests/"])
+    rels = {f.relative_to(tmp_path).as_posix() for f in result.files}
+    assert "src/real.py" in rels
+    assert "tests/test_a.py" not in rels
+    assert result.ignored_dirs >= 1
+    assert "tests" in result.ignored_dir_names
+
+
+def test_exclude_file_glob_at_collect_level(tmp_path):
+    """File-level glob patterns work too — silent file drop, no dir count."""
+    (tmp_path / ".git").mkdir()
+    _write(tmp_path / "src" / "real.py", "def real(): pass\n")
+    _write(tmp_path / "src" / "schema.gen.py", "def gen(): pass\n")
+
+    result = collect_files_with_stats([tmp_path], exclude=["*.gen.py"])
+    rels = {f.relative_to(tmp_path).as_posix() for f in result.files}
+    assert "src/real.py" in rels
+    assert "src/schema.gen.py" not in rels
+
+
+def test_exclude_supports_negation(tmp_path):
+    """``!pattern`` re-includes something an earlier ``--exclude`` would drop."""
+    (tmp_path / ".git").mkdir()
+    _write(tmp_path / "tests" / "test_a.py", "def a(): pass\n")
+    _write(tmp_path / "tests" / "kept.py", "def kept(): pass\n")
+
+    # Two patterns — second one un-ignores ``tests/kept.py``. Git
+    # negation can't cross an excluded parent dir without re-including
+    # it first, so we use the three-line escape idiom (same shape as
+    # the existing test for ``.gitignore`` defaults).
+    result = collect_files_with_stats(
+        [tmp_path], exclude=["!tests/", "tests/*", "!tests/kept.py"]
+    )
+    rels = {f.relative_to(tmp_path).as_posix() for f in result.files}
+    assert "tests/test_a.py" not in rels
+    assert "tests/kept.py" in rels
+
+
+def test_exclude_repeatable(tmp_path):
+    """Multiple ``--exclude`` patterns combine (additive)."""
+    (tmp_path / ".git").mkdir()
+    _write(tmp_path / "src" / "real.py", "def real(): pass\n")
+    _write(tmp_path / "tests" / "t.py", "def t(): pass\n")
+    _write(tmp_path / "src" / "g.gen.py", "def g(): pass\n")
+
+    result = collect_files_with_stats(
+        [tmp_path], exclude=["tests/", "*.gen.py"]
+    )
+    rels = {f.relative_to(tmp_path).as_posix() for f in result.files}
+    assert "src/real.py" in rels
+    assert "tests/t.py" not in rels
+    assert "src/g.gen.py" not in rels
+
+
+def test_exclude_anchored_at_project_root(tmp_path):
+    """Patterns resolve against the project root, not the input dir.
+
+    Agents pass ``--exclude src/generated/`` from anywhere and it
+    applies the same — matches how a top-level ``.gitignore`` works,
+    not how ad-hoc cwd-relative patterns would.
+    """
+    (tmp_path / ".git").mkdir()
+    _write(tmp_path / "src" / "generated" / "stub.py", "def stub(): pass\n")
+    _write(tmp_path / "src" / "real.py", "def real(): pass\n")
+
+    # Walk a subdir, not the project root — pattern is still
+    # interpreted relative to the root.
+    result = collect_files_with_stats(
+        [tmp_path / "src"], exclude=["src/generated/"]
+    )
+    rels = {f.name for f in result.files}
+    assert "real.py" in rels
+    assert "stub.py" not in rels
+
+
+def test_exclude_applies_under_no_ignore(tmp_path):
+    """``--exclude`` is an explicit narrowing — survives ``--no-ignore``.
+
+    ``--no-ignore`` silences the auto-filter (``.gitignore`` + defaults).
+    ``--exclude`` is the user's voice and must keep applying.
+    """
+    _write(tmp_path / "src" / "real.py", "def real(): pass\n")
+    _write(tmp_path / "node_modules" / "lib.py", "def lib(): pass\n")
+    _write(tmp_path / "secret" / "key.py", "def key(): pass\n")
+
+    result = collect_files_with_stats(
+        [tmp_path], no_ignore=True, exclude=["secret/"]
+    )
+    rels = {f.relative_to(tmp_path).as_posix() for f in result.files}
+    # ``--no-ignore`` bypassed the defaults, so node_modules survives.
+    assert "src/real.py" in rels
+    assert "node_modules/lib.py" in rels
+    # But the user's own ``--exclude`` still trims ``secret/``.
+    assert "secret/key.py" not in rels
+
+
+def test_exclude_does_not_filter_explicit_file_input(tmp_path):
+    """Explicit file paths bypass ``--exclude`` too — pointing at a file
+    is an explicit intent, same rule as ``.gitignore`` (see
+    test_single_file_input_is_not_filtered).
+    """
+    p = _write(tmp_path / "tests" / "x.py", "def x(): pass\n")
+    files = collect_files([p], exclude=["tests/"])
+    assert files == [p]
+
+
+def test_cli_exclude_works_on_digest(tmp_path, capsys):
+    _write(tmp_path / "src" / "main.py", "def f(): pass\n")
+    _write(tmp_path / "tests" / "test_main.py", "def t(): pass\n")
+
+    rc = main(["digest", str(tmp_path), "--exclude", "tests/"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "main.py" in out
+    assert "test_main.py" not in out
+
+
+def test_cli_exclude_works_on_outline(tmp_path, capsys):
+    _write(tmp_path / "src" / "main.py", "def f(): pass\n")
+    _write(tmp_path / "tests" / "test_main.py", "def t(): pass\n")
+
+    rc = main(["outline", str(tmp_path), "--exclude", "tests/"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "main.py" in out
+    assert "test_main.py" not in out
+
+
+def test_cli_exclude_works_on_grep(tmp_path, capsys):
+    _write(tmp_path / "src" / "main.py", "def hit_me(): pass\n")
+    _write(tmp_path / "tests" / "test_main.py", "def hit_me(): pass\n")
+
+    rc = main(["grep", "hit_me", str(tmp_path), "--exclude", "tests/"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "src/main.py" in out
+    assert "tests/test_main.py" not in out
+
+
+def test_cli_exclude_repeatable_flag(tmp_path, capsys):
+    _write(tmp_path / "src" / "main.py", "def f(): pass\n")
+    _write(tmp_path / "tests" / "test_main.py", "def t(): pass\n")
+    _write(tmp_path / "build" / "gen.py", "def g(): pass\n")
+
+    rc = main([
+        "digest",
+        str(tmp_path),
+        "--exclude", "tests/",
+        "--exclude", "build/",
+    ])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "main.py" in out
+    assert "test_main.py" not in out
+    assert "gen.py" not in out
+
+
+def test_cli_exclude_note_mentions_exclude_source(tmp_path, capsys):
+    """The ignored-dirs note widens its source list when ``--exclude``
+    contributed, so an agent debugging "where did my folder go" sees
+    its own flag named alongside ``.gitignore`` + defaults."""
+    _write(tmp_path / "src" / "main.py", "def f(): pass\n")
+    _write(tmp_path / "tests" / "test_main.py", "def t(): pass\n")
+
+    rc = main(["digest", str(tmp_path), "--exclude", "tests/"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "# note: ignored" in out
+    assert "+ --exclude" in out
+
+
+def test_cli_exclude_bad_pattern_emits_note(tmp_path, capsys):
+    """A malformed gitwildmatch pattern surfaces as ``# note: ...`` and
+    returns 0 — preserves the CLI batch-friendliness invariant."""
+    _write(tmp_path / "main.py", "def f(): pass\n")
+
+    rc = main(["digest", str(tmp_path), "--exclude", "!"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "# note: invalid --exclude pattern" in out
+
+
+def test_cli_exclude_negation_re_includes_default_filtered_dir(tmp_path, capsys):
+    """Single-line ``!node_modules/`` from ``--exclude`` overrides the
+    hardcoded default — the ``--exclude`` frame is layered ABOVE the
+    root frame, so its negation wins without crafting the three-line
+    git escape idiom."""
+    _write(tmp_path / "main.py", "def f(): pass\n")
+    _write(
+        tmp_path / "node_modules" / "our-fork" / "real.py",
+        "def real(): pass\n",
+    )
+    _write(
+        tmp_path / "node_modules" / "junk" / "stale.py",
+        "def stale(): pass\n",
+    )
+
+    # ``!node_modules/`` alone un-excludes the dir. ``--exclude`` adds
+    # its frame on top of the defaults, so a bare negation works here
+    # — different shape from ``.gitignore`` where the parent dir's
+    # exclusion stops the walk before the negation can apply. We then
+    # add a positive pattern to keep ``junk`` filtered.
+    rc = main([
+        "digest",
+        str(tmp_path),
+        "--exclude", "!node_modules/",
+        "--exclude", "node_modules/junk/",
+    ])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "real.py" in out
+    assert "stale.py" not in out

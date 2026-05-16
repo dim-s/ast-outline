@@ -293,6 +293,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Disable .gitignore / .ignore / hardcoded defaults — walk every dir except by extension",
     )
+    p_digest.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="GLOB",
+        help=(
+            "Exclude paths matching gitwildmatch (.gitignore-syntax) "
+            "GLOB; repeatable. Patterns are anchored at the project "
+            "root, so `--exclude src/generated/` works regardless of "
+            "cwd. Supports `!` negation. Applies even with --no-ignore."
+        ),
+    )
 
     p_help = sub.add_parser("help", help="Show usage guide with examples")
     p_help.add_argument(
@@ -363,6 +375,17 @@ def main(argv: list[str] | None = None) -> int:
         "--no-ignore",
         action="store_true",
         help="Disable .gitignore / .ignore filtering — walk every dir except by extension",
+    )
+    p_grep.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="GLOB",
+        help=(
+            "Exclude paths matching gitwildmatch (.gitignore-syntax) "
+            "GLOB; repeatable. Patterns are anchored at the project "
+            "root. Supports `!` negation. Applies even with --no-ignore."
+        ),
     )
     p_grep.add_argument(
         "-m",
@@ -485,10 +508,24 @@ def _add_outline_args(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Disable .gitignore / .ignore / hardcoded defaults — walk every dir except by extension",
     )
+    p.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="GLOB",
+        help=(
+            "Exclude paths matching gitwildmatch (.gitignore-syntax) "
+            "GLOB; repeatable. Patterns are anchored at the project "
+            "root. Supports `!` negation. Applies even with --no-ignore."
+        ),
+    )
 
 
 def _parse_paths(
-    paths: list[Path], glob: str | None = None, no_ignore: bool = False
+    paths: list[Path],
+    glob: str | None = None,
+    no_ignore: bool = False,
+    exclude: list[str] | None = None,
 ) -> tuple[list[ParseResult], list[tuple[Path, Exception]], CollectResult]:
     """Parse every supported file under the given paths.
 
@@ -496,7 +533,9 @@ def _parse_paths(
     stats (so callers can surface how many files/dirs were filtered out
     by ``.gitignore`` + defaults).
     """
-    collected = collect_files_with_stats(paths, glob=glob, no_ignore=no_ignore)
+    collected = collect_files_with_stats(
+        paths, glob=glob, no_ignore=no_ignore, exclude=exclude
+    )
     results: list[ParseResult] = []
     errors: list[tuple[Path, Exception]] = []
     for f in collected.files:
@@ -510,10 +549,31 @@ def _parse_paths(
     return results, errors, collected
 
 
+def _validate_exclude(patterns: list[str]) -> str | None:
+    """Return an error ``# note:`` line if any pattern is malformed.
+
+    ``GitIgnoreSpec.from_lines`` raises ``GitWildMatchPatternError`` on
+    syntactically bad patterns (lone ``!``, trailing backslash, …).
+    Many other shapes parse silently but don't match what the user
+    expected — we can't catch those, but we can at least give the
+    structural failures a useful one-line note instead of a stack
+    trace. Honors the CLI ``# note: + return 0`` invariant.
+    """
+    if not patterns:
+        return None
+    from pathspec import GitIgnoreSpec
+    from pathspec.patterns.gitwildmatch import GitWildMatchPatternError
+    try:
+        GitIgnoreSpec.from_lines(patterns)
+    except GitWildMatchPatternError as e:
+        return f"# note: invalid --exclude pattern: {e}"
+    return None
+
+
 _MAX_DIR_NAMES_IN_NOTE = 8
 
 
-def _ignore_note(collected: CollectResult) -> str | None:
+def _ignore_note(collected: CollectResult, exclude_active: bool = False) -> str | None:
     """Format the ``# note:`` line for ignored entries, or ``None``.
 
     Lists the unique **basenames** of pruned dirs (capped at
@@ -522,6 +582,14 @@ def _ignore_note(collected: CollectResult) -> str | None:
     many*. The dir count itself is informative when one basename
     (e.g. ``node_modules``) is pruned in multiple places across a
     monorepo — list-of-1 + count-of-12 conveys both shape and scale.
+
+    ``exclude_active`` widens the "source" suffix from
+    ``.gitignore/.ignore + defaults`` to ``.gitignore/.ignore +
+    defaults + --exclude`` whenever the caller passed any exclude
+    pattern — even when the actual prunes might have come purely from
+    defaults. Surfacing the flag's participation matters when an agent
+    is debugging "why is my folder gone" and needs to suspect its own
+    pattern before suspecting the auto-filter.
     """
     if collected.ignored_dirs == 0:
         return None
@@ -534,9 +602,12 @@ def _ignore_note(collected: CollectResult) -> str | None:
     else:
         shown = ", ".join(names)
     word = "dir" if collected.ignored_dirs == 1 else "dirs"
+    source = ".gitignore/.ignore + defaults"
+    if exclude_active:
+        source += " + --exclude"
     return (
         f"# note: ignored {collected.ignored_dirs} {word} ({shown}) "
-        "via .gitignore/.ignore + defaults — pass --no-ignore to disable"
+        f"via {source} — pass --no-ignore to disable"
     )
 
 
@@ -555,6 +626,12 @@ def _cmd_outline(args) -> int:
             print(f"# note: path not found: {p}")
         return 0
 
+    exclude = getattr(args, "exclude", []) or []
+    bad = _validate_exclude(exclude)
+    if bad:
+        print(bad)
+        return 0
+
     opts = OutlineOptions(
         include_private=not args.no_private,
         include_fields=not args.no_fields,
@@ -565,7 +642,7 @@ def _cmd_outline(args) -> int:
     )
 
     results, errors, collected = _parse_paths(
-        paths, glob=args.glob, no_ignore=args.no_ignore
+        paths, glob=args.glob, no_ignore=args.no_ignore, exclude=exclude
     )
     if not results:
         # All-failure path: surface parse errors on stdout as `# note:`
@@ -576,7 +653,7 @@ def _cmd_outline(args) -> int:
             for f, e in errors:
                 print(f"# note: parse error in {f}: {e}")
             return 0
-        note = _ignore_note(collected)
+        note = _ignore_note(collected, exclude_active=bool(exclude))
         if note:
             # Empty result + something ignored is the classic "the file
             # you wanted was filtered" trap — surface the filter so the
@@ -589,7 +666,7 @@ def _cmd_outline(args) -> int:
         )
         return 0
 
-    note = _ignore_note(collected)
+    note = _ignore_note(collected, exclude_active=bool(exclude))
     if note:
         print(note)
     for i, r in enumerate(results):
@@ -686,6 +763,12 @@ def _cmd_grep(args) -> int:
     if missing:
         for p in missing:
             print(f"# note: path not found: {p}")
+        return 0
+
+    exclude = getattr(args, "exclude", []) or []
+    bad = _validate_exclude(exclude)
+    if bad:
+        print(bad)
         return 0
 
     # Collect all patterns from the positional slot + every ``-e``
@@ -785,6 +868,7 @@ def _cmd_grep(args) -> int:
         word_match=args.word_match,
         include_noise=include_noise,
         no_ignore=args.no_ignore,
+        exclude=exclude,
         max_count=max_count,
         kind_filter=kind_filter,
     )
@@ -865,6 +949,11 @@ def _cmd_digest(args) -> int:
         for p in missing:
             print(f"# note: path not found: {p}")
         return 0
+    exclude = getattr(args, "exclude", []) or []
+    bad = _validate_exclude(exclude)
+    if bad:
+        print(bad)
+        return 0
     # `--oneline` is an alias for `--format=names`. If both are passed
     # they agree on `names`; if only `--oneline` is passed it overrides
     # whatever `--format` defaults to. Keeps the two-knob surface friendly
@@ -896,7 +985,9 @@ def _cmd_digest(args) -> int:
         show_imports=args.imports,
         format=fmt,
     )
-    results, errors, collected = _parse_paths(paths, no_ignore=args.no_ignore)
+    results, errors, collected = _parse_paths(
+        paths, no_ignore=args.no_ignore, exclude=exclude
+    )
     if not results:
         # See `_cmd_outline` for rationale — an all-failure batch needs
         # the parse errors visible on stdout (the LLM's channel), not
@@ -907,13 +998,13 @@ def _cmd_digest(args) -> int:
             for f, e in errors:
                 print(f"# note: parse error in {f}: {e}")
             return 0
-        note = _ignore_note(collected)
+        note = _ignore_note(collected, exclude_active=bool(exclude))
         if note:
             print(note)
             return 0
         print("# note: no supported files found")
         return 0
-    note = _ignore_note(collected)
+    note = _ignore_note(collected, exclude_active=bool(exclude))
     if note:
         print(note)
     print(render_digest(results, opts), end="")
@@ -1052,6 +1143,10 @@ FLAGS
     --no-lines      Hide line number suffixes
     --imports       Show file's imports (source-true, language-native)
     --glob PATTERN  Custom glob for directory mode (default: all supported)
+    --exclude GLOB  Skip paths matching gitwildmatch GLOB (.gitignore
+                    syntax; repeatable; anchored at project root;
+                    `!` negates; applies even with --no-ignore)
+    --no-ignore     Disable .gitignore / .ignore / hardcoded defaults
 
 EXAMPLES
     ast-outline Foo.cs
@@ -1059,6 +1154,7 @@ EXAMPLES
     ast-outline src/ --no-private --no-fields --no-attrs
     ast-outline service.py --imports     # add `# imports: ...` header
     ast-outline Foo.cs Bar.py   # mixed languages at once
+    ast-outline src/ --exclude tests/ --exclude '*.gen.*'   # skip tests + generated
 """
 
 GUIDE_SHOW = """\
@@ -1148,12 +1244,18 @@ FLAGS
     --include-fields    Include fields / module-level assignments
     --max-members N     Truncate long member lists (default: 50)
     --imports           Show each file's imports (source-true, language-native)
+    --exclude GLOB      Skip paths matching gitwildmatch GLOB
+                        (.gitignore syntax; repeatable; anchored at
+                        project root; `!` negates; applies even with
+                        --no-ignore)
+    --no-ignore         Disable .gitignore / .ignore / hardcoded defaults
 
 EXAMPLES
     ast-outline digest Assets/Scripts
     ast-outline digest scripts/
     ast-outline digest src/Services src/Domain
     ast-outline digest src/ --imports        # see what each file depends on
+    ast-outline digest src/ --exclude tests/ --exclude '*.gen.*'   # skip tests + generated
 """
 
 GUIDE_PROMPT = """\
@@ -1271,6 +1373,10 @@ FLAGS
     --include-noise         Include matches inside comments / strings
                             (filtered by default)
     --no-ignore             Disable .gitignore / .ignore filtering
+    --exclude GLOB          Skip paths matching gitwildmatch GLOB
+                            (.gitignore syntax; repeatable; anchored
+                            at project root; `!` negates; applies
+                            even with --no-ignore)
 
 EXAMPLES
     ast-outline grep User.save src/
@@ -1284,6 +1390,7 @@ EXAMPLES
     ast-outline grep --regex '\\.save\\(' src/
     ast-outline grep -i todo src/                   # case-insensitive
     ast-outline grep --include-noise FIXME src/
+    ast-outline grep User src/ --exclude tests/ --exclude '*.gen.*'   # skip tests + generated
 
 OUTPUT FORMAT
     # path/to/file.py (N matches)
