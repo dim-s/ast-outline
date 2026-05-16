@@ -1674,12 +1674,15 @@ def find_symbols(result: ParseResult, symbol: str) -> list[SymbolMatch]:
     and `PlayerController.TakeDamage` also matches.
 
     Markdown headings get a relaxed contract: case-insensitive **substring**
-    containment per dotted part. Heading text routinely carries decoration
+    containment per dotted part, with inline-markdown punctuation (backticks,
+    asterisks, underscores, tildes) stripped from BOTH the heading title and
+    the query before comparing. Heading text routinely carries decoration
     an LLM agent can't be expected to remember verbatim — number prefixes
     (``1.`` ``2.1``), trailing qualifiers (``(февраль 2026)``,
-    ``(Уверенность: 70%)``), formatting marks. So ``"ТЕКУЩИЙ АНАЛИЗ"``
-    matches ``"1. ТЕКУЩИЙ АНАЛИЗ (февраль 2026)"`` for headings, even
-    though it wouldn't for a code symbol.
+    ``(Уверенность: 70%)``), inline-code/emphasis markup. So
+    ``"ТЕКУЩИЙ АНАЛИЗ"`` matches ``"1. ТЕКУЩИЙ АНАЛИЗ (февраль 2026)"`` and
+    ``"useState — when to reach"`` matches ``"`useState` — when to reach for it"``
+    for headings, even though neither would for a code symbol.
     """
     parts = _split_query(symbol)
     matches: list[SymbolMatch] = []
@@ -1706,6 +1709,15 @@ _QUERY_TOKEN_RE = _re.compile(r"\[[^\]]*\]|[^.\[]+")
 # followed by whitespace and at least one non-whitespace char. See
 # ``_split_query`` for why we keep these as a single token.
 _LEADING_NUMBER_PREFIX_RE = _re.compile(r"^\d+(?:\.\d+)*\.?\s+\S")
+
+# Char-level inline-markdown decoration stripped from both sides of a
+# heading substring compare. Covers the symmetric, char-level CommonMark
+# markers: inline-code (`` ` ``), emphasis / strong (``*``, ``_``), and
+# strikethrough (``~``). Structural markup — links ``[text](url)``,
+# autolinks ``<url>``, HTML tags — is NOT included: char-wise stripping
+# would corrupt the visible label rather than peel decoration. See
+# ``_trail_matches`` and ``find_symbols`` for the matching contract.
+_INLINE_MD_PUNCT_RE = _re.compile(r"[`*_~]+")
 
 
 def _split_query(symbol: str) -> list[str]:
@@ -1824,8 +1836,23 @@ def _trail_matches(trail: list[str], parts: list[str], *, substring: bool = Fals
     if substring:
         # Case-insensitive containment per element. ``casefold`` (not
         # ``lower``) so non-ASCII titles match correctly — German ß,
-        # Turkish dotted/dotless I, etc.
-        return all(p.casefold() in t.casefold() for p, t in zip(parts, tail))
+        # Turkish dotted/dotless I, etc. Inline-markdown punctuation
+        # is stripped from BOTH sides so an agent that drops backticks
+        # / asterisks from the heading text it copied out of ``outline``
+        # still resolves the section. Markdown-only — ``substring`` is
+        # only True for ``KIND_HEADING``. A query part that consists
+        # entirely of inline-md punctuation (`` "*" ``, ``"~~~"``)
+        # strips to the empty string; without an explicit guard,
+        # ``"" in any_title`` returns True and a purely-decoration query
+        # would match every heading. Require the stripped query part to
+        # be non-empty.
+        for p, t in zip(parts, tail):
+            sp = _INLINE_MD_PUNCT_RE.sub("", p)
+            if not sp:
+                return False
+            if sp.casefold() not in _INLINE_MD_PUNCT_RE.sub("", t).casefold():
+                return False
+        return True
     return tail == parts
 
 

@@ -7,6 +7,43 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.10] — 2026-05-16
+
+Patch release — `ast-outline show` now resolves markdown headings whose
+title contains inline-markdown decoration (`` `inline-code` ``,
+`*emphasis*`, `_emphasis_`, `~~strike~~`) when the query drops those
+characters, closing the `outline` → `show` round-trip for the common
+case where an agent treats inline-md markup as formatting it can strip.
+
+### Fixed
+
+- **Inline-markdown decoration stripped from both sides when matching
+  headings.** `ast-outline outline` prints headings verbatim, so an H2
+  with inline code appears as ``## `useState` — when to reach for it``;
+  agents (and humans) copying the title for `ast-outline show` routinely
+  drop the backticks as if they were rendering hints, then `show`
+  returned `# note: symbol not found` because the substring matcher
+  compared raw heading text — backticks broke continuity. The matcher now
+  strips `` ` ``, `*`, `_`, `~` from BOTH the heading title and the
+  query before the case-insensitive `in` test. Symmetric: passing the
+  decorated form verbatim (``" `useState` — when to reach for it "``)
+  still resolves the same heading, so agents that DO preserve the
+  decoration don't regress. Scoped to the `substring=True` branch of
+  `_trail_matches`, which only fires for `KIND_HEADING` (markdown-only)
+  — code-symbol matching keeps strict equality, so a Python `_foo` or a
+  Rust `*const T` is never silently broadened. Composes with the
+  existing numbered-prefix short-circuit (`2. \`Bar\` setup` resolves
+  from `Bar setup`). Structural markup — links `[text](url)`, autolinks
+  `<url>`, raw HTML — is intentionally NOT stripped: char-wise removal
+  would corrupt the visible label rather than peel decoration, and
+  proper handling needs paired-bracket parsing which belongs in a
+  separate change. Closes
+  [#4](https://github.com/ast-outline/ast-outline/issues/4); adds 8
+  regression tests covering each decoration class, the symmetric
+  with-markup query, composition with numbered prefixes, the negative
+  case (extra words still fail), and a sanity check that code-symbol
+  matching is unaffected.
+
 ## [0.8.9] — 2026-05-13
 
 Minor release — `ast-outline digest` gains a `--format=` preset selector

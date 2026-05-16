@@ -361,6 +361,102 @@ def test_markdown_query_without_prefix_still_works(md_dir):
     )
 
 
+# --- find_symbols: inline-markdown strip in heading match (issue #4) ----
+
+
+def _md(tmp_path, body: str):
+    p = tmp_path / "headings.md"
+    p.write_text(body, encoding="utf8")
+    return MarkdownAdapter().parse(p)
+
+
+def test_markdown_heading_match_strips_backticks(tmp_path):
+    """`outline` prints headings with inline-code backticks intact. Agents
+    routinely drop those backticks when copying the title back into `show`
+    — treating them as formatting markup. Stripping both sides at compare
+    time keeps `outline` → `show` round-trip lossless. Regression for
+    https://github.com/ast-outline/ast-outline/issues/4."""
+    r = _md(tmp_path, "# Top\n\n## `useState` — when to reach for it\n\nbody.\n")
+    [m] = find_symbols(r, "useState — when to reach for it")
+    assert m.qualified_name.endswith("`useState` — when to reach for it")
+
+
+def test_markdown_heading_match_strips_asterisks(tmp_path):
+    """Same contract as backticks — `*emphasis*` / `**strong**` markup in
+    a heading is decoration, not part of the meaningful title."""
+    r = _md(tmp_path, "# Top\n\n## *Deprecated* APIs\n\nbody.\n")
+    [m] = find_symbols(r, "Deprecated APIs")
+    assert m.qualified_name.endswith("*Deprecated* APIs")
+
+
+def test_markdown_heading_match_strips_underscores(tmp_path):
+    """`_emphasis_` underscores treated like asterisks — same CommonMark
+    char-level decoration class."""
+    r = _md(tmp_path, "# Top\n\n## _Migration_ guide\n\nbody.\n")
+    [m] = find_symbols(r, "Migration guide")
+    assert m.qualified_name.endswith("_Migration_ guide")
+
+
+def test_markdown_heading_match_strips_tildes(tmp_path):
+    """GFM strikethrough `~~...~~` — char-level decoration, stripped."""
+    r = _md(tmp_path, "# Top\n\n## ~~Old~~ name\n\nbody.\n")
+    [m] = find_symbols(r, "Old name")
+    assert m.qualified_name.endswith("~~Old~~ name")
+
+
+def test_markdown_heading_match_query_with_markup_also_works(tmp_path):
+    """Strip is symmetric — passing the heading verbatim WITH markup
+    still matches the same heading. Agents that DO preserve backticks
+    from `outline` output must not regress."""
+    r = _md(tmp_path, "# Top\n\n## `useState` — when to reach for it\n\nbody.\n")
+    [m] = find_symbols(r, "`useState` — when to reach for it")
+    assert m.qualified_name.endswith("`useState` — when to reach for it")
+
+
+def test_markdown_heading_match_combines_numbered_prefix_and_inline_code(tmp_path):
+    """Numbered-prefix short-circuit and inline-code strip compose: an
+    agent that drops both the `2.` AND the backticks should still hit."""
+    r = _md(tmp_path, "# Top\n\n## 2. `Bar` setup\n\nbody.\n")
+    matches = find_symbols(r, "Bar setup")
+    assert len(matches) == 1
+    assert matches[0].qualified_name.endswith("2. `Bar` setup")
+
+
+def test_markdown_heading_match_negative_extra_text(tmp_path):
+    """Strip only removes decoration — it does not relax the substring
+    contract itself. A query that adds words the heading doesn't contain
+    must still fail."""
+    r = _md(tmp_path, "# Top\n\n## `useState` — short\n\nbody.\n")
+    assert find_symbols(r, "useState short extra junk") == []
+
+
+def test_markdown_heading_match_pure_decoration_query_does_not_match_all(tmp_path):
+    """A query consisting only of inline-md punctuation (`"*"`, `"~~~"`,
+    `` "`*_~" ``) strips to the empty string. Without an explicit guard,
+    ``"" in any_title`` would silently match every heading in the file
+    — a regression vs pre-strip behaviour where `"*" in "Foo"` was
+    `False`. Caught in code review; the guard returns no matches."""
+    r = _md(tmp_path, "# Top\n\n## Foo\n\n## Bar\n\n## Baz\n")
+    assert find_symbols(r, "*") == []
+    assert find_symbols(r, "~~~") == []
+    assert find_symbols(r, "`*_~") == []
+
+
+def test_inline_md_strip_does_not_affect_code_symbol_matching(csharp_dir):
+    """The strip lives behind the `substring=True` branch — which only
+    fires for `KIND_HEADING`. Code-symbol lookups must keep strict
+    equality, so inline-md characters inside a code-symbol query do not
+    get silently peeled — they remain part of the literal name and the
+    query fails to match a real identifier that doesn't contain them."""
+    r = CSharpAdapter().parse(csharp_dir / "unity_behaviour.cs")
+    # `TakeDamage` exists in the fixture — exact-equality lookup works.
+    assert find_symbols(r, "TakeDamage") != []
+    # `Take*Damage` would only match if the strip applied to code
+    # symbols (it doesn't): the `*` stays in the query, no identifier
+    # named `Take*Damage` exists, zero hits.
+    assert find_symbols(r, "Take*Damage") == []
+
+
 # --- _split_query: shape-by-shape contract ------------------------------
 
 
