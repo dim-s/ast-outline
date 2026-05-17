@@ -170,6 +170,7 @@ ast-outline prompt | pbcopy   # macOS clipboard
 | Rust       | `.rs` |
 | PHP        | `.php`, `.phtml`, `.phps`, `.php8` *(PHP 8.x + 7.4 LTS; tested on WordPress core)* |
 | Ruby       | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile` *(incl. Rails associations)* |
+| Lua        | `.lua`, `.wlua` *(vanilla 5.1–5.4; `function M:foo` → method, metamethods → operator; covers Neovim, LÖVE, OpenResty, Redis scripts)* |
 | CSS        | `.css` |
 | SCSS       | `.scss` |
 | SQL        | `.sql` *(PostgreSQL primary; MySQL / SQLite usable)* |
