@@ -184,6 +184,7 @@ _COMMENT_PREFIXES_BY_LANG: dict[str, tuple[str, ...]] = {
     "css": ("//",),  # not real CSS; SCSS extension allows it
     "scss": ("//",),
     "sql": ("--",),
+    "lua": ("--",),
     "markdown": (),  # markdown has no comment syntax we need to skip
 }
 
@@ -216,6 +217,15 @@ _IMPORT_PREFIXES_BY_LANG: dict[str, tuple[str, ...]] = {
     "ruby": ("require ", "require_relative ", "load "),
     "css": ("@import ",),
     "scss": ("@import ", "@use ", "@forward "),
+    # Lua: ``require "x"`` (bare string-arg) and ``require("x")`` both
+    # start with the same prefix on the stripped line. The ``local X =
+    # require ...`` shape is intentionally not added here — ``local``
+    # is too broad and would mis-classify every local variable
+    # binding; that shape gets picked up by the adapter's
+    # ``import_regions`` instead (populated when the RHS is a
+    # ``require`` call), so single-line ``local X = require("y")`` is
+    # classified as import without a brittle prefix match.
+    "lua": ("require ", "require("),
 }
 
 
@@ -738,12 +748,14 @@ def _classify_match(
     # Without this skip, a generic call like ``genericCall<string>()``
     # would land on ``<`` and fall through to KIND_REF — the most
     # painful misclassification for TS / Rust / Java / C# code.
-    if _next_call_paren_after(line_content, match_end_column - 1):
+    if _next_call_paren_after(line_content, match_end_column - 1, language=language):
         return KIND_CALL
     return KIND_REF
 
 
-def _next_call_paren_after(line_content: str, start: int) -> bool:
+def _next_call_paren_after(
+    line_content: str, start: int, *, language: str = ""
+) -> bool:
     """True if a ``(`` follows ``start``, after skipping call-prefixes.
 
     Walks past whitespace, generic-arg blocks (``<...>`` or ``[...]``
@@ -858,6 +870,43 @@ def _next_call_paren_after(line_content: str, start: int) -> bool:
         if ch == ":" and i + 1 < n and line_content[i + 1] == ":":
             i += 2
             continue
+        # Lua-specific skips and call shapes. Placed BEFORE the
+        # ``<[`` generic-args block so the ``[[`` long-string sugar-
+        # call (``f[[hello]]``) wins over the would-be ``[...]``
+        # generic-args balanced walk. In Lua there are no generics
+        # (vanilla 5.x — Luau is out of scope for v1), so the generic-
+        # args walk is purely a TS/Rust/Go construct and skipping it
+        # for Lua loses nothing.
+        if language == "lua":
+            # Method / field chain: ``.identifier`` or ``:identifier``
+            # — skip the separator and the entire identifier that
+            # follows, then keep walking. Composes naturally:
+            # ``a.b.c(`` walks ``.``→``b``→``.``→``c`` and lands on
+            # ``(``. Bias toward call: agents searching for a name
+            # appearing as the receiver of a chained call almost
+            # always want the call site surfaced (same rationale as
+            # v0.8.12's one-shot identifier-tail skip).
+            if ch in ".:" and i + 1 < n:
+                nxt = line_content[i + 1]
+                if nxt == "_" or nxt.isalpha():
+                    i += 1
+                    while i < n:
+                        c2 = line_content[i]
+                        if c2 == "_" or c2.isalpha() or c2.isdecimal():
+                            i += 1
+                            continue
+                        break
+                    continue
+            # Sugar-call shapes — Lua treats ``f"x"`` / ``f'x'`` /
+            # ``f{...}`` / ``f[[...]]`` as syntactic sugar for the
+            # parenthesised call. Same call semantics, same
+            # classification. Bare ``[`` is intentionally NOT a call
+            # marker for Lua (``f[key]`` is a subscript, not a call);
+            # only the doubled ``[[`` opens a long-string call arg.
+            if ch in '"\'{':
+                return True
+            if ch == "[" and i + 1 < n and line_content[i + 1] == "[":
+                return True
         if ch in "<[":
             close = ">" if ch == "<" else "]"
             depth = 1

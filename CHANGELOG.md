@@ -7,6 +7,210 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.9.0] — 2026-05-17
+
+Minor release — first new language adapter since the Ruby drop:
+**Lua** (`.lua`, `.wlua`) joins the supported set, with full outline /
+digest / grep coverage. v1 targets vanilla Lua 5.1–5.4 via
+`tree-sitter-lua`. Luau (Roblox's typed dialect, `.luau`) is
+deferred — same symbol semantics, different parser dependency, less
+clear user signal in 2026; planned for v0.9.1+ if pulled.
+
+### Added
+
+- **Lua adapter (`src/ast_outline/adapters/lua.py`).** Maps Lua's
+  flat-file / convention-based shape onto the existing IR without
+  inventing synthetic kinds. Decision matrix:
+  - `function foo()` (top-level global) → KIND_FUNCTION public.
+  - `local function foo()` → KIND_FUNCTION private. `local` IS
+    the language's private scope.
+  - `function M.foo()` → KIND_FUNCTION on `M.foo`. Dotted name is
+    preserved verbatim (`M.foo`, `ns.deep.nested.helper`) so the
+    qualifier survives into the outline / digest.
+  - `function M:bar()` → **KIND_METHOD** on `M:bar`. The colon is
+    Lua's source-true marker for implicit `self`, so it's the
+    cheapest and most honest signal for "instance method"; we
+    don't infer class-ness from `setmetatable` patterns (DSL-
+    specific, deferred). Composes with deeply nested namespaces:
+    `function ns.deep:methodHere()` → `ns.deep:methodHere`.
+  - Metamethods (`__add`, `__sub`, `__mul`, `__div`, `__mod`,
+    `__pow`, `__unm`, `__idiv`, `__band`, `__bor`, `__bxor`,
+    `__bnot`, `__shl`, `__shr`, `__eq`, `__lt`, `__le`,
+    `__concat`, `__len`, `__call`, `__index`, `__newindex`,
+    `__tostring`, `__metatable`, `__pairs`, `__name`, `__close`,
+    `__gc`, `__mode`) → **KIND_OPERATOR**, regardless of whether
+    declared method-style (`function C:__tostring()`), assignment-
+    style (`C.__add = function() end`), or with a non-function
+    value (`C.__index = C`). The metamethod name dominates the
+    classification — `--kind operator` in grep isolates every
+    protocol declaration in a Lua codebase regardless of the
+    syntactic shape it took. Arithmetic and protocol hooks
+    share the bucket on purpose; splitting would force a
+    renderer-level distinction the IR doesn't currently make.
+  - `M.foo = function() end` (assignment of function value to
+    table member) → KIND_FUNCTION on `M.foo`, signature rendered
+    as `function M.foo(params)` (not `M.foo = function`) so the
+    digest reads as a function decl rather than a field-with-
+    function-value. Same shape with metamethod names →
+    KIND_OPERATOR.
+  - `M.CONSTANT = 42` → KIND_FIELD public.
+  - `local x = 1` → KIND_FIELD private.
+  - `local x = function() end` → KIND_FUNCTION private.
+  - Direct-return-table module shape (`return { foo = function()
+    end, CONST = 1 }`) walks the returned table and surfaces each
+    named field as a top-level declaration. The second canonical
+    Lua module pattern besides `local M = {} ... return M`. Non-
+    identifier keys (`["weird"] = 1`, `[10] = "x"`) are skipped —
+    no stable name to render, agent can find them via grep.
+- **Visibility heuristic (Lua).** Single source of truth in
+  `_visibility_for`:
+  - `local` scope → "private".
+  - Metamethod (`__add`, `__index`, …) → "" public; the
+    underscore prefix is part of a language-level protocol, not
+    a private-name convention (Python-dunder analogue).
+  - Last segment of a qualified name starts with `_` and isn't a
+    metamethod → "private". Applies to `M._helper` (private
+    helper on a public module) but not to `_M.foo` (which isn't
+    a real Lua idiom). Matches the underscore convention in
+    Neovim / LÖVE / Roblox-Lua codebases.
+  - Anything else → "" public.
+- **Lua 5.4 `<const>` / `<close>` attributes** surface in
+  `Declaration.attrs` as source-true text (`<const>`, `<close>`)
+  so the digest renders them next to the field name without
+  inventing a synthetic kind. The grammar parents the `attribute`
+  node inside the inner `variable_list`, not at the
+  `variable_declaration` level — adapter accesses it positionally
+  because tree-sitter-lua doesn't register named fields for these
+  slots.
+- **`require` imports.** Both surface forms — bare string-arg
+  (`require "x"`) and parenthesised (`require("x")`) — register
+  as static imports with source-true text preserved. The
+  `local Y = require("x")` shape (common Lua idiom) is also
+  static: the adapter writes the WHOLE `local X = require(...)`
+  byte range into `import_regions` so the grep classifier
+  promotes the full line to `[import]` even though the line
+  prefix is `local` (too broad a whitelist on its own). `require`
+  calls inside function bodies / `if` / loops bump
+  `conditional_imports_count` and never appear in the static
+  list — Lua's `require` is a runtime function call, so only
+  file-top-level ones are statically guaranteed to load.
+- **Long-bracket comments and strings in `noise_regions`.**
+  `--[[ ... ]]`, `--[==[ ... ]==]` (arbitrary `=` level), and
+  long-bracket string literals (`[[ ... ]]`, `[=[ ... ]=]`) all
+  span multiple lines. The line-prefix heuristics in `grep.py`
+  can't classify matches inside them on their own, so the
+  adapter writes their byte ranges into `noise_regions`. Matches
+  for symbol names that appear only inside such blocks classify
+  as KIND_COMMENT / KIND_STRING and get filtered out of the
+  default code view.
+- **Leading `---` doc comments** attached to the following decl.
+  Contiguous `comment` siblings preceding a declaration are
+  accumulated into `Declaration.docs` (Ruby-style leading-docs
+  pattern); accumulator clears on each non-comment statement so
+  two blank-line-separated comment blocks don't bleed into the
+  next decl. `docs_inside=False` — Lua comments live BEFORE the
+  decl, not inside the body (Python docstring is the only
+  language so far that goes the other way).
+- **Grep classifier — Lua chain skipping and sugar calls.**
+  `_next_call_paren_after` now takes an optional `language`
+  kwarg. For `language="lua"` only, two new skips run BEFORE the
+  generic-args block:
+  - `.identifier` / `:identifier` chain skipping. `obj:method(x)`
+    matched on `obj` walks past `:method` and lands on `(`, so
+    it classifies as KIND_CALL. Deep chains (`a.b.c.d(x)`)
+    compose naturally. Matches the v0.8.12 "bias toward call"
+    policy — agents searching for a name appearing as the
+    receiver of a chained call almost always want the call site
+    surfaced. Symmetric negative case holds: `obj.field` (no
+    trailing call) still classifies as KIND_REF.
+  - Sugar-call shapes (`f"x"`, `f'x'`, `f{...}`, `f[[...]]`)
+    classify as KIND_CALL. Lua treats them as syntactic sugar
+    for the parenthesised call — same call semantics, same
+    classification. Bare `[` is intentionally NOT a call marker:
+    `f[key]` is a subscript, only the doubled `[[` opens a
+    long-string call arg. Strictly opt-in: in TypeScript / Rust
+    the same shapes still classify as KIND_REF, because tagged-
+    template-literals / struct-literals / array subscripts
+    aren't function calls in those languages and broadening the
+    walker would mis-classify them.
+- **Comment / import line-prefix entries for Lua.**
+  `_COMMENT_PREFIXES_BY_LANG["lua"] = ("--",)` and
+  `_IMPORT_PREFIXES_BY_LANG["lua"] = ("require ", "require(")`
+  in `grep.py`. The `local ` prefix is intentionally NOT
+  whitelisted (too broad — would mis-classify every local
+  variable binding); `local X = require(...)` lines are caught
+  by `import_regions` instead.
+- **`AGENT_PROMPT` snippet** (`ast-outline prompt`) lists `.lua`
+  alongside the other supported extensions, so any LLM reads it
+  on first pass without studying `--help`.
+- **CLI help guides** (`GUIDE_DEFAULT`, `GUIDE_OUTLINE`) list Lua
+  in their SUPPORTED LANGUAGES tables.
+
+### Out of scope (v1)
+
+- **Luau (Roblox's typed dialect, `.luau`).** Vanilla
+  `tree-sitter-lua` produces ERROR nodes on Luau type annotations
+  (`x: number`, `function f<T>(): U`, `export type`), and Roblox
+  developers mostly live inside Studio anyway. Symbol semantics
+  are the same — would slot in as a suffix-dispatch branch on a
+  separate `tree-sitter-luau` parser. Planned for v0.9.1+ if
+  user signal materialises.
+- **`setmetatable`-based inheritance detection.** No syntactic
+  anchor in vanilla Lua — only convention (`Child.__index =
+  Parent`, `setmetatable(Child, {__index = Parent})`,
+  `class("Foo", Bar)` via middleclass / 30log). v1 leaves
+  `bases = []` for every Lua decl; agents can still see the
+  metamethod assignments (`__index` lands as KIND_OPERATOR) and
+  infer the class structure from them. Planned for v0.9.2+ if
+  pulled.
+- **Module-shape detection.** Each declaration is emitted at the
+  file's top level, with the qualifier baked into `name`
+  (`M.foo`, `M:bar`) — flat like the Python adapter. Wrapping
+  members under a synthetic KIND_NAMESPACE would need a
+  heuristic ("which `local X = {}` is THE module?") and would
+  fail on the many real files that hold several module-shaped
+  tables. Agents reading the file's `return X` statement
+  understand the structure themselves.
+
+### Tests
+
+42 regression tests in `tests/unit/test_lua_adapter.py` covering:
+parse smoke; classic `local M = {} ... return M` shape (dotted
+function decl, local helper, module-table field, leading docs);
+colon-vs-dot method discrimination (`function A:b` → METHOD,
+`function A.b` → FUNCTION); metamethods in all three syntactic
+shapes (method-style, assignment-style, non-function value) →
+KIND_OPERATOR; metamethod-name visibility (`__add` is public
+protocol, NOT private despite the underscore prefix); direct-
+return-table module shape; Neovim plugin `M.setup(opts)`; LÖVE
+callbacks (`function love.load()`); `require` in all forms (bare
+string-arg, parenthesised, `local X = require(...)`, dotted
+module path); conditional require inside function body; static-
+require populates `import_regions`; Lua 5.4 `<const>` / `<close>`
+attributes; deeply-nested dotted names (`ns.deep.nested.helper`,
+`ns.deep:methodOnNested`); long-bracket block comments (level 0
+and level 2) and long-bracket strings in `noise_regions`; broken
+syntax surfaces error_count and partial decls; empty file; and
+Lua-specific grep classifier (chain skipping, sugar calls, bare
+`[` not promoted to call, classifier doesn't leak to other
+languages — `f"x"` is still KIND_REF in TypeScript / Rust).
+1493 tests green (up from 1451).
+
+### Fixtures
+
+10 new fixtures in `tests/fixtures/lua/`: `module_pattern.lua`
+(canonical `local M = {}` shape), `mt_class.lua` (`setmetatable`
+class with constructor + instance methods + metamethods),
+`direct_return.lua` (return-table module shape with metamethod),
+`neovim_plugin.lua` (typical `M.setup(opts)` plugin shape),
+`love_callbacks.lua` (LÖVE callback pattern — global table
+assignment), `requires_and_attrs.lua` (every `require` form + Lua
+5.4 attributes + conditional require), `nested_names.lua`
+(multi-level dotted namespaces), `strings_and_comments.lua`
+(long-bracket comments and strings across levels for
+`noise_regions` coverage), `broken_syntax.lua`, and `empty.lua`
+for edge cases.
+
 ## [0.8.13] — 2026-05-17
 
 Patch release — `ast-outline grep` now classifies calls / strings /

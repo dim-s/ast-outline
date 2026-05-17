@@ -25,6 +25,7 @@ from .css import CssAdapter
 from .go import GoAdapter
 from .java import JavaAdapter
 from .kotlin import KotlinAdapter
+from .lua import LuaAdapter
 from .markdown import MarkdownAdapter
 from .php import PhpAdapter
 from .python import PythonAdapter
@@ -49,6 +50,7 @@ ADAPTERS: list[LanguageAdapter] = [
     RustAdapter(),
     PhpAdapter(),
     RubyAdapter(),
+    LuaAdapter(),
     CssAdapter(),
     ScssAdapter(),
     SqlAdapter(),
