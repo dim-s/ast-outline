@@ -437,6 +437,210 @@ def test_next_call_paren_after_skips_leading_square_closer() -> None:
     assert _next_call_paren_after("];", 0) is False
 
 
+def test_next_call_paren_after_skips_rest_of_identifier() -> None:
+    """Walker must skip the tail of an identifier when the cursor lands
+    mid-word — the common case is regex alternation ``foo|fooBar``
+    against ``fooBar(x)``: Python ``re`` picks the leftmost alternative
+    ``foo``, the match ends on ``B`` (inside ``Bar``). Without skipping
+    the hidden tail the walker sees an identifier char, returns False,
+    and the call classifies as ``ref``. Then ``--kind call`` excludes
+    the only structural hit and the agent falls through to ``rg``."""
+    from ast_outline.grep import _next_call_paren_after
+    # Cursor in middle of ``fooBar(x)`` (on ``B``, position 3).
+    # Skip ``Bar``, hit ``(`` → True.
+    assert _next_call_paren_after("fooBar(x)", 3) is True
+    # Same shape with underscore identifiers (Python / Rust style).
+    # Cursor on ``_`` of ``do_stuff_now`` after match ``do_stuff``.
+    assert _next_call_paren_after("do_stuff_now(x)", 8) is True
+    # Mid-identifier but NOT a call — must still return False so the
+    # bias toward ``call`` doesn't leak into truly non-call lines.
+    # ``fooBar = 1`` with cursor on ``B``: skip ``Bar``, find space, ``=``.
+    assert _next_call_paren_after("fooBar = 1", 3) is False
+    # Mid-identifier followed by member access ``.method()`` — the
+    # identifier itself isn't called (``.`` isn't skipped by the walker).
+    # ``fooBar.method()`` with cursor on ``B``: skip ``Bar``, find ``.``.
+    assert _next_call_paren_after("fooBar.method()", 3) is False
+
+
+def test_next_call_paren_after_identifier_skip_composes_with_generics() -> None:
+    """Identifier skip + generic-block balance compose. ``fooBar<T>()``
+    with the match ending mid-identifier on ``B``: walker must skip
+    ``Bar``, then balance ``<T>``, then find ``(``."""
+    from ast_outline.grep import _next_call_paren_after
+    # Cursor on ``B`` (position 3) of ``fooBar<T>()``.
+    assert _next_call_paren_after("fooBar<T>()", 3) is True
+    # Same with Go 1.18+ / Scala bracket generics ``fooBar[T]()``.
+    assert _next_call_paren_after("fooBar[T]()", 3) is True
+    # And turbofish ``fooBar::<T>()`` (Rust): skip ``Bar``, skip ``::``,
+    # balance ``<T>``, find ``(``.
+    assert _next_call_paren_after("fooBar::<T>()", 3) is True
+
+
+def test_next_call_paren_after_identifier_skip_one_shot_not_recursive() -> None:
+    """Identifier skip applies only at entry, not mid-walk. Two cases:
+
+    1. ``foo + bar()`` at position 0: identifier-skip consumes ``foo``,
+       then walker hits ` `, `+`, ` `, `b`. ``b`` is now mid-walk, NOT
+       entry, so the identifier-skip branch must not fire. Returns
+       False — the call ``bar()`` belongs to ``bar``, not to ``foo``.
+    2. ``foo<T>bar()`` at position 3 (on ``B`` of generics body — a
+       degenerate shape that isn't valid in any supported language,
+       but pins composition): identifier-skip eats ``bar``... wait.
+       Actually this IS entry, so it skips. Test the OTHER axis —
+       ``foo<T>bar()`` at position 0 (on ``f``): identifier-skip
+       consumes ``foo`` at entry, then balances ``<T>`` mid-walk,
+       lands on ``b`` mid-walk. If the identifier-skip were recursive
+       it would consume ``bar`` and find ``(`` → True. With one-shot
+       semantics, ``b`` is just an "other significant char" → False.
+       This pins that ``bar()`` here isn't attributed to a match on
+       ``foo``."""
+    from ast_outline.grep import _next_call_paren_after
+    assert _next_call_paren_after("foo + bar()", 0) is False
+    assert _next_call_paren_after("foo<T>bar()", 0) is False
+
+
+def test_grep_alternation_short_first_classifies_call_python(
+    tmp_path: Path,
+) -> None:
+    """Regex alternation ``foo|fooBar`` (short first) against a call
+    site ``obj.fooBar(x)`` — Python ``re`` picks the leftmost
+    alternative ``foo``, match ends inside identifier ``Bar``. Before
+    the identifier-skip fix the walker landed on ``B`` → ref → excluded
+    by ``--kind call``; the agent fell through to ``rg`` having
+    "proved" the call doesn't exist.
+
+    Real-world repro: user grepping ``TryAssembleFragments|TryAssembleFragmentsNear``
+    across a Unity C# codebase missed every call site at line 1208 of
+    ``ThingDragNDropController.cs`` because ``--kind def,call`` dropped
+    the misclassified ``ref``."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def caller():\n"
+        "    obj.fooBar(x, y)\n"
+    )
+    results, _, _ = grep("foo|fooBar", [src], is_regex=True)
+    kinds = [m.kind for m in results[0].matches]
+    assert KIND_CALL in kinds, (
+        f"short-first alternation hitting a call must classify as call, got {kinds}"
+    )
+
+
+def test_grep_alternation_short_first_classifies_call_typescript(
+    tmp_path: Path,
+) -> None:
+    """Same alternation bug in TypeScript — the classifier is
+    language-agnostic; a per-language test pins that no adapter-level
+    quirk reintroduces the regression."""
+    src = tmp_path / "app.ts"
+    src.write_text(
+        "function caller() {\n"
+        "    obj.fooBar(x, y);\n"
+        "}\n"
+    )
+    results, _, _ = grep("foo|fooBar", [src], is_regex=True)
+    kinds = [m.kind for m in results[0].matches]
+    assert KIND_CALL in kinds, kinds
+
+
+def test_grep_alternation_short_first_classifies_call_go(
+    tmp_path: Path,
+) -> None:
+    """Go variant — exported (capitalized) identifiers are the common
+    shape for the bug in Go codebases."""
+    src = tmp_path / "main.go"
+    src.write_text(
+        "package main\n"
+        "func caller() {\n"
+        "    obj.FooBar(x, y)\n"
+        "}\n"
+    )
+    results, _, _ = grep("Foo|FooBar", [src], is_regex=True)
+    kinds = [m.kind for m in results[0].matches]
+    assert KIND_CALL in kinds, kinds
+
+
+def test_grep_alternation_short_first_classifies_call_rust(
+    tmp_path: Path,
+) -> None:
+    """Rust variant — snake_case identifiers exercise the underscore
+    branch of the identifier-skip class."""
+    src = tmp_path / "lib.rs"
+    src.write_text(
+        "fn caller() {\n"
+        "    obj.do_stuff_now(x, y);\n"
+        "}\n"
+    )
+    results, _, _ = grep("do_stuff|do_stuff_now", [src], is_regex=True)
+    kinds = [m.kind for m in results[0].matches]
+    assert KIND_CALL in kinds, kinds
+
+
+def test_grep_alternation_short_first_classifies_call_csharp(
+    tmp_path: Path,
+) -> None:
+    """C# variant — the language the original Unity bug report
+    surfaced on; PascalCase method names are idiomatic and the
+    alternation prefix is a natural construction for an agent."""
+    src = tmp_path / "Controller.cs"
+    src.write_text(
+        "public class Controller {\n"
+        "    public void Caller() {\n"
+        "        other.TryAssembleFragmentsNear(data, pos);\n"
+        "    }\n"
+        "}\n"
+    )
+    results, _, _ = grep(
+        "TryAssembleFragments|TryAssembleFragmentsNear", [src], is_regex=True
+    )
+    kinds = [m.kind for m in results[0].matches]
+    assert KIND_CALL in kinds, kinds
+
+
+def test_grep_literal_substring_of_called_identifier_classifies_call(
+    tmp_path: Path,
+) -> None:
+    """Identifier-skip fires for literal substring searches too, not
+    only regex alternation. ``bytes.find('foo')`` against ``fooBar(x)``
+    returns the same mid-identifier end position as the regex case,
+    so the fix flips classification from ``ref`` to ``call`` for
+    literal searches by symmetry. Pin this so a future "tighten
+    semantics" PR has to make an explicit decision rather than
+    silently regress."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def caller():\n"
+        "    obj.fooBar(x, y)\n"
+    )
+    results, _, _ = grep("foo", [src])  # literal, no is_regex=True
+    kinds = [m.kind for m in results[0].matches]
+    assert KIND_CALL in kinds, (
+        f"literal substring inside called identifier must classify as call, got {kinds}"
+    )
+
+
+def test_grep_alternation_short_first_non_call_still_ref(
+    tmp_path: Path,
+) -> None:
+    """Negative: when the mid-identifier site genuinely is NOT a call
+    (assignment, comparison, member access), the identifier-skip fix
+    must not flip it to call. Pins that the bias-toward-call doesn't
+    silently widen to non-call lines."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def caller():\n"
+        "    fooBar = 1\n"             # assignment, not call
+        "    x = fooBar + 2\n"         # ref in expression
+        "    y = fooBar.method()\n"    # member-access ref, .method() is the call
+    )
+    results, _, _ = grep("foo|fooBar", [src], is_regex=True)
+    kinds = [m.kind for m in results[0].matches]
+    # The three matches above are all ref (no direct ``fooBar(`` shape).
+    assert KIND_CALL not in kinds, (
+        f"non-call sites must not flip to call after identifier-skip, got {kinds}"
+    )
+    assert KIND_REF in kinds
+
+
 def test_grep_generic_call_regex_match_ends_on_closer(tmp_path: Path) -> None:
     """Regex ``Bind.*SaveSystem`` against ``c.Bind<SaveSystem>();`` —
     greedy ``.*`` consumes ``<`` and the match ends at ``>``. Before

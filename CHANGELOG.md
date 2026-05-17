@@ -7,6 +7,86 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.12] — 2026-05-17
+
+Patch release — `ast-outline grep` now correctly classifies a call
+site as `[call]` even when the match position ends mid-identifier,
+closing a quietly-painful regex-alternation pitfall that caused
+`--kind def,call` to hide real call sites.
+
+### Fixed
+
+- **Match ending mid-identifier no longer demotes calls to `[ref]`.**
+  Repro that surfaced the gap: agent runs
+  `ast-outline grep "TryAssembleFragments|TryAssembleFragmentsNear" Assets/Scripts/App --kind def,call`
+  against a C# Unity codebase to find every definition + caller of a
+  method; the three `[def]` matches surface correctly, but the
+  caller at `ThingDragNDropController.cs:1208` —
+  `controller.TryAssembleFragmentsNear(thingData, currentPosition);` —
+  is missing. Plain `grep -rn` confirms the call exists. Cause:
+  Python `re` resolves alternation by picking the leftmost
+  alternative that matches at a given position (NOT the longest), so
+  `TryAssembleFragments|TryAssembleFragmentsNear` matches the
+  shorter `TryAssembleFragments` against `TryAssembleFragmentsNear(...)`
+  and the match ends on `N` mid-identifier. The call/ref classifier
+  in `_next_call_paren_after` (`grep.py`) walks the line right of
+  the match-end looking for `(`, already skipping whitespace,
+  generic blocks `<...>` / `[...]`, bare closers `>` / `]` (v0.8.8),
+  turbofish `::`, TS `?.`, TS `!`, but never the trailing bytes of
+  an identifier — `N` was treated as "other significant char",
+  returned False, classified as `[ref]`, filtered out by
+  `--kind def,call`. Bug was language-agnostic — the walker is
+  shared across all adapters, so any language with `name(args)`
+  call syntax was affected. Verified on Python, TypeScript, Go,
+  Rust, and C#; same regression on all.
+
+  Fix is a one-shot rest-of-identifier skip at the entry of the
+  walker: if `start` lands on `[A-Za-z0-9_]`, advance past the
+  remaining word bytes, then run the existing skip loop. Applied
+  only at entry (not mid-walk) since legitimate intermediate
+  identifiers in real-language line shapes don't arise — after the
+  existing generic-block balance / `::` / `?.` skips, an identifier
+  char mid-walk indicates a different identifier whose call shape
+  shouldn't be attributed to the original match. Pinned by
+  `test_next_call_paren_after_identifier_skip_one_shot_not_recursive`:
+  `foo<T>bar()` matched at `foo` returns False, not True.
+
+  Symmetric to the bare-closer skip from v0.8.8 — both cover the
+  same root cause (match end position doesn't align with a token
+  boundary), just on different sides of the syntactic boundary.
+
+  Behavior change worth flagging: the fix also affects literal
+  (non-regex) substring searches by the same path — `foo` against
+  `fooBar(x)` now classifies as `[call]` (was `[ref]`). Consistent
+  with the walker's documented "bias toward call" — agents
+  searching for a substring inside a called identifier almost
+  always want the call site surfaced. Non-call sites (`foo` against
+  `fooBar = 1`) still classify as `[ref]` because the trailing `(`
+  check fails. Pinned by
+  `test_grep_literal_substring_of_called_identifier_classifies_call`
+  and `test_grep_alternation_short_first_non_call_still_ref`.
+
+  Identifier-skip uses ASCII `[A-Za-z0-9_]` only, matching the
+  rest of the walker's ASCII-only character checks. Non-ASCII
+  identifiers (Cyrillic / CJK in Python / Rust / JS) are bypassed
+  by a separate pre-existing byte-vs-char index mismatch higher
+  in the pipeline — same outcome as before the fix
+  (`[ref]` for Unicode identifier calls), orthogonal to this
+  change.
+
+  Workaround for users on older versions: write the longer
+  alternative first (`TryAssembleFragmentsNear|TryAssembleFragments`)
+  or anchor the shorter one (`TryAssembleFragments\b|TryAssembleFragmentsNear`).
+
+  Adds 10 regression tests in `tests/unit/test_grep.py`: 5 unit-level
+  tests of `_next_call_paren_after` (basic identifier skip, generic-
+  block composition with `<...>` / `[...]` / turbofish, one-shot
+  semantics in two configurations) + 5 CLI-integration tests
+  across Python / TypeScript / Go / Rust / C# pinning the
+  alternation regression on each adapter + 1 negative test for
+  non-call sites + 1 explicit literal-substring test. 1444 tests
+  green.
+
 ## [0.8.11] — 2026-05-16
 
 Minor release — `ast-outline outline / digest / grep` gain

@@ -732,6 +732,24 @@ def _next_call_paren_after(line_content: str, start: int) -> bool:
     ``(`` is found (→ True) or any other significant character is
     hit (→ False).
 
+    Before any of those, a one-shot rest-of-identifier skip handles
+    the case where the match ended *inside* a word. Two real
+    scenarios feed this:
+
+    1. Regex alternation ``foo|fooBar`` against ``fooBar(x)`` —
+       Python ``re`` picks the leftmost alternative ``foo``, the
+       match ends on ``B`` (mid-identifier ``Bar``).
+    2. Literal substring search ``foo`` against ``fooBar(x)`` —
+       same shape, different entry point (``bytes.find`` returns
+       the match end at the same mid-identifier position).
+
+    Without skipping the hidden tail every ``(`` is invisible to
+    the walker and the call classifies as ``ref``. Symmetric to
+    the bare-closer skip below — both cover matches whose end
+    position doesn't align with a token boundary. Applies only at
+    the entry position, not mid-walk, since legitimate intermediate
+    identifiers (e.g. ``foo<T>bar()``) aren't a real-language shape.
+
     The bare-closer skip handles two real cases:
 
     1. ``ast-outline grep "Bind.*SaveSystem"`` (regex, greedy). The
@@ -757,9 +775,32 @@ def _next_call_paren_after(line_content: str, start: int) -> bool:
       extends the same bias to patterns like ``a > (c)`` where a
       match ending on ``>`` is now treated as a call if ``(`` follows;
       this is consistent policy across the walker.
+    - Identifier skip uses ASCII ``[A-Za-z0-9_]`` only, matching
+      the rest of the walker's ASCII-only character checks. For
+      non-ASCII identifiers (Cyrillic / CJK in Python / Rust / JS)
+      the walker is bypassed by a pre-existing byte-vs-char mismatch
+      higher in the pipeline — ``_classify_match`` receives a byte
+      offset into a decoded ``str``, so the ``start`` cursor doesn't
+      land on the identifier tail at all. Same outcome as before the
+      fix (``ref`` for Unicode identifier calls); not made worse,
+      not made better, fix is orthogonal.
+    - Substring matches against a longer identifier now classify as
+      call: ``foo`` against ``fooBar(x)`` → ``[call]`` (was ``[ref]``).
+      This is intentional and consistent with the documented "bias
+      toward call" — agents searching for a substring inside a
+      called identifier usually want the call site surfaced. False
+      positives (``foo`` against ``fooBar = 1``) still classify as
+      ``ref`` because the trailing ``(`` check fails.
     """
     i = start
     n = len(line_content)
+    # One-shot rest-of-identifier skip. See docstring above.
+    while i < n:
+        ch = line_content[i]
+        if "a" <= ch <= "z" or "A" <= ch <= "Z" or "0" <= ch <= "9" or ch == "_":
+            i += 1
+            continue
+        break
     while i < n:
         ch = line_content[i]
         if ch in " \t":
