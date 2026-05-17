@@ -7,6 +7,103 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 For the complete history before v0.6.0, see `git log` and the
 [GitHub release page](https://github.com/ast-outline/ast-outline/releases).
 
+## [0.8.13] — 2026-05-17
+
+Patch release — `ast-outline grep` now classifies calls / strings /
+comments correctly on source lines that contain multi-byte UTF-8
+characters (Cyrillic, CJK, accented Latin, emoji). The classifier
+was passing byte offsets to a codepoint-indexed `str`, so every
+line carrying a non-ASCII character before the match position
+walked past its intended cursor and produced the wrong kind.
+
+### Fixed
+
+- **Match classification on Unicode source lines.** Before:
+  `ast-outline grep` resolved the line column as a 1-based byte
+  offset, then indexed `line_content` (a Python `str`) with it.
+  For ASCII-only lines the two indices coincide, so the bug was
+  silent in the 99% case; for any line containing a multi-byte
+  UTF-8 character — Cyrillic (2 bytes/codepoint), CJK (3 bytes),
+  emoji / supplementary plane (4 bytes), accented Latin / math
+  symbols — the byte offset over-shoots the codepoint index for
+  everything after the first multi-byte char. Three downstream
+  classifiers consumed the wrong column: `_next_call_paren_after`
+  (the call/ref walker) started past the intended position and
+  either landed on a later character or ran off the end of the
+  line; `_column_inside_string` counted unescaped quotes against a
+  string-length cap that wasn't its bound, returning even/odd
+  parity for the wrong span; `_classify_match`'s inline-comment
+  check compared `#` index against `column - 1` so a comment
+  match could be mis-claimed as code on Cyrillic-prefixed lines.
+  Net effect: locale-sensitive false negatives across `--kind`
+  filtering, leaked string/comment content into the default code
+  view, and degraded behavior for any project with non-ASCII
+  identifiers, comments, or string literals — Russian / Ukrainian
+  / Chinese / Japanese / Korean projects, math-heavy code with
+  `≤` / `α` / `β`, emoji in test names. After: the loop that
+  converts per-match byte spans to columns decodes the
+  line-prefix bytes once per side (`pos - line_start`,
+  `end - line_start`) and uses the codepoint length, so every
+  downstream check receives a codepoint-correct cursor regardless
+  of the multi-byte content ahead of the match. The conversion is
+  a no-op for ASCII-only lines (`len(decoded_prefix) ==
+  len(prefix_bytes)`), so no performance regression in the common
+  path. Repro that surfaced the gap:
+  `grep('прив|привет', is_regex=True)` against
+  `obj.привет(x, y)` returns `[ref]` (should be `[call]`). The
+  fix also pairs with a complementary one in
+  `_next_call_paren_after`'s rest-of-identifier skip (next item).
+- **Identifier-skip in `_next_call_paren_after` is now
+  Unicode-aware.** Companion to the byte→codepoint conversion
+  above. The skip introduced in v0.8.12 walked past the trailing
+  bytes of an identifier when the match ended mid-word
+  (`foo|fooBar` against `fooBar(x)` → leftmost-wins picks `foo`,
+  match ends on `B`). It accepted only ASCII `[A-Za-z0-9_]`, so
+  a Cyrillic-tail case like `прив|привет` against `привет(x)`
+  still returned `[ref]` even after the byte→codepoint
+  conversion landed the cursor on `е`. Now the skip uses
+  `str.isalpha()` / `str.isdecimal()` / `_`, which covers Unicode
+  letter and decimal-digit categories — matching what Python /
+  Rust / TypeScript / Swift accept as identifier characters
+  beyond the first. Deliberately narrower than `str.isalnum()`:
+  that wider check also accepts Unicode No-category numerics
+  (`²`, `¼`) which aren't identifier chars in any supported
+  language; treating them as identifier tail would extend the
+  call-bias policy to shapes that don't arise in real code. The
+  rest of the walker (the `<` / `>` / `[` / `]` / `?.` / `::` /
+  `!` skip cases) stays ASCII; those are language-syntax
+  markers, not identifier content, and broadening them would
+  muddle generic-block balance for no real-language gain.
+  Negative cases hold: Cyrillic identifier in a non-call shape
+  (`привет = 1`, `привет.метод()`, `привет<T> = x`) still
+  classifies as `[ref]` because the trailing `(` check fails —
+  symmetric with the ASCII negative case the v0.8.12 fix
+  documented.
+
+### Behavior change
+
+- `GrepMatch.column` is now documented as a 1-based codepoint
+  offset (was: "1-based — byte offset on its line, +1"). On
+  ASCII-only lines the values are identical, so no consumer of
+  the column field observes a change in the common path. For
+  lines with multi-byte UTF-8 before the match position the
+  reported column is now the codepoint index — which is the
+  number an editor / language server / IDE reports and is what
+  agents that pass the column to `Read --offset` or similar
+  expect.
+
+### Tests
+
+7 new regression tests in `tests/unit/test_grep.py`:
+- `_next_call_paren_after` walker-unit tests for Cyrillic / CJK /
+  accented-Latin identifier-tail skipping + composition with
+  generics + negative cases.
+- End-to-end Python grep tests pinning Cyrillic and CJK call
+  classification, ASCII call AFTER a Unicode prefix, in-string
+  detection on a Cyrillic-prefixed line, inline-comment detection
+  past a Cyrillic-prefixed comment marker, and the
+  `GrepMatch.column` codepoint-offset contract.
+
 ## [0.8.12] — 2026-05-17
 
 Patch release — `ast-outline grep` now correctly classifies a call

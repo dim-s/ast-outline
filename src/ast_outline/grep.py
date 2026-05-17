@@ -227,7 +227,7 @@ class GrepMatch:
     """One match within a file, with scope and kind annotations."""
 
     line: int                       # 1-based
-    column: int                     # 1-based — byte offset on its line, +1
+    column: int                     # 1-based codepoint offset on its line
     line_content: str               # the source line, with trailing newline stripped
     kind: str                       # one of KIND_* constants
     enclosing_path: list[Declaration] = field(default_factory=list)
@@ -487,8 +487,29 @@ def _annotate_matches(
         line_bytes = src[line_start:next_line_start]
         # Strip trailing CR (Windows) and LF — the renderer adds its own.
         line_content = line_bytes.rstrip(b"\r\n").decode("utf-8", errors="replace")
-        column = pos - line_start + 1
-        match_end_column = end - line_start + 1
+        # ``pos`` / ``end`` are BYTE offsets into ``src``, but the
+        # downstream classifier (``_classify_match`` and its callees
+        # ``_column_inside_string`` / ``_next_call_paren_after`` /
+        # ``_column_inside_name``) indexes ``line_content`` — a ``str``
+        # whose elements are *codepoints*, not bytes. Decode the
+        # prefix once per side and use its codepoint length, so a line
+        # containing multi-byte UTF-8 (Cyrillic, CJK, emoji, accented
+        # Latin, math symbols) doesn't shift every cursor past the
+        # intended position. ASCII-only lines: byte offset equals
+        # codepoint index, so the conversion is a no-op for the 99%
+        # case but correct for the rest.
+        column = (
+            len(
+                line_bytes[: pos - line_start].decode("utf-8", errors="replace")
+            )
+            + 1
+        )
+        match_end_column = (
+            len(
+                line_bytes[: end - line_start].decode("utf-8", errors="replace")
+            )
+            + 1
+        )
 
         # Classification flow:
         #
@@ -775,15 +796,30 @@ def _next_call_paren_after(line_content: str, start: int) -> bool:
       extends the same bias to patterns like ``a > (c)`` where a
       match ending on ``>`` is now treated as a call if ``(`` follows;
       this is consistent policy across the walker.
-    - Identifier skip uses ASCII ``[A-Za-z0-9_]`` only, matching
-      the rest of the walker's ASCII-only character checks. For
-      non-ASCII identifiers (Cyrillic / CJK in Python / Rust / JS)
-      the walker is bypassed by a pre-existing byte-vs-char mismatch
-      higher in the pipeline — ``_classify_match`` receives a byte
-      offset into a decoded ``str``, so the ``start`` cursor doesn't
-      land on the identifier tail at all. Same outcome as before the
-      fix (``ref`` for Unicode identifier calls); not made worse,
-      not made better, fix is orthogonal.
+    - Identifier skip is Unicode-aware (``isalpha()`` /
+      ``isdecimal()`` / ``_``), so Cyrillic / CJK / accented-Latin
+      identifiers compose with the same alternation-leftmost-wins
+      shape as ASCII. Companion to the byte→codepoint conversion
+      at the boundary in ``_annotate_matches`` — without that
+      conversion the walker lands at the wrong codepoint and a
+      Unicode-aware skip can't help; without the broader skip the
+      conversion lands at the right codepoint but stops on the
+      next identifier char. The two fixes are necessary together.
+      Narrower than ``isalnum()`` on purpose: that wider check
+      would also accept Unicode No-category numerics (``²``,
+      ``¼``) which are not identifier chars in any supported
+      language; treating them as identifier tail would extend
+      the call-bias policy to contrived shapes that don't arise
+      in real code. Known gap (not introduced by this patch):
+      combining marks (Devanagari virama, vowel signs, Arabic
+      diacritics — Mn/Mc categories) are XID_Continue in Python /
+      Rust / JS / Swift but ``isalpha()`` returns False for them;
+      a regex alternation whose shorter prefix ends right before
+      a combining mark would stop the skip and classify as ref.
+      Practical risk is low — combining-mark identifiers normalize
+      to NFC and rarely surface in source code searches. The other char-class checks below (``<`` /
+      ``>`` / ``::`` / ``?.`` / ``!``) stay ASCII — they're
+      language-syntax markers, not identifier content.
     - Substring matches against a longer identifier now classify as
       call: ``foo`` against ``fooBar(x)`` → ``[call]`` (was ``[ref]``).
       This is intentional and consistent with the documented "bias
@@ -795,9 +831,16 @@ def _next_call_paren_after(line_content: str, start: int) -> bool:
     i = start
     n = len(line_content)
     # One-shot rest-of-identifier skip. See docstring above.
+    # ``isalpha() or isdecimal()`` deliberately narrower than ``isalnum()``:
+    # ``isalnum()`` also matches Unicode No-category numerics like
+    # ``²`` / ``¼`` which aren't identifier chars in any supported
+    # language. ``isalpha()`` covers ASCII / Cyrillic / CJK / accented
+    # Latin letters; ``isdecimal()`` covers ASCII ``[0-9]`` plus
+    # Unicode decimal digits (Arabic-Indic, Devanagari, etc.) that
+    # languages with broader Unicode identifier rules do accept.
     while i < n:
         ch = line_content[i]
-        if "a" <= ch <= "z" or "A" <= ch <= "Z" or "0" <= ch <= "9" or ch == "_":
+        if ch == "_" or ch.isalpha() or ch.isdecimal():
             i += 1
             continue
         break

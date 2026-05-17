@@ -2915,3 +2915,211 @@ def test_normalize_grep_argv_unit() -> None:
     assert _normalize_grep_argv(["outline", "src"]) == ["outline", "src"]
     # Empty / missing → unchanged.
     assert _normalize_grep_argv([]) == []
+
+
+# --- byte → codepoint column conversion (Unicode source lines) -----------
+#
+# The classifier ``_classify_match`` and its callees index ``line_content``,
+# a Python ``str`` whose elements are codepoints. The source is read as
+# ``bytes`` and match spans come back as byte offsets. Lines that contain
+# any multi-byte UTF-8 character (Cyrillic, CJK, emoji, accented Latin)
+# previously had the byte offset passed through as-if it were a codepoint
+# index — the walker landed past the intended position into later
+# characters, and ``_column_inside_string`` over-counted quotes. The fix
+# decodes the prefix once at the boundary so every downstream check sees
+# a codepoint-correct column.
+#
+# Tests below pin the three downstream effects:
+#   1. call/ref classification on Unicode identifier call sites
+#   2. in-string detection on lines with Unicode before the quoted region
+#   3. the stored ``GrepMatch.column`` field as a codepoint offset
+
+
+def test_next_call_paren_after_skips_unicode_identifier_tail() -> None:
+    """Identifier-skip must accept Unicode word characters, not only
+    ASCII ``[A-Za-z0-9_]``. The same alternation-leftmost-wins shape
+    that drove the v0.8.12 ASCII identifier-skip fix applies to
+    Cyrillic / CJK / accented-Latin identifiers in Python / Rust /
+    Swift / TypeScript / Java (all of which accept Unicode in
+    identifiers). Pin the walker-unit behavior independently of
+    the byte→codepoint boundary so a regression on either side
+    surfaces with a tight error message."""
+    from ast_outline.grep import _next_call_paren_after
+    # Cyrillic: cursor at codepoint 4 inside ``привет(x)`` (after ``прив``).
+    assert _next_call_paren_after("привет(x)", 4) is True
+    # CJK: cursor at codepoint 1 inside ``漢字(x)`` (after ``漢``).
+    assert _next_call_paren_after("漢字(x)", 1) is True
+    # Accented Latin: cursor at codepoint 3 inside ``café(x)`` (after ``caf``).
+    assert _next_call_paren_after("café(x)", 3) is True
+    # Composes with generics: ``привет<T>()`` cursor at codepoint 4.
+    assert _next_call_paren_after("привет<T>()", 4) is True
+    # Negative — Cyrillic mid-identifier NOT followed by ``(``: must
+    # stay False so non-call lines don't flip to call.
+    assert _next_call_paren_after("привет = 1", 4) is False
+    assert _next_call_paren_after("привет.метод()", 4) is False
+    # Negative composition — Cyrillic identifier with a generic block
+    # followed by NOT a call. Skip ``ет``, balance ``<T>``, hit ` `,
+    # then ``=``. Without this pin a future reordering of the
+    # generic-block skip relative to the identifier-skip could
+    # silently flip Unicode-generic refs to calls.
+    assert _next_call_paren_after("привет<T> = x", 4) is False
+    # Narrower-than-isalnum check: Unicode No-category numerics
+    # (``²``, ``¼``, ``ª``) must NOT be treated as identifier
+    # continuation chars; the skip should stop at them. Contrived
+    # but pins the boundary so a future ``isalnum()`` regression
+    # doesn't silently extend the call-bias policy.
+    assert _next_call_paren_after("x²foo(y)", 1) is False
+
+
+def test_grep_unicode_identifier_call_classifies_call(tmp_path: Path) -> None:
+    """End-to-end repro of the byte→codepoint boundary fix. Regex
+    alternation ``прив|привет`` against a Cyrillic call site:
+    Python ``re`` (bytes mode) picks the leftmost alternative
+    ``прив``, match ends mid-identifier between ``прив`` and ``ет``.
+    Before the fix the walker received a BYTE offset that over-shot
+    the intended codepoint position (Cyrillic chars are 2 bytes in
+    UTF-8), then the ASCII-only identifier-skip stopped at the
+    Cyrillic tail anyway — two layers of the same bug. After:
+    boundary decodes once to land on the codepoint immediately
+    after the match, and the identifier-skip accepts Unicode word
+    chars to walk the rest of ``ет`` to ``(``."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def caller():\n"
+        "    obj.привет(x, y)\n",
+        encoding="utf-8",
+    )
+    results, _, _ = grep("прив|привет", [src], is_regex=True)
+    kinds = [m.kind for m in results[0].matches]
+    assert KIND_CALL in kinds, (
+        f"Cyrillic identifier call must classify as call, got {kinds}"
+    )
+
+
+def test_grep_cjk_identifier_call_classifies_call(tmp_path: Path) -> None:
+    """CJK identifiers (3 bytes per codepoint in UTF-8) are the
+    harshest case for the byte→codepoint mismatch — every extra
+    Han / Kana / Hangul character on the prefix shifts the byte
+    column by 2 past the codepoint column. Pin the worst-case axis
+    independently of the Cyrillic test so a regression on the
+    decoder branch (only handling 2-byte sequences correctly, say)
+    surfaces here."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def caller():\n"
+        "    obj.漢字(x)\n",
+        encoding="utf-8",
+    )
+    results, _, _ = grep("漢|漢字", [src], is_regex=True)
+    kinds = [m.kind for m in results[0].matches]
+    assert KIND_CALL in kinds, (
+        f"CJK identifier call must classify as call, got {kinds}"
+    )
+
+
+def test_grep_ascii_call_after_unicode_prefix_classifies_call(
+    tmp_path: Path,
+) -> None:
+    """The match itself is ASCII, but the line carries Cyrillic
+    BEFORE the match — the byte offset of the match is shifted
+    past its codepoint index by the prefix. Without the
+    byte→codepoint conversion the walker received a column past
+    the end of ``line_content`` and the loop exited early without
+    seeing the trailing ``(``, classifying as ``ref``. With the
+    conversion the walker lands on ``(`` and returns True →
+    ``call``."""
+    src = tmp_path / "mod.py"
+    # Line 2 has Cyrillic ``привет`` (6 codepoints, 12 bytes) BEFORE
+    # the ASCII ``bar(...)`` call site.
+    src.write_text(
+        "def caller():\n"
+        "    привет = bar()\n",
+        encoding="utf-8",
+    )
+    results, _, _ = grep("bar", [src])
+    kinds = [m.kind for m in results[0].matches]
+    assert KIND_CALL in kinds, (
+        f"ASCII call after Unicode prefix must classify as call, got {kinds}"
+    )
+
+
+def test_grep_match_inside_string_after_unicode_prefix_classifies_string(
+    tmp_path: Path,
+) -> None:
+    """``_column_inside_string`` counts unescaped quotes before
+    ``column`` to decide whether the match falls inside an open
+    string. Before the byte→codepoint fix, ``column`` was a byte
+    offset — for a line like ``привет = "test bar"`` the byte
+    column of ``bar`` over-shoots the codepoint count of the line,
+    the quote-counting loop ran past the closing quote, the final
+    parity was even, and ``bar`` was misclassified as ``ref``
+    instead of ``string`` — surfacing string-literal matches as
+    code and breaking the default noise filter on multi-byte
+    locales."""
+    src = tmp_path / "mod.py"
+    src.write_text(
+        "def caller():\n"
+        '    привет = "test bar"\n',
+        encoding="utf-8",
+    )
+    results, _, _ = grep("bar", [src])
+    # Default mode filters out string matches → zero visible matches.
+    visible_kinds = [m.kind for m in results[0].matches] if results else []
+    assert KIND_REF not in visible_kinds, (
+        "match inside a string literal must not classify as ref — "
+        f"got visible kinds {visible_kinds}"
+    )
+    # With include_noise the string match surfaces — confirm the
+    # classification went the right way, not that we silently dropped it.
+    results_noise, _, _ = grep("bar", [src], include_noise=True)
+    noise_kinds = [m.kind for m in results_noise[0].matches]
+    assert KIND_STRING in noise_kinds, (
+        f"match inside string literal must classify as string, got {noise_kinds}"
+    )
+
+
+def test_grep_inline_comment_after_unicode_prefix_classifies_comment(
+    tmp_path: Path,
+) -> None:
+    """``_classify_match`` uses ``column`` to detect "match is past
+    an inline comment marker" — ``x = 1  # call foo here`` with
+    a match on ``foo`` after the ``#`` must classify as comment.
+    The ``#`` index is compared against ``column - 1``; before the
+    byte→codepoint fix, ``column`` was a byte offset that could
+    place the match BEFORE the ``#`` index on Unicode-prefixed
+    lines, leaking comment content into code results."""
+    src = tmp_path / "mod.py"
+    # ``привет`` codepoints precede the ``#`` marker; ``foo`` after
+    # the marker must still register as past the comment.
+    src.write_text(
+        "def caller():\n"
+        "    x = 1  # привет foo here\n",
+        encoding="utf-8",
+    )
+    results, _, _ = grep("foo", [src], include_noise=True)
+    kinds = [m.kind for m in results[0].matches]
+    assert kinds == [KIND_COMMENT], (
+        f"match past inline comment marker must classify as comment, got {kinds}"
+    )
+
+
+def test_grep_match_column_is_codepoint_offset(tmp_path: Path) -> None:
+    """The stored ``GrepMatch.column`` is documented as a 1-based
+    codepoint offset. Pin it on a Cyrillic-prefixed line so a
+    regression that re-introduces the byte offset surfaces here
+    instead of in a hard-to-diagnose downstream failure."""
+    src = tmp_path / "mod.py"
+    # Line 2: ``    привет = bar()`` — ``bar`` starts at codepoint 13
+    # (4 spaces + 6 Cyrillic + ``  = `` = 4 + 6 + 3 = 13). Column is
+    # 1-indexed → 14. The byte offset would be 4 + 12 + 3 = 19 → col 20.
+    src.write_text(
+        "def caller():\n"
+        "    привет = bar()\n",
+        encoding="utf-8",
+    )
+    results, _, _ = grep("bar", [src])
+    matches = results[0].matches
+    assert len(matches) == 1
+    assert matches[0].column == 14, (
+        f"column must be a 1-based codepoint offset (14), got {matches[0].column}"
+    )
